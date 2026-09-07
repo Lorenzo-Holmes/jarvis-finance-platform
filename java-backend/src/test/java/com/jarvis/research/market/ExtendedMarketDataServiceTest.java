@@ -33,6 +33,13 @@ class ExtendedMarketDataServiceTest {
     }
 
     @Test
+    void resolvesUserEnteredSymbolsWithMarketSpecificNormalization() {
+        assertEquals("sh600519", service.resolveInstrument("a_share", "600519").get("symbol"));
+        assertEquals("BRK.B", service.resolveInstrument("us_stock", "brk.b").get("symbol"));
+        assertEquals("BTCUSDT", service.resolveInstrument("crypto", "BTC").get("symbol"));
+    }
+
+    @Test
     void rejectsInvalidKlineLimit() {
         ResponseStatusException ex = assertThrows(ResponseStatusException.class,
                 () -> service.kline("crypto", "BTCUSDT", "1d", 501));
@@ -59,6 +66,11 @@ class ExtendedMarketDataServiceTest {
         assertNotNull(rows.get(39).get("sma20"));
         assertNotNull(rows.get(39).get("rsi14"));
         assertNotNull(rows.get(39).get("macd"));
+        assertNotNull(rows.get(39).get("bollinger_upper"));
+        assertNotNull(rows.get(39).get("atr14"));
+        assertNotNull(rows.get(39).get("stoch_k14"));
+        assertNotNull(rows.get(39).get("adx14"));
+        assertNotNull(summary.get("indicators"));
         assertNotNull(summary.get("support_20"));
         assertNotNull(summary.get("resistance_20"));
     }

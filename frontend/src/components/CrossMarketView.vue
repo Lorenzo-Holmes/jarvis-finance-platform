@@ -24,6 +24,9 @@ const loading = ref(false)
 const error = ref('')
 const analysis = ref('')
 const analysisLoading = ref(false)
+const customQuery = ref('')
+const resolveLoading = ref(false)
+const resolveError = ref('')
 const latestDataRequest = useLatestRequest()
 const freshness = useFreshness(90000)
 const marketChart = useMarketChart()
@@ -63,6 +66,31 @@ async function loadInstruments() {
   }
   instruments.value = response.data
   chooseDefaultSymbol()
+}
+
+async function resolveCustomInstrument() {
+  const query = customQuery.value.trim()
+  if (!query || resolveLoading.value) return
+  resolveLoading.value = true
+  resolveError.value = ''
+  try {
+    const response = await api.resolveMarketInstrument(market.value, query)
+    if (response.code !== 200 || !response.data?.symbol) {
+      throw new Error(response.message || '标的解析失败')
+    }
+    const item = response.data
+    const existingIndex = instruments.value.findIndex(
+      candidate => candidate.market === item.market && candidate.symbol === item.symbol,
+    )
+    if (existingIndex >= 0) instruments.value.splice(existingIndex, 1, item)
+    else instruments.value.push(item)
+    selectedSymbol.value = item.symbol
+    customQuery.value = ''
+  } catch (e) {
+    resolveError.value = e?.message || String(e)
+  } finally {
+    resolveLoading.value = false
+  }
 }
 
 function chooseDefaultSymbol() {
@@ -112,6 +140,9 @@ async function renderChart() {
     overlays: [
       { name: 'SMA20', key: 'sma20', color: '#d7b56d', width: 1.35 },
       { name: 'EMA12', key: 'ema12', color: '#8f989f', width: 1.1 },
+      { name: 'EMA26', key: 'ema26', color: '#7487a1', width: 1.05 },
+      { name: '布林上轨', key: 'bollinger_upper', color: '#796b4e', width: 1, type: 'dashed' },
+      { name: '布林下轨', key: 'bollinger_lower', color: '#796b4e', width: 1, type: 'dashed' },
     ],
   })
 }
@@ -192,6 +223,16 @@ onMounted(async () => {
 
     <div v-if="error && kline.length" class="error">{{ error }}</div>
 
+    <div class="symbol-parser">
+      <span class="parser-label">自定义标的</span>
+      <input v-model="customQuery" class="parser-input" :placeholder="market === 'a_share' ? '输入 600519 / SH600519' : market === 'us_stock' ? '输入 AAPL / BRK.B' : '输入 BTC / BTCUSDT'" @keyup.enter="resolveCustomInstrument" />
+      <button type="button" class="btn parser-btn" :disabled="resolveLoading || !customQuery.trim()" @click="resolveCustomInstrument">
+        {{ resolveLoading ? '解析中…' : '解析并加载' }}
+      </button>
+      <span class="parser-hint">仅校验代码格式，不会保存密钥或任意外部地址</span>
+    </div>
+    <div v-if="resolveError" class="parser-error">{{ resolveError }}</div>
+
     <div class="cross-layout">
       <InstrumentList
         :market-label="currentMarketLabel"
@@ -248,6 +289,13 @@ onMounted(async () => {
 .btn { min-height: 30px; background: #1c1f22; border: 1px solid var(--line-strong); color: var(--text); border-radius: var(--radius-sm); padding: 5px 11px; cursor: pointer; font-size: 11px; }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
 .error { color: #ef5350; padding: 9px 10px; background: rgba(239,83,80,.08); border: 1px solid rgba(239,83,80,.18); border-radius: var(--radius-sm); font-size: 11px; }
+.symbol-parser { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-sm); }
+.parser-label { color: var(--text); font-size: 10px; font-weight: 650; white-space: nowrap; }
+.parser-input { flex: 0 1 260px; min-width: 140px; height: 30px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius-sm); color: var(--text); padding: 0 9px; font-size: 10px; outline: none; }
+.parser-input:focus { border-color: #6a5b40; }
+.parser-btn { white-space: nowrap; }
+.parser-hint { color: var(--subtle); font-size: 9px; }
+.parser-error { color: #ef5350; font-size: 10px; padding: 0 2px; }
 .cross-layout { display: grid; grid-template-columns: 220px minmax(0, 1fr) 300px; gap: 10px; align-items: stretch; min-width: 0; }
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
 .chart-panel { padding: 13px; min-width: 0; }
@@ -267,5 +315,5 @@ onMounted(async () => {
 .pos { color: #27c46b !important; } .neg { color: #ef5350 !important; }
 @media (max-width: 1180px) { .cross-layout { grid-template-columns: 195px minmax(0, 1fr) 265px; } .chart.tall { height: 480px; } }
 @media (max-width: 980px) { .cross-layout { grid-template-columns: 190px minmax(0, 1fr); } .right-rail { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@media (max-width: 700px) { .cross-toolbar { align-items: flex-start; flex-direction: column; } .toolbar-right { width: 100%; justify-content: flex-start; overflow-x: auto; } .cross-layout { grid-template-columns: 1fr; } .right-rail { grid-column: auto; grid-template-columns: 1fr; } .chart.tall { height: 380px; } .symbol-head { align-items: flex-start; flex-direction: column; } .chart-meta { align-items: flex-start; flex-direction: column; } }
+@media (max-width: 700px) { .cross-toolbar { align-items: flex-start; flex-direction: column; } .toolbar-right { width: 100%; justify-content: flex-start; overflow-x: auto; } .symbol-parser { align-items: stretch; flex-wrap: wrap; } .parser-input { flex: 1 1 180px; } .parser-hint { width: 100%; } .cross-layout { grid-template-columns: 1fr; } .right-rail { grid-column: auto; grid-template-columns: 1fr; } .chart.tall { height: 380px; } .symbol-head { align-items: flex-start; flex-direction: column; } .chart-meta { align-items: flex-start; flex-direction: column; } }
 </style>

@@ -65,7 +65,7 @@ export function useMarketChart() {
       data: item.values || rows.map(row => row[item.key] ?? '-'),
       showSymbol: false,
       smooth: false,
-      lineStyle: { color: item.color, width: item.width ?? 1.2 },
+      lineStyle: { color: item.color, width: item.width ?? 1.2, type: item.type || 'solid' },
     }))
 
     const legendData = ['K线']

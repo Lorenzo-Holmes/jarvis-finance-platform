@@ -96,13 +96,20 @@ public class MarketController {
         return ApiResponse.ok(marketService.getMinuteKline(market, minutes, limit));
     }
 
-    /** A股、美股、加密货币的受控标的列表。 */
+    /** A股、美股、加密货币的常用标的列表。 */
     @GetMapping("/instruments")
     public ApiResponse<Object> instruments() {
         return ApiResponse.ok(extendedMarketDataService.listInstruments());
     }
 
-    /** 查询受控标的的最新报价。 */
+    /** 解析用户输入的自定义标的，并返回安全的标准化 symbol。 */
+    @GetMapping("/instruments/resolve")
+    public ApiResponse<Object> resolveInstrument(@RequestParam String market,
+                                                 @RequestParam String query) {
+        return ApiResponse.ok(extendedMarketDataService.resolveInstrument(market, query));
+    }
+
+    /** 查询标准化标的的最新报价。 */
     @GetMapping("/extended/quote")
     public ApiResponse<Object> extendedQuote(@RequestParam String market,
                                              @RequestParam String symbol) {

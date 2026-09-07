@@ -17,6 +17,7 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -25,7 +26,8 @@ import java.util.regex.Pattern;
 /**
  * A 股、美股和加密货币的公开行情适配器。
  *
- * <p>本阶段先提供受控标的白名单，避免把任意 URL 或任意外部 symbol 直接透传给行情源。
+ * <p>默认提供常用标的，并允许用户输入经过市场专属格式校验的自定义 symbol，
+ * 避免把任意 URL 或任意外部 symbol 直接透传给行情源。
  * A 股使用腾讯公开接口，美股使用 Yahoo Finance chart 接口，加密货币使用 Binance 公共接口。
  * 后续如需生产级多源容灾，可在本服务后面增加统一行情落库和备用源。</p>
  */
@@ -36,6 +38,12 @@ public class ExtendedMarketDataService {
     private static final Charset GBK = Charset.forName("GBK");
     private static final Set<String> YAHOO_INTERVALS = Set.of("1d", "1h", "15m");
     private static final Set<String> BINANCE_INTERVALS = Set.of("1d", "1h", "15m", "5m");
+    private static final Pattern A_SHARE_PATTERN = Pattern.compile(
+            "^(?:(SH|SZ|BJ))?(\\d{6})(?:(SH|SZ|BJ))?$", Pattern.CASE_INSENSITIVE);
+    private static final Pattern US_STOCK_PATTERN = Pattern.compile(
+            "^[A-Z][A-Z0-9.-]{0,9}$");
+    private static final Pattern CRYPTO_PATTERN = Pattern.compile(
+            "^[A-Z0-9]{2,15}(USDT)?$");
 
     private final WebClient webClient;
     private final ObjectMapper objectMapper;
@@ -62,14 +70,22 @@ public class ExtendedMarketDataService {
         return instruments.stream().map(this::instrumentView).toList();
     }
 
+    /**
+     * 解析用户输入的市场标的。只返回通过市场专属格式校验的标准化 symbol，
+     * 后续报价与 K 线接口仍会复用同一套校验，避免将任意输入拼接到外部 URL。
+     */
+    public Map<String, Object> resolveInstrument(String market, String query) {
+        return instrumentView(parseInstrument(market, query));
+    }
+
     public Map<String, Object> quote(String market, String symbol) {
         Instrument instrument = requireInstrument(market, symbol);
         try {
-            return switch (market) {
+            return switch (instrument.market()) {
                 case "a_share" -> quoteTencent(instrument);
                 case "us_stock" -> quoteYahoo(instrument);
                 case "crypto" -> quoteCryptoWithFallback(instrument);
-                default -> throw invalid("不支持的市场: " + market);
+                default -> throw invalid("不支持的市场: " + instrument.market());
             };
         } catch (ResponseStatusException e) {
             throw e;
@@ -86,7 +102,7 @@ public class ExtendedMarketDataService {
         }
         String normalized = normalizeInterval(interval);
         try {
-            List<Map<String, Object>> data = switch (market) {
+            List<Map<String, Object>> data = switch (instrument.market()) {
                 case "a_share" -> {
                     if (!"1d".equals(normalized)) {
                         throw invalid("A股当前仅支持日K");
@@ -95,7 +111,7 @@ public class ExtendedMarketDataService {
                 }
                 case "us_stock" -> klineYahoo(instrument, normalized, limit);
                 case "crypto" -> klineCryptoWithFallback(instrument, normalized, limit);
-                default -> throw invalid("不支持的市场: " + market);
+                    default -> throw invalid("不支持的市场: " + instrument.market());
             };
             Map<String, Object> technicalAnalysis = enrichTechnicalIndicators(data);
             Map<String, Object> out = new LinkedHashMap<>();
@@ -135,6 +151,9 @@ public class ExtendedMarketDataService {
         Double previous = parseDouble(values, 4);
         if (price == null) throw upstream("A股价格为空");
         Map<String, Object> out = quoteBase(instrument);
+        if (values.length > 1 && values[1] != null && !values[1].isBlank()) {
+            out.put("name", values[1].trim());
+        }
         out.put("price", price);
         out.put("prev_close", previous);
         out.put("change", parseDouble(values, 31));
@@ -158,6 +177,8 @@ public class ExtendedMarketDataService {
         if (previous == null) previous = number(meta, "chartPreviousClose");
         if (price == null) throw upstream("美股价格为空");
         Map<String, Object> out = quoteBase(instrument);
+        String displayName = meta.path("longName").asText(meta.path("shortName").asText(""));
+        if (!displayName.isBlank()) out.put("name", displayName);
         out.put("price", price);
         out.put("prev_close", previous);
         out.put("change", price - (previous == null ? price : previous));
@@ -311,10 +332,84 @@ public class ExtendedMarketDataService {
 
     private Instrument requireInstrument(String market, String symbol) {
         if (market == null || symbol == null) throw invalid("市场和标的不能为空");
+        String normalizedMarket = normalizeMarket(market);
+        String normalizedSymbol = symbol.trim();
         return instruments.stream()
-                .filter(item -> item.market().equals(market) && item.symbol().equalsIgnoreCase(symbol.trim()))
+                .filter(item -> item.market().equals(normalizedMarket)
+                        && item.symbol().equalsIgnoreCase(normalizedSymbol))
                 .findFirst()
-                .orElseThrow(() -> invalid("不支持的标的: " + market + "/" + symbol));
+                .orElseGet(() -> parseInstrument(normalizedMarket, normalizedSymbol));
+    }
+
+    private Instrument parseInstrument(String market, String query) {
+        if (market == null || query == null || query.isBlank()) {
+            throw invalid("市场和标的不能为空");
+        }
+        String normalizedMarket = normalizeMarket(market);
+        String raw = query.trim().toUpperCase(Locale.ROOT);
+        return switch (normalizedMarket) {
+            case "a_share" -> parseAShare(raw);
+            case "us_stock" -> parseUsStock(raw);
+            case "crypto" -> parseCrypto(raw);
+            default -> throw invalid("不支持的市场: " + market);
+        };
+    }
+
+    private String normalizeMarket(String market) {
+        String normalized = market.trim().toLowerCase(Locale.ROOT);
+        if (!Set.of("a_share", "us_stock", "crypto").contains(normalized)) {
+            throw invalid("不支持的市场: " + market);
+        }
+        return normalized;
+    }
+
+    private Instrument parseAShare(String raw) {
+        String compact = raw.replace(".", "").replace("-", "");
+        Matcher matcher = A_SHARE_PATTERN.matcher(compact);
+        if (!matcher.matches()) throw invalid("A股代码应为 6 位数字，例如 600519 或 SH600519");
+        String exchange = matcher.group(1) != null ? matcher.group(1) : matcher.group(3);
+        String code = matcher.group(2);
+        if (exchange == null) {
+            exchange = code.startsWith("6") ? "SH" : code.startsWith("4") || code.startsWith("8") ? "BJ" : "SZ";
+        }
+        String symbol = exchange.toLowerCase(Locale.ROOT) + code;
+        String name = switch (symbol) {
+            case "sh600519" -> "贵州茅台";
+            case "sz000001" -> "平安银行";
+            case "sz300750" -> "宁德时代";
+            default -> code + "（自定义标的）";
+        };
+        return new Instrument("a_share", symbol, name, "CNY", "Tencent");
+    }
+
+    private Instrument parseUsStock(String raw) {
+        String symbol = raw.startsWith("$") ? raw.substring(1) : raw;
+        if (!US_STOCK_PATTERN.matcher(symbol).matches()) {
+            throw invalid("美股代码格式不正确，例如 AAPL、MSFT 或 BRK.B");
+        }
+        String name = switch (symbol) {
+            case "AAPL" -> "Apple";
+            case "MSFT" -> "Microsoft";
+            case "NVDA" -> "NVIDIA";
+            case "TSLA" -> "Tesla";
+            default -> symbol + "（自定义标的）";
+        };
+        return new Instrument("us_stock", symbol, name, "USD", "Yahoo Finance");
+    }
+
+    private Instrument parseCrypto(String raw) {
+        String symbol = raw.replace("-", "");
+        if (!CRYPTO_PATTERN.matcher(symbol).matches()) {
+            throw invalid("加密货币代码格式不正确，例如 BTC、BTCUSDT 或 ETHUSDT");
+        }
+        if (!symbol.endsWith("USDT")) symbol += "USDT";
+        String name = switch (symbol) {
+            case "BTCUSDT" -> "Bitcoin";
+            case "ETHUSDT" -> "Ethereum";
+            case "SOLUSDT" -> "Solana";
+            default -> symbol + "（自定义标的）";
+        };
+        return new Instrument("crypto", symbol, name, "USDT", "Binance");
     }
 
     private Map<String, Object> instrumentView(Instrument item) {
@@ -343,6 +438,9 @@ public class ExtendedMarketDataService {
      */
     Map<String, Object> enrichTechnicalIndicators(List<Map<String, Object>> rows) {
         List<Double> closes = rows.stream().map(row -> numeric(row, "close")).toList();
+        List<Double> highs = rows.stream().map(row -> numeric(row, "high")).toList();
+        List<Double> lows = rows.stream().map(row -> numeric(row, "low")).toList();
+        List<Double> volumes = rows.stream().map(row -> numeric(row, "volume")).toList();
         List<Double> ema12 = ema(closes, 12);
         List<Double> ema26 = ema(closes, 26);
         List<Double> macd = new ArrayList<>();
@@ -353,6 +451,17 @@ public class ExtendedMarketDataService {
         List<Double> rsi14 = rsi(closes, 14);
         List<Double> sma5 = sma(closes, 5);
         List<Double> sma20 = sma(closes, 20);
+        List<Double> bollingerStd20 = rollingStdDev(closes, 20);
+        List<Double> bollingerUpper = combine(sma20, bollingerStd20, (middle, deviation) -> middle + deviation * 2);
+        List<Double> bollingerLower = combine(sma20, bollingerStd20, (middle, deviation) -> middle - deviation * 2);
+        List<Double> atr14 = atr(rows, 14);
+        List<Double> stochasticK14 = stochasticK(closes, highs, lows, 14);
+        List<Double> stochasticD3 = sma(stochasticK14, 3);
+        List<Double> williamsR14 = williamsR(closes, highs, lows, 14);
+        List<Double> adx14 = adx(rows, 14);
+        List<Double> volumeSma20 = sma(volumes, 20);
+        List<Double> obv = obv(closes, volumes);
+        List<Double> roc12 = rateOfChange(closes, 12);
 
         for (int i = 0; i < rows.size(); i++) {
             Map<String, Object> row = rows.get(i);
@@ -361,6 +470,17 @@ public class ExtendedMarketDataService {
             putIfPresent(row, "ema12", at(ema12, i));
             putIfPresent(row, "ema26", at(ema26, i));
             putIfPresent(row, "rsi14", at(rsi14, i));
+            putIfPresent(row, "bollinger_middle", at(sma20, i));
+            putIfPresent(row, "bollinger_upper", at(bollingerUpper, i));
+            putIfPresent(row, "bollinger_lower", at(bollingerLower, i));
+            putIfPresent(row, "atr14", at(atr14, i));
+            putIfPresent(row, "stoch_k14", at(stochasticK14, i));
+            putIfPresent(row, "stoch_d3", at(stochasticD3, i));
+            putIfPresent(row, "williams_r14", at(williamsR14, i));
+            putIfPresent(row, "adx14", at(adx14, i));
+            putIfPresent(row, "volume_sma20", at(volumeSma20, i));
+            putIfPresent(row, "obv", at(obv, i));
+            putIfPresent(row, "roc12", at(roc12, i));
             Double macdValue = at(macd, i);
             Double signalValue = at(signal, i);
             putIfPresent(row, "macd", macdValue);
@@ -383,6 +503,9 @@ public class ExtendedMarketDataService {
         Double latestRsi = at(rsi14, latestIndex);
         Double latestMacd = at(macd, latestIndex);
         Double latestSignal = at(signal, latestIndex);
+        Double latestBollingerMiddle = at(sma20, latestIndex);
+        Double latestBollingerUpper = at(bollingerUpper, latestIndex);
+        Double latestBollingerLower = at(bollingerLower, latestIndex);
 
         String trend = "neutral";
         String trendLabel = "震荡观察";
@@ -428,9 +551,175 @@ public class ExtendedMarketDataService {
         indicators.put("rsi14", latestRsi);
         indicators.put("macd", latestMacd);
         indicators.put("macd_signal", latestSignal);
+        indicators.put("bollinger_middle", latestBollingerMiddle);
+        indicators.put("bollinger_upper", latestBollingerUpper);
+        indicators.put("bollinger_lower", latestBollingerLower);
+        indicators.put("bollinger_width", latestBollingerMiddle == null || latestBollingerMiddle == 0
+                || latestBollingerUpper == null || latestBollingerLower == null
+                ? null : (latestBollingerUpper - latestBollingerLower) / latestBollingerMiddle * 100);
+        indicators.put("bollinger_position", close == null || latestBollingerUpper == null
+                || latestBollingerLower == null || latestBollingerUpper.equals(latestBollingerLower)
+                ? null : (close - latestBollingerLower) / (latestBollingerUpper - latestBollingerLower) * 100);
+        indicators.put("atr14", at(atr14, latestIndex));
+        indicators.put("stoch_k14", at(stochasticK14, latestIndex));
+        indicators.put("stoch_d3", at(stochasticD3, latestIndex));
+        indicators.put("williams_r14", at(williamsR14, latestIndex));
+        indicators.put("adx14", at(adx14, latestIndex));
+        indicators.put("volume_sma20", at(volumeSma20, latestIndex));
+        indicators.put("obv", at(obv, latestIndex));
+        indicators.put("roc12", at(roc12, latestIndex));
         analysis.put("indicators", indicators);
         analysis.put("disclaimer", "技术指标仅供研究参考，不构成投资建议");
         return analysis;
+    }
+
+    private List<Double> rollingStdDev(List<Double> values, int period) {
+        List<Double> out = new ArrayList<>();
+        for (int i = 0; i < values.size(); i++) {
+            if (i + 1 < period) {
+                out.add(null);
+                continue;
+            }
+            List<Double> window = values.subList(i - period + 1, i + 1);
+            if (window.stream().anyMatch(value -> value == null)) {
+                out.add(null);
+                continue;
+            }
+            double mean = window.stream().mapToDouble(Double::doubleValue).average().orElse(Double.NaN);
+            double variance = window.stream().mapToDouble(value -> Math.pow(value - mean, 2)).average().orElse(Double.NaN);
+            out.add(Double.isFinite(variance) ? Math.sqrt(variance) : null);
+        }
+        return out;
+    }
+
+    private List<Double> combine(List<Double> left, List<Double> right, java.util.function.DoubleBinaryOperator operator) {
+        List<Double> out = new ArrayList<>();
+        for (int i = 0; i < left.size(); i++) {
+            Double a = at(left, i);
+            Double b = at(right, i);
+            out.add(a == null || b == null ? null : operator.applyAsDouble(a, b));
+        }
+        return out;
+    }
+
+    private List<Double> atr(List<Map<String, Object>> rows, int period) {
+        List<Double> trueRanges = new ArrayList<>();
+        for (int i = 0; i < rows.size(); i++) {
+            Double high = numeric(rows.get(i), "high");
+            Double low = numeric(rows.get(i), "low");
+            Double previousClose = i == 0 ? null : numeric(rows.get(i - 1), "close");
+            if (high == null || low == null) {
+                trueRanges.add(null);
+            } else if (previousClose == null) {
+                trueRanges.add(high - low);
+            } else {
+                trueRanges.add(Math.max(high - low,
+                        Math.max(Math.abs(high - previousClose), Math.abs(low - previousClose))));
+            }
+        }
+        return sma(trueRanges, period);
+    }
+
+    private List<Double> stochasticK(List<Double> closes, List<Double> highs, List<Double> lows, int period) {
+        List<Double> out = new ArrayList<>();
+        for (int i = 0; i < closes.size(); i++) {
+            if (i + 1 < period) {
+                out.add(null);
+                continue;
+            }
+            List<Double> highWindow = highs.subList(i - period + 1, i + 1);
+            List<Double> lowWindow = lows.subList(i - period + 1, i + 1);
+            Double close = closes.get(i);
+            if (close == null || highWindow.stream().anyMatch(value -> value == null)
+                    || lowWindow.stream().anyMatch(value -> value == null)) {
+                out.add(null);
+                continue;
+            }
+            double highest = highWindow.stream().mapToDouble(Double::doubleValue).max().orElse(Double.NaN);
+            double lowest = lowWindow.stream().mapToDouble(Double::doubleValue).min().orElse(Double.NaN);
+            out.add(highest == lowest ? 50.0 : (close - lowest) / (highest - lowest) * 100);
+        }
+        return out;
+    }
+
+    private List<Double> williamsR(List<Double> closes, List<Double> highs, List<Double> lows, int period) {
+        List<Double> stochastic = stochasticK(closes, highs, lows, period);
+        return stochastic.stream().map(value -> value == null ? null : value - 100).toList();
+    }
+
+    private List<Double> adx(List<Map<String, Object>> rows, int period) {
+        List<Double> trueRanges = new ArrayList<>();
+        List<Double> plusDirectional = new ArrayList<>();
+        List<Double> minusDirectional = new ArrayList<>();
+        for (int i = 0; i < rows.size(); i++) {
+            Double high = numeric(rows.get(i), "high");
+            Double low = numeric(rows.get(i), "low");
+            if (i == 0) {
+                trueRanges.add(high == null || low == null ? null : high - low);
+                plusDirectional.add(0.0);
+                minusDirectional.add(0.0);
+                continue;
+            }
+            Double previousHigh = numeric(rows.get(i - 1), "high");
+            Double previousLow = numeric(rows.get(i - 1), "low");
+            Double previousClose = numeric(rows.get(i - 1), "close");
+            if (high == null || low == null || previousHigh == null || previousLow == null || previousClose == null) {
+                trueRanges.add(null);
+                plusDirectional.add(null);
+                minusDirectional.add(null);
+                continue;
+            }
+            trueRanges.add(Math.max(high - low,
+                    Math.max(Math.abs(high - previousClose), Math.abs(low - previousClose))));
+            double upMove = high - previousHigh;
+            double downMove = previousLow - low;
+            plusDirectional.add(upMove > downMove && upMove > 0 ? upMove : 0.0);
+            minusDirectional.add(downMove > upMove && downMove > 0 ? downMove : 0.0);
+        }
+        List<Double> dx = new ArrayList<>();
+        for (int i = 0; i < rows.size(); i++) {
+            if (i + 1 < period || trueRanges.subList(i - period + 1, i + 1).stream().anyMatch(value -> value == null)
+                    || plusDirectional.subList(i - period + 1, i + 1).stream().anyMatch(value -> value == null)
+                    || minusDirectional.subList(i - period + 1, i + 1).stream().anyMatch(value -> value == null)) {
+                dx.add(null);
+                continue;
+            }
+            double trSum = trueRanges.subList(i - period + 1, i + 1).stream().mapToDouble(Double::doubleValue).sum();
+            double plusSum = plusDirectional.subList(i - period + 1, i + 1).stream().mapToDouble(Double::doubleValue).sum();
+            double minusSum = minusDirectional.subList(i - period + 1, i + 1).stream().mapToDouble(Double::doubleValue).sum();
+            double plusDi = trSum == 0 ? 0 : plusSum / trSum * 100;
+            double minusDi = trSum == 0 ? 0 : minusSum / trSum * 100;
+            double denominator = plusDi + minusDi;
+            dx.add(denominator == 0 ? 0 : Math.abs(plusDi - minusDi) / denominator * 100);
+        }
+        return sma(dx, period);
+    }
+
+    private List<Double> obv(List<Double> closes, List<Double> volumes) {
+        List<Double> out = new ArrayList<>();
+        double value = 0;
+        for (int i = 0; i < closes.size(); i++) {
+            Double close = closes.get(i);
+            Double volume = volumes.get(i);
+            if (i > 0 && close != null && closes.get(i - 1) != null && volume != null) {
+                if (close > closes.get(i - 1)) value += volume;
+                else if (close < closes.get(i - 1)) value -= volume;
+            }
+            out.add(close == null ? null : value);
+        }
+        return out;
+    }
+
+    private List<Double> rateOfChange(List<Double> values, int period) {
+        List<Double> out = new ArrayList<>();
+        for (int i = 0; i < values.size(); i++) {
+            if (i < period || values.get(i) == null || values.get(i - period) == null || values.get(i - period) == 0) {
+                out.add(null);
+            } else {
+                out.add((values.get(i) - values.get(i - period)) / values.get(i - period) * 100);
+            }
+        }
+        return out;
     }
 
     private List<Double> sma(List<Double> values, int period) {
