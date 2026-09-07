@@ -50,7 +50,10 @@ public class SecurityConfig {
         http
             .csrf(csrf -> csrf
                     .csrfTokenRepository(csrfRepository)
-                    .csrfTokenRequestHandler(csrfHandler))
+                    .csrfTokenRequestHandler(csrfHandler)
+                    // 验证码发送/确认本身是匿名认证接口；频控与验证码尝试次数负责防滥用。
+                    // 豁免 CSRF 可避免跨子域前端未能保存 XSRF-TOKEN 时被误判为未登录。
+                    .ignoringRequestMatchers("/api/auth/verification/**"))
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
