@@ -128,7 +128,7 @@ async function runChain() {
 
 onMounted(() => {
   loadStatus()
-  messages.value.push({ role: 'assistant', content: '你好！我是库里帕酱，贾维斯金融投研 AI 助手。可以问我金价走势、投资建议、财报分析等。' })
+  messages.value.push({ role: 'assistant', content: '欢迎使用贾维斯投研助手。你可以直接询问行情结构、策略风险、财报数据或产业链逻辑。' })
 })
 </script>
 
@@ -137,17 +137,17 @@ onMounted(() => {
     <!-- 状态 -->
     <div class="status-bar">
       <span class="dot" :class="aiStatus?.available ? 'ok' : 'bad'"></span>
-      AI 引擎: {{ aiStatus?.provider || 'DeepSeek' }} · {{ aiStatus?.model || '...' }}
+      研究引擎 · {{ aiStatus?.provider || 'DeepSeek' }} / {{ aiStatus?.model || '...' }}
       <span class="hint" style="margin-left:auto">{{ aiStatus?.available ? '已连接' : aiStatus?.message }}</span>
     </div>
 
     <div class="grid">
       <!-- 对话 -->
       <div class="panel chat-panel">
-        <div class="panel-head"><h2>AI 智能对话</h2></div>
+        <div class="panel-head"><h2>投研助手</h2></div>
         <div class="chat-window" ref="chatBox">
           <div v-for="(m, i) in messages" :key="i" class="chat-item" :class="m.role">
-            <div class="role">{{ m.role === 'user' ? '你' : '库里帕酱' }}</div>
+            <div class="role">{{ m.role === 'user' ? '你' : '研究助手' }}</div>
             <div class="bubble">{{ m.content }}</div>
           </div>
         </div>
@@ -155,7 +155,7 @@ onMounted(() => {
           <button v-for="s in sugg" :key="s" class="chip" @click="useSuggestion(s)">{{ s }}</button>
         </div>
         <div class="chat-input">
-          <input v-model="input" @keyup.enter="sendChat" placeholder="问金价、投资建议、财报…" :disabled="sending" />
+          <input v-model="input" @keyup.enter="sendChat" placeholder="输入市场、策略或财报问题" :disabled="sending" />
           <button class="btn primary" @click="sending ? stopChat() : sendChat()">{{ sending ? '停止生成' : '发送' }}</button>
         </div>
       </div>
@@ -164,9 +164,9 @@ onMounted(() => {
       <div class="side">
         <!-- 智能报价 -->
         <div class="panel">
-          <div class="panel-head"><h2>智能报价解读</h2></div>
+          <div class="panel-head"><h2>行情解读</h2></div>
           <div class="row">
-            <button class="btn" @click="runQuote" :disabled="quoteLoading">{{ quoteLoading ? '分析中…' : '生成解读' }}</button>
+            <button class="btn" @click="runQuote" :disabled="quoteLoading">{{ quoteLoading ? '分析中…' : '生成研究摘要' }}</button>
           </div>
           <div v-if="quoteData" class="quote-mini">
             现价 <b>{{ quoteData.price }}</b> · 昨收 {{ quoteData.prev_close }}
@@ -177,7 +177,7 @@ onMounted(() => {
 
         <!-- 财报解析 -->
         <div class="panel">
-          <div class="panel-head"><h2>财报智能解析</h2></div>
+          <div class="panel-head"><h2>财报解析</h2></div>
           <textarea v-model="reportText" placeholder="粘贴财报内容或关键数据…" rows="4"></textarea>
           <button class="btn" @click="runReport" :disabled="reportLoading">{{ reportLoading ? '解析中…' : '解析财报' }}</button>
           <div v-if="reportResult" class="out">{{ reportResult }}</div>
@@ -185,7 +185,7 @@ onMounted(() => {
 
         <!-- 产业链 -->
         <div class="panel">
-          <div class="panel-head"><h2>产业链挖掘</h2></div>
+          <div class="panel-head"><h2>产业链研究</h2></div>
           <div class="row">
             <input v-model="chainNode" class="input" placeholder="输入产业链节点，如：黄金" />
             <button class="btn" @click="runChain" :disabled="chainLoading">{{ chainLoading ? '分析中…' : '分析' }}</button>
@@ -198,31 +198,31 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.ai { display: flex; flex-direction: column; gap: 16px; }
-.status-bar { display: flex; align-items: center; gap: 8px; color: #8ba0c8; font-size: 13px; padding: 10px 14px; background: #121a2d; border: 1px solid #243453; border-radius: 10px; }
-.dot { width: 8px; height: 8px; border-radius: 50%; background: #ef5350; }
-.dot.ok { background: #27c46b; box-shadow: 0 0 8px #27c46b; }
-.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.panel { background: #121a2d; border: 1px solid #243453; border-radius: 12px; padding: 20px; }
-.panel-head h2 { margin: 0 0 14px; font-size: 17px; color: #e9effb; }
+.ai { display: flex; flex-direction: column; gap: 12px; }
+.status-bar { display: flex; align-items: center; gap: 8px; min-height: 36px; color: var(--muted); font-size: 11px; padding: 7px 10px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); }
+.dot { width: 6px; height: 6px; border-radius: 50%; background: var(--bad); }
+.dot.ok { background: var(--ok); }
+.grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(320px, .75fr); gap: 12px; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; }
+.panel-head h2 { margin: 0 0 12px; font-size: 15px; font-weight: 650; color: var(--text); }
 .chat-panel { display: flex; flex-direction: column; }
-.chat-window { flex: 1; height: 380px; overflow: auto; background: #0f1626; border: 1px solid #1a2540; border-radius: 8px; padding: 12px; }
-.chat-item { margin-bottom: 12px; }
-.chat-item.user .bubble { background: rgba(77,168,255,.15); border: 1px solid rgba(77,168,255,.3); }
-.chat-item.assistant .bubble { background: rgba(255,255,255,.05); border: 1px solid #243453; }
-.role { font-size: 11px; color: #8ba0c8; margin-bottom: 4px; }
-.bubble { padding: 10px 14px; border-radius: 8px; font-size: 14px; line-height: 1.6; white-space: pre-wrap; color: #d9e6ff; }
-.sugg { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0; }
-.chip { background: #152442; border: 1px solid #243453; color: #88c2ff; border-radius: 999px; padding: 5px 12px; font-size: 12px; cursor: pointer; }
+.chat-window { flex: 1; height: 420px; overflow: auto; background: var(--surface); border: 1px solid #222529; border-radius: var(--radius-sm); padding: 14px; }
+.chat-item { margin-bottom: 14px; }
+.chat-item.user .bubble { background: var(--accent-soft); border: 1px solid rgba(215,181,109,.24); }
+.chat-item.assistant .bubble { background: #17191b; border: 1px solid var(--line); }
+.role { font-size: 10px; color: var(--subtle); margin-bottom: 4px; letter-spacing: .04em; }
+.bubble { padding: 10px 12px; border-radius: var(--radius-sm); font-size: 13px; line-height: 1.7; white-space: pre-wrap; color: var(--text); }
+.sugg { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; }
+.chip { background: transparent; border: 1px solid var(--line-strong); color: var(--muted); border-radius: var(--radius-sm); padding: 5px 9px; font-size: 11px; cursor: pointer; }
 .chat-input { display: flex; gap: 8px; }
-.chat-input input, .input { flex: 1; background: #0f1626; border: 1px solid #243453; color: #e9effb; border-radius: 6px; padding: 10px 12px; }
-textarea { width: 100%; background: #0f1626; border: 1px solid #243453; color: #e9effb; border-radius: 6px; padding: 10px; margin-bottom: 10px; resize: vertical; }
-.btn { background: #1a2540; border: 1px solid #243453; color: #e9effb; border-radius: 6px; padding: 8px 16px; cursor: pointer; font-size: 13px; }
-.btn.primary { background: linear-gradient(135deg, #4da8ff, #a842ff); border: none; color: #fff; }
+.chat-input input, .input { flex: 1; background: var(--surface); border: 1px solid var(--line-strong); color: var(--text); border-radius: var(--radius-sm); padding: 10px 11px; outline: none; }
+textarea { width: 100%; background: var(--surface); border: 1px solid var(--line-strong); color: var(--text); border-radius: var(--radius-sm); padding: 10px; margin-bottom: 10px; resize: vertical; outline: none; }
+.btn { background: #1c1f22; border: 1px solid var(--line-strong); color: var(--text); border-radius: var(--radius-sm); padding: 8px 14px; cursor: pointer; font-size: 12px; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #17140e; font-weight: 650; }
 .row { display: flex; gap: 8px; flex-wrap: wrap; }
-.out { margin-top: 12px; background: rgba(8,16,34,.7); border: 1px dashed #38517f; border-radius: 8px; padding: 12px; white-space: pre-wrap; font-size: 13px; color: #d9e6ff; min-height: 40px; max-height: 260px; overflow: auto; }
-.quote-mini { margin: 12px 0; font-size: 13px; color: #e9effb; }
+.out { margin-top: 12px; background: var(--surface); border: 1px solid #282b2f; border-left: 2px solid #72684f; border-radius: var(--radius-sm); padding: 11px 12px; white-space: pre-wrap; font-size: 12px; line-height: 1.7; color: var(--text); min-height: 40px; max-height: 260px; overflow: auto; }
+.quote-mini { margin: 12px 0; font-size: 12px; color: var(--text); }
 .pos { color: #27c46b; } .neg { color: #ef5350; }
-.side { display: flex; flex-direction: column; gap: 16px; }
+.side { display: flex; flex-direction: column; gap: 12px; }
 @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
 </style>

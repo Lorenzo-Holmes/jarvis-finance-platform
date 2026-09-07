@@ -101,13 +101,13 @@ async function renderChart() {
     xAxis: {
       type: 'category',
       data: kline.value.map(item => item.date),
-      axisLabel: { color: '#8ba0c8', hideOverlap: true },
-      axisLine: { lineStyle: { color: '#243453' } },
+      axisLabel: { color: '#8f9498', hideOverlap: true },
+      axisLine: { lineStyle: { color: '#34383d' } },
     },
     yAxis: {
       scale: true,
-      axisLabel: { color: '#8ba0c8' },
-      splitLine: { lineStyle: { color: '#1a2540' } },
+      axisLabel: { color: '#8f9498' },
+      splitLine: { lineStyle: { color: '#24272b' } }
     },
     dataZoom: [{ type: 'inside' }, { type: 'slider', height: 18, bottom: 4 }],
     series: [{
@@ -120,13 +120,13 @@ async function renderChart() {
       type: 'line',
       data: kline.value.map(item => item.sma20 ?? '-'),
       showSymbol: false,
-      lineStyle: { color: '#f5c542', width: 1.5 },
+      lineStyle: { color: '#d7b56d', width: 1.5 },
     }, {
       name: 'EMA12',
       type: 'line',
       data: kline.value.map(item => item.ema12 ?? '-'),
       showSymbol: false,
-      lineStyle: { color: '#4da8ff', width: 1.2 },
+      lineStyle: { color: '#8f989f', width: 1.2 },
     }],
   }, true)
 }
@@ -142,7 +142,7 @@ async function runAnalysis() {
       technical_analysis: technicalAnalysis.value,
     })
     if (response.code !== 200) throw new Error(response.message || '分析失败')
-    analysis.value = response.data?.content || '（AI暂无回复）'
+    analysis.value = response.data?.content || '（暂无研究结论）'
   } catch (e) {
     analysis.value = `⚠️ ${e?.message || e}`
   } finally {
@@ -248,49 +248,49 @@ onUnmounted(() => {
 
     <div class="panel analysis-panel">
       <div class="panel-head">
-        <h2>AI 行情分析</h2>
+        <h2>研究解读</h2>
         <button class="btn primary" @click="runAnalysis" :disabled="!quote || analysisLoading">
-          {{ analysisLoading ? '分析中…' : '分析当前标的' }}
+          {{ analysisLoading ? '分析中…' : '生成研究解读' }}
         </button>
       </div>
       <div v-if="analysis" class="out">{{ analysis }}</div>
-      <div v-else class="hint">AI 仅对当前行情进行研究性解读，不构成投资建议。</div>
+      <div v-else class="hint">基于当前行情与技术指标生成研究性解读，不构成投资建议。</div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.cross-market { display: flex; flex-direction: column; gap: 16px; }
-.panel { background: #121a2d; border: 1px solid #243453; border-radius: 12px; padding: 20px; }
+.cross-market { display: flex; flex-direction: column; gap: 12px; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; }
 .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
-.panel-head h2 { margin: 0; font-size: 18px; }
+.panel-head h2 { margin: 0; font-size: 15px; font-weight: 650; }
 .controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.select { background: #0f1626; border: 1px solid #243453; color: #e9effb; border-radius: 6px; padding: 8px 10px; }
-.btn { background: #1a2540; border: 1px solid #243453; color: #e9effb; border-radius: 6px; padding: 8px 16px; cursor: pointer; }
-.btn.primary { background: linear-gradient(135deg, #4da8ff, #a842ff); border: none; }
+.select { background: var(--surface); border: 1px solid var(--line-strong); color: var(--text); border-radius: var(--radius-sm); padding: 8px 10px; }
+.btn { background: #1c1f22; border: 1px solid var(--line-strong); color: var(--text); border-radius: var(--radius-sm); padding: 8px 14px; cursor: pointer; font-size: 12px; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #17140e; font-weight: 650; }
 .btn:disabled { opacity: .5; cursor: not-allowed; }
-.hint { color: #8ba0c8; font-size: 12px; line-height: 1.6; }
-.quote-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 18px; }
-.quote-main, .quote-meta { background: #0f1626; border: 1px solid #1a2540; border-radius: 8px; padding: 16px; }
-.quote-price { font-size: 34px; font-weight: 700; margin: 8px 0; color: #f5c542; }
-.quote-meta { display: grid; gap: 8px; align-content: center; color: #8ba0c8; font-size: 13px; }
-.quote-meta b { color: #e9effb; margin-left: 6px; }
-.chart { width: 100%; background: #0f1626; border: 1px solid #1a2540; border-radius: 8px; }
+.hint { color: var(--muted); font-size: 11px; line-height: 1.6; }
+.quote-grid { display: grid; grid-template-columns: 1.15fr .85fr; gap: 12px; margin-top: 14px; }
+.quote-main, .quote-meta { background: var(--surface); border: 1px solid #222529; border-radius: var(--radius-sm); padding: 14px; }
+.quote-price { font-size: 32px; font-weight: 650; letter-spacing: -.025em; font-variant-numeric: tabular-nums; margin: 6px 0; color: var(--accent-strong); }
+.quote-meta { display: grid; gap: 7px; align-content: center; color: var(--muted); font-size: 12px; }
+.quote-meta b { color: var(--text); margin-left: 6px; font-weight: 600; }
+.chart { width: 100%; background: var(--surface); border: 1px solid #222529; border-radius: var(--radius-sm); }
 .chart.tall { height: 420px; margin-top: 16px; }
 .pos { color: #27c46b; } .neg { color: #ef5350; }
 .error { color: #ef5350; padding: 10px; background: rgba(239,83,80,.1); border-radius: 6px; margin-top: 14px; }
 .analysis-panel { min-height: 100px; }
-.technical-panel { margin-top: 16px; padding: 14px; background: #0f1626; border: 1px solid #1a2540; border-radius: 8px; }
+.technical-panel { margin-top: 14px; padding: 13px; background: var(--surface); border: 1px solid #222529; border-radius: var(--radius-sm); }
 .technical-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
-.technical-head h3 { margin: 0; color: #e9effb; font-size: 15px; }
+.technical-head h3 { margin: 0; color: var(--text); font-size: 13px; font-weight: 650; }
 .technical-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
 .technical-grid > div { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
-.technical-grid span { color: #8ba0c8; font-size: 12px; }
-.technical-grid b { color: #e9effb; font-size: 13px; line-height: 1.4; }
+.technical-grid span { color: var(--muted); font-size: 11px; }
+.technical-grid b { color: var(--text); font-size: 12px; line-height: 1.4; font-weight: 600; }
 .technical-grid b.bullish { color: #27c46b; }
 .technical-grid b.bearish { color: #ef5350; }
 .disclaimer { margin-top: 10px; }
-.out { margin-top: 14px; background: rgba(8,16,34,.7); border: 1px dashed #38517f; border-radius: 8px; padding: 12px; white-space: pre-wrap; color: #d9e6ff; line-height: 1.6; }
+.out { margin-top: 14px; background: var(--surface); border: 1px solid #282b2f; border-left: 2px solid #72684f; border-radius: var(--radius-sm); padding: 12px; white-space: pre-wrap; color: var(--text); font-size: 12px; line-height: 1.7; }
 @media (max-width: 850px) { .quote-grid { grid-template-columns: 1fr; } .technical-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 500px) { .technical-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 </style>

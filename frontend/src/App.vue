@@ -28,7 +28,7 @@ async function logout() {
 }
 
 // ---- Tab ----
-const baseTabs = ['行情', '多市场', '回测', '模拟盘', 'AI中心', '运维']
+const baseTabs = ['行情', '多市场', '回测', '模拟盘', '研究助手', '运维']
 const tabs = computed(() => user.value?.role === 'ADMIN' ? [...baseTabs, '管理'] : baseTabs)
 const activeTab = ref('行情')
 function switchTab(name) {
@@ -107,10 +107,10 @@ async function renderJdKline(elRef, data) {
     grid: { left: 8, right: 8, top: 16, bottom: 8, containLabel: true },
     tooltip: {
       trigger: 'axis', axisPointer: { type: 'cross' },
-      backgroundColor: '#0f1626', borderColor: '#243453', textStyle: { color: '#e9effb' },
+      backgroundColor: '#17191b', borderColor: '#35383d', textStyle: { color: '#f1efe8' },
     },
-    xAxis: { type: 'category', data: data.map(b => b.date), axisLine: { lineStyle: { color: '#243453' } }, axisLabel: { color: '#8ba0c8' } },
-    yAxis: { scale: true, axisLine: { lineStyle: { color: '#243453' } }, axisLabel: { color: '#8ba0c8', formatter: v => v.toFixed(2) } },
+    xAxis: { type: 'category', data: data.map(b => b.date), axisLine: { lineStyle: { color: '#34383d' } }, axisLabel: { color: '#8f9498' } },
+    yAxis: { scale: true, axisLine: { lineStyle: { color: '#34383d' } }, axisLabel: { color: '#8f9498', formatter: v => v.toFixed(2) } },
     dataZoom: [{ type: 'inside' }, { type: 'slider', height: 14, bottom: 0 }],
     series: [{
       type: 'candlestick',
@@ -188,22 +188,22 @@ async function renderKline(refObj, chartVar, data) {
   chart.setOption({
     backgroundColor: 'transparent',
     tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
-    legend: { data: ['K线', '成交量'], textStyle: { color: '#8ba0c8' } },
+    legend: { data: ['K线', '成交量'], textStyle: { color: '#8f9498' } },
     grid: [
       { left: 55, right: 20, top: 20, height: '62%' },
       { left: 55, right: 20, top: '78%', height: '14%' },
     ],
     xAxis: [
-      { type: 'category', data: dates, boundaryGap: true, axisLabel: { color: '#8ba0c8' } },
+      { type: 'category', data: dates, boundaryGap: true, axisLabel: { color: '#8f9498' } },
       { type: 'category', gridIndex: 1, data: dates, axisLabel: { show: false } },
     ],
     yAxis: [
-      { scale: true, axisLabel: { color: '#8ba0c8' }, splitLine: { lineStyle: { color: '#1a2540' } } },
+      { scale: true, axisLabel: { color: '#8f9498' }, splitLine: { lineStyle: { color: '#24272b' } } },
       { gridIndex: 1, axisLabel: { show: false }, splitLine: { show: false } },
     ],
     dataZoom: [
       { type: 'inside', xAxisIndex: [0, 1], start: 40, end: 100 },
-      { type: 'slider', xAxisIndex: [0, 1], bottom: 0, height: 18, borderColor: '#243453', textStyle: { color: '#8ba0c8' } },
+      { type: 'slider', xAxisIndex: [0, 1], bottom: 0, height: 18, borderColor: '#34383d', textStyle: { color: '#8f9498' } },
     ],
     series: [
       { name: 'K线', type: 'candlestick', data: ohlc, itemStyle: { color: '#ef5350', color0: '#27c46b', borderColor: '#ef5350', borderColor0: '#27c46b' } },
@@ -221,9 +221,9 @@ async function renderEquity(curve) {
     backgroundColor: 'transparent',
     tooltip: { trigger: 'axis' },
     grid: { left: 55, right: 20, top: 20, bottom: 30 },
-    xAxis: { type: 'category', data: curve.map(p => p.date), axisLabel: { color: '#8ba0c8' } },
-    yAxis: { type: 'value', scale: true, axisLabel: { color: '#8ba0c8' }, splitLine: { lineStyle: { color: '#1a2540' } } },
-    series: [{ name: '策略净值', type: 'line', showSymbol: false, data: curve.map(p => p.equity), lineStyle: { color: '#4da8ff', width: 2 }, areaStyle: { color: 'rgba(77,168,255,0.15)' } }],
+    xAxis: { type: 'category', data: curve.map(p => p.date), axisLabel: { color: '#8f9498' } },
+    yAxis: { type: 'value', scale: true, axisLabel: { color: '#8f9498' }, splitLine: { lineStyle: { color: '#24272b' } } },
+    series: [{ name: '策略净值', type: 'line', showSymbol: false, data: curve.map(p => p.equity), lineStyle: { color: '#d7b56d', width: 1.8 }, areaStyle: { color: 'rgba(215,181,109,0.08)' } }],
   })
 }
 
@@ -429,8 +429,8 @@ onUnmounted(() => {
         <SimTradeView />
       </section>
 
-      <!-- AI 中心 -->
-      <section v-show="activeTab === 'AI中心'" class="panel-wrap">
+      <!-- 研究助手 -->
+      <section v-show="activeTab === '研究助手'" class="panel-wrap">
         <AiCenter />
       </section>
 
@@ -452,61 +452,62 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.container { max-width: 1200px; margin: 0 auto; padding: 0 20px 40px; }
-.navbar { display: flex; align-items: center; justify-content: space-between; padding: 16px 0; }
-.brand { display: flex; align-items: center; gap: 10px; font-size: 20px; font-weight: 700; }
-.brand-icon { width: 30px; height: 30px; border-radius: 8px; display: inline-block; object-fit: cover; vertical-align: middle; box-shadow: 0 0 18px rgba(54,174,255,.35); }
+.container { max-width: 1440px; margin: 0 auto; padding: 0 28px 40px; }
+.navbar { display: flex; align-items: center; justify-content: space-between; min-height: 64px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.brand { display: flex; align-items: center; gap: 10px; font-size: 18px; font-weight: 650; letter-spacing: .01em; }
+.brand-icon { width: 28px; height: 28px; border-radius: 5px; display: inline-block; object-fit: cover; vertical-align: middle; }
 .nav-right { display: flex; align-items: center; gap: 12px; }
 .user-chip { display: flex; align-items: center; gap: 10px; }
-.email { color: #8ba0c8; font-size: 13px; }
-.conn { display: flex; align-items: center; gap: 8px; color: #8ba0c8; font-size: 13px; }
-.conn .dot { width: 8px; height: 8px; border-radius: 50%; background: #ef5350; }
-.conn.ok .dot { background: #27c46b; box-shadow: 0 0 8px #27c46b; }
-.tabs { display: flex; gap: 8px; margin: 8px 0 20px; }
-.tab-btn { background: #121a2d; border: 1px solid #243453; color: #8ba0c8; border-radius: 8px; padding: 9px 22px; cursor: pointer; font-size: 14px; }
-.tab-btn.active { background: linear-gradient(135deg, #4da8ff, #a842ff); color: #fff; border-color: transparent; }
+.email { color: var(--muted); font-size: 12px; }
+.conn { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+.conn .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--bad); }
+.conn.ok .dot { background: var(--ok); }
+.tabs { display: flex; gap: 24px; margin: 0 0 18px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+.tab-btn { position: relative; flex: 0 0 auto; color: var(--muted); background: transparent; border: 0; padding: 12px 1px 11px; cursor: pointer; font-size: 13px; font-weight: 550; }
+.tab-btn.active { color: var(--text); }
+.tab-btn.active::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--accent); }
 .panel-wrap { margin-top: 4px; }
-.dual-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+.dual-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
 /* 京东积存金 Card 金色高亮 */
-.rt-card.jd::before { background: linear-gradient(90deg, #f5c542, #ff9d42); }
-.rt-card.jd .rt-price { color: #f5c542; }
+.rt-card.jd::before { background: var(--accent); }
+.rt-card.jd .rt-price { color: var(--accent-strong); }
 .jd-chart { height: 300px; margin-top: 12px; }
-.stack-grid { display: flex; flex-direction: column; gap: 16px; }
-.rt-card { background: #121a2d; border: 1px solid #243453; border-radius: 12px; padding: 18px 20px; position: relative; overflow: hidden; }
-.rt-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, #4da8ff, #a842ff); }
-.rt-name { color: #8ba0c8; font-size: 13px; margin-bottom: 6px; }
-.rt-price { font-size: 30px; font-weight: 700; color: #e9effb; font-variant-numeric: tabular-nums; }
+.stack-grid { display: flex; flex-direction: column; gap: 12px; }
+.rt-card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 15px 18px; position: relative; overflow: hidden; }
+.rt-card::before { content: ''; position: absolute; top: 0; left: 0; bottom: 0; width: 2px; background: #777d84; }
+.rt-name { color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+.rt-price { font-size: 28px; font-weight: 650; color: var(--text); font-variant-numeric: tabular-nums; letter-spacing: -.025em; }
 .rt-sub { display: flex; align-items: center; gap: 12px; margin-top: 6px; font-size: 13px; }
-.rt-muted { color: #5a6b8c; font-size: 12px; }
+.rt-muted { color: var(--subtle); font-size: 11px; }
 .kline-card { margin-bottom: 0; }
 .kline-ctrl { display: flex; gap: 8px; }
 @media (max-width: 900px) { .dual-grid { grid-template-columns: 1fr; } }
-.panel { background: #121a2d; border: 1px solid #243453; border-radius: 12px; padding: 20px; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; }
 .panel-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
-.panel-head h2 { margin: 0; font-size: 18px; color: #e9effb; }
-.chart { width: 100%; background: #0f1626; border: 1px solid #1a2540; border-radius: 8px; }
+.panel-head h2 { margin: 0; font-size: 15px; font-weight: 650; color: var(--text); }
+.chart { width: 100%; background: var(--surface); border: 1px solid #222529; border-radius: var(--radius-sm); }
 .chart.tall { height: 420px; margin-top: 16px; }
 .chart:not(.tall) { height: 300px; margin-top: 12px; }
 .controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.controls label { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #8ba0c8; }
-.num { width: 70px; background: #0f1626; border: 1px solid #243453; color: #e9effb; border-radius: 6px; padding: 6px 8px; }
+.controls label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.num { width: 70px; background: var(--surface); border: 1px solid var(--line-strong); color: var(--text); border-radius: var(--radius-sm); padding: 7px 9px; }
 .num.wide { width: 110px; }
-.select { background: #0f1626; border: 1px solid #243453; color: #e9effb; border-radius: 6px; padding: 6px 10px; }
-.btn { background: #1a2540; border: 1px solid #243453; color: #e9effb; border-radius: 6px; padding: 8px 16px; cursor: pointer; font-size: 14px; }
+.select { background: var(--surface); border: 1px solid var(--line-strong); color: var(--text); border-radius: var(--radius-sm); padding: 7px 10px; }
+.btn { background: #1c1f22; border: 1px solid var(--line-strong); color: var(--text); border-radius: var(--radius-sm); padding: 7px 14px; cursor: pointer; font-size: 13px; font-weight: 550; }
 .btn.small { padding: 5px 12px; font-size: 12px; }
-.btn.primary { background: linear-gradient(135deg, #4da8ff, #a842ff); border: none; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #17140e; }
 .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin: 16px 0; }
-.metric { background: #0f1626; border: 1px solid #1a2540; border-radius: 8px; padding: 12px 14px; }
-.m-label { color: #8ba0c8; font-size: 12px; }
-.m-value { font-size: 20px; font-weight: 700; margin-top: 4px; }
+.metric { background: var(--surface); border: 1px solid #222529; border-radius: var(--radius-sm); padding: 11px 12px; }
+.m-label { color: var(--muted); font-size: 11px; }
+.m-value { font-size: 19px; font-weight: 650; margin-top: 3px; font-variant-numeric: tabular-nums; }
 .pos { color: #27c46b; }
 .neg { color: #ef5350; }
 .error { color: #ef5350; padding: 10px; background: rgba(239,83,80,.1); border-radius: 6px; margin: 12px 0; }
-.hint { color: #8ba0c8; font-size: 12px; margin-top: 10px; }
-.section-sub { color: #8ba0c8; font-size: 15px; margin: 20px 0 8px; }
+.hint { color: var(--subtle); font-size: 11px; margin-top: 9px; }
+.section-sub { color: var(--muted); font-size: 13px; margin: 18px 0 8px; }
 .table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.table th, .table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #1a2540; }
-.table th { color: #8ba0c8; font-weight: 600; }
-.foot { color: #8ba0c8; font-size: 12px; margin-top: 16px; }
+.table th, .table td { text-align: left; padding: 9px 10px; border-bottom: 1px solid #25282c; }
+.table th { color: var(--muted); font-weight: 550; background: #131517; }
+.foot { color: var(--subtle); font-size: 11px; margin-top: 16px; }
 @media (max-width: 700px) { .metrics { grid-template-columns: 1fr 1fr; } }
 </style>

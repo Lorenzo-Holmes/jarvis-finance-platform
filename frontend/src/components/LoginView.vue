@@ -155,31 +155,27 @@ onMounted(() => {
   min-height: 100vh;
   display: flex; align-items: center; justify-content: center;
   padding: 20px;
-  background:
-    radial-gradient(900px 450px at -10% 0%, #213662 0%, transparent 60%),
-    radial-gradient(800px 500px at 120% 20%, #1b3558 0%, transparent 60%),
-    #0b1020;
+  background: var(--bg);
 }
 .auth-card {
   width: 100%; max-width: 400px;
-  background: #121a2d; border: 1px solid #243453; border-radius: 16px;
-  padding: 36px 32px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  padding: 34px 32px;
 }
 .auth-brand { text-align: center; margin-bottom: 24px; }
 .brand-icon {
-  width: 48px; height: 48px; border-radius: 12px; display: inline-block;
+  width: 44px; height: 44px; border-radius: 7px; display: inline-block;
   object-fit: cover;
-  box-shadow: 0 0 24px rgba(54,174,255,.5);
 }
-h1 { color: #e9effb; font-size: 22px; margin: 12px 0 4px; }
-.sub { color: #8ba0c8; font-size: 13px; margin: 0; }
+h1 { color: var(--text); font-size: 21px; font-weight: 650; letter-spacing: .01em; margin: 12px 0 4px; }
+.sub { color: var(--muted); font-size: 12px; margin: 0; }
 .auth-form { display: flex; flex-direction: column; gap: 14px; }
-.field label { display: block; color: #8ba0c8; font-size: 13px; margin-bottom: 6px; }
+.field label { display: block; color: var(--muted); font-size: 12px; margin-bottom: 6px; }
 .field input {
-  width: 100%; background: #0f1626; border: 1px solid #243453; color: #e9effb;
-  border-radius: 8px; padding: 11px 12px; font-size: 14px;
+  width: 100%; background: var(--surface); border: 1px solid var(--line-strong); color: var(--text);
+  border-radius: 4px; padding: 11px 12px; font-size: 14px;
 }
-.field input:focus { outline: none; border-color: #4da8ff; }
+.field input:focus { outline: none; border-color: #72684f; background: #141619; }
 .pwd-row { position: relative; }
 .code-row { display: flex; gap: 8px; }
 .code-row input { flex: 1; min-width: 0; }
@@ -191,11 +187,11 @@ h1 { color: #e9effb; font-size: 22px; margin: 12px 0 4px; }
 .btn.primary.big { margin-top: 4px; padding: 12px; font-size: 15px; font-weight: 600; }
 .error { color: #ef5350; font-size: 13px; }
 .notice { color: #67d6a0; font-size: 13px; }
-.oauth-divider { display: flex; align-items: center; gap: 10px; color: #5a6b8c; font-size: 12px; margin: 20px 0 10px; }
-.oauth-divider::before, .oauth-divider::after { content: ''; height: 1px; background: #243453; flex: 1; }
-.github-btn { width: 100%; padding: 11px; color: #e9effb; border: 1px solid #3b4f72; background: #18243b; }
-.github-btn:hover { border-color: #8ba0c8; }
-.switch { text-align: center; color: #8ba0c8; font-size: 14px; margin-top: 18px; }
-.switch a { color: #4da8ff; cursor: pointer; text-decoration: underline; }
-.hint { text-align: center; color: #5a6b8c; font-size: 12px; margin-top: 8px; }
+.oauth-divider { display: flex; align-items: center; gap: 10px; color: var(--subtle); font-size: 11px; margin: 20px 0 10px; }
+.oauth-divider::before, .oauth-divider::after { content: ''; height: 1px; background: var(--line); flex: 1; }
+.github-btn { width: 100%; padding: 11px; color: var(--text); border: 1px solid var(--line-strong); background: #1b1e21; }
+.github-btn:hover { border-color: #555a60; background: #222529; }
+.switch { text-align: center; color: var(--muted); font-size: 13px; margin-top: 18px; }
+.switch a { color: var(--accent-strong); cursor: pointer; text-decoration: none; }
+.hint { text-align: center; color: var(--subtle); font-size: 11px; margin-top: 8px; }
 </style>

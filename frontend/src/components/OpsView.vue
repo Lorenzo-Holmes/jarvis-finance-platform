@@ -105,18 +105,18 @@ onUnmounted(() => clearInterval(timer))
 </template>
 
 <style scoped>
-.ops { display: flex; flex-direction: column; gap: 16px; }
-.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
-.card { background: #121a2d; border: 1px solid #243453; border-radius: 12px; padding: 20px; }
-.card h2 { margin: 0 0 14px; font-size: 16px; color: #e9effb; }
-.status { display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 999px; border: 1px solid #243453; font-size: 13px; background: rgba(0,0,0,.2); }
-.dot { width: 8px; height: 8px; border-radius: 50%; background: #8ba0c8; }
-.status.ok .dot { background: #27c46b; box-shadow: 0 0 8px #27c46b; }
+.ops { display: flex; flex-direction: column; gap: 12px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; }
+.card h2 { margin: 0 0 12px; font-size: 14px; font-weight: 650; color: var(--text); }
+.status { display: inline-flex; align-items: center; gap: 7px; padding: 5px 8px; border-radius: 3px; border: 1px solid var(--line); font-size: 11px; background: var(--surface); }
+.dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
+.status.ok .dot { background: var(--ok); }
 .status.bad .dot { background: #ef5350; }
 .status.ok { color: #27c46b; }
 .status.bad { color: #ef5350; }
-.small { color: #8ba0c8; font-size: 12px; margin-top: 12px; line-height: 1.7; }
+.small { color: var(--muted); font-size: 11px; margin-top: 10px; line-height: 1.7; }
 .bad { color: #ef5350; }
-.link { color: #88c2ff; text-decoration: none; font-size: 13px; margin-top: 12px; display: inline-block; }
-.value { font-size: 22px; font-weight: 600; color: #e9effb; }
+.link { color: var(--accent-strong); text-decoration: none; font-size: 12px; margin-top: 10px; display: inline-block; }
+.value { font-size: 20px; font-weight: 650; color: var(--text); font-variant-numeric: tabular-nums; }
 </style>
