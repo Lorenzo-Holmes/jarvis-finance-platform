@@ -36,7 +36,24 @@ body {
 }
 button, input, select, textarea { font: inherit; }
 button, select { -webkit-tap-highlight-color: transparent; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+  }
+}
 ::selection { background: rgba(215, 181, 109, .28); }
+* { scrollbar-width: thin; scrollbar-color: #3a3e43 #121416; }
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-track { background: #121416; }
+*::-webkit-scrollbar-thumb { background: #3a3e43; border: 2px solid #121416; border-radius: 999px; }
+*::-webkit-scrollbar-thumb:hover { background: #50555b; }
 
 .container { max-width: 1440px; margin: 0 auto; padding: 0 28px 40px; }
 .navbar { display: flex; align-items: center; justify-content: space-between; min-height: 64px; padding: 10px 0; border-bottom: 1px solid var(--line); }
@@ -117,6 +134,7 @@ h3 { color: var(--muted); font-size: 14px; margin: 18px 0 8px; }
 .table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .table th, .table td { text-align: left; padding: 9px 10px; border-bottom: 1px solid #25282c; }
 .table th { color: var(--muted); font-weight: 550; background: #131517; }
+.table-scroll thead th { position: sticky; top: 0; z-index: 2; box-shadow: 0 1px 0 #25282c; }
 .table tbody tr:hover { background: rgba(255,255,255,.018); }
 
 .foot { display: flex; flex-direction: column; gap: 4px; color: var(--subtle); font-size: 11px; margin-top: 14px; }

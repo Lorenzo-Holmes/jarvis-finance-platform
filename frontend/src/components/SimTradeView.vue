@@ -1,10 +1,17 @@
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { api } from '../api/client'
+import DataState from './common/DataState.vue'
+import AccountStrip from './trading/AccountStrip.vue'
+import MarketTape from './trading/MarketTape.vue'
+import OrderTicket from './trading/OrderTicket.vue'
+import PositionsTable from './trading/PositionsTable.vue'
+import TradeHistory from './trading/TradeHistory.vue'
+import { usePolling } from '../composables/usePolling'
 
 const account = ref(null)
 const trades = ref([])
-const loading = ref(true)
+const initializing = ref(true)
 const msg = ref('')
 const msgType = ref('info')
 const realtimePrices = ref(null)
@@ -19,36 +26,50 @@ const order = reactive({
   leverage: 1,
 })
 
-// 京东积存金由 Java 定时采集并落库，前端只读取统一结构。
+const selectedPrice = computed(() => {
+  if (order.symbol === 'sh518850') return Number(realtimePrices.value?.gold_etf?.price || 0)
+  if (order.symbol === 'hf_XAU') return Number(realtimePrices.value?.london_gold?.price || 0)
+  if (order.symbol === 'jd_zheshang') return Number(jdPrices.value?.zheshang?.price || 0)
+  if (order.symbol === 'jd_minsheng') return Number(jdPrices.value?.minsheng?.price || 0)
+  return 0
+})
+const estimatedNotional = computed(() => selectedPrice.value * Math.max(0, Number(order.quantity || 0)))
+const estimatedMargin = computed(() => order.type === 'BUY'
+  ? estimatedNotional.value / Math.max(1, Number(order.leverage || 1))
+  : estimatedNotional.value)
+const orderReady = computed(() => selectedPrice.value > 0 && Number(order.quantity) > 0)
+
 async function loadJdLive() {
   try {
-    const d = await api.jdPrices()
-    if (d.code === 200 && d.data && Object.keys(d.data).length) {
-      jdPrices.value = d.data
+    const response = await api.jdPrices()
+    if (response.code === 200 && response.data && Object.keys(response.data).length) {
+      jdPrices.value = response.data
     }
-  } catch (e) { /* 保留上一次有效值 */ }
-}
-
-async function load() {
-  try {
-    const [acc, tr, rt] = await Promise.all([
-      api.simAccount(), api.simTrades(20), loadRealtime(),
-    ])
-    account.value = acc.data
-    trades.value = tr.data?.trades || []
-  } catch (e) {
-    msg.value = '加载失败: ' + e
-    msgType.value = 'error'
-  } finally {
-    loading.value = false
-  }
+  } catch (_) { /* 保留上一次有效值 */ }
 }
 
 async function loadRealtime() {
   try {
-    const d = await api.marketPrices()
-    realtimePrices.value = d.data || null
-  } catch (e) { /* 忽略 */ }
+    const response = await api.marketPrices()
+    realtimePrices.value = response.data || null
+  } catch (_) { /* 保留上一次有效值 */ }
+}
+
+async function load() {
+  try {
+    const [accountResponse, tradesResponse] = await Promise.all([
+      api.simAccount(),
+      api.simTrades(20),
+      loadRealtime(),
+    ])
+    if (accountResponse.code !== 200) throw new Error(accountResponse.message || '模拟账户加载失败')
+    if (tradesResponse.code !== 200) throw new Error(tradesResponse.message || '成交记录加载失败')
+    account.value = accountResponse.data
+    trades.value = tradesResponse.data?.trades || []
+  } catch (error) {
+    msg.value = '加载失败: ' + error
+    msgType.value = 'error'
+  }
 }
 
 async function submitOrder() {
@@ -60,269 +81,115 @@ async function submitOrder() {
     type: order.type,
     symbol: order.symbol,
     quantity: Number(order.quantity),
-    leverage: Number(order.leverage),
+    // 后端规定卖出订单杠杆必须为 1；界面隐藏杠杆控件时也要同步修正请求参数。
+    leverage: order.type === 'SELL' ? 1 : Number(order.leverage),
   }
   const samePending = pendingOrderAttempt
     && pendingOrderAttempt.type === current.type
     && pendingOrderAttempt.symbol === current.symbol
     && pendingOrderAttempt.quantity === current.quantity
     && pendingOrderAttempt.leverage === current.leverage
-  if (!samePending) {
-    pendingOrderAttempt = { ...current, id: crypto.randomUUID() }
-  }
+  if (!samePending) pendingOrderAttempt = { ...current, id: crypto.randomUUID() }
 
   try {
-    const res = await api.simOrder(
+    const response = await api.simOrder(
       current.type, current.symbol, current.quantity, current.leverage, pendingOrderAttempt.id,
     )
-    // 收到明确 HTTP 响应后，本次逻辑订单已结束；只有网络异常才保留幂等号供重试。
     pendingOrderAttempt = null
-    if (res.code === 200) {
-      const d = res.data
-      let extra = ''
-      if (d.leverage > 1) extra = ` | 保证金 ${d.margin}, 借款 ${d.loan}`
-      msg.value = res.message + ' | ' + d.message + extra
+    if (response.code === 200) {
+      const data = response.data
+      const extra = data.leverage > 1 ? ` | 保证金 ${data.margin}, 借款 ${data.loan}` : ''
+      msg.value = response.message + ' | ' + data.message + extra
       msgType.value = 'ok'
       await load()
     } else {
-      msg.value = res.message
+      msg.value = response.message
       msgType.value = 'error'
     }
-  } catch (e) {
-    // 网络异常时保留 pendingOrderAttempt；用户重试相同订单会复用同一 clientOrderId。
-    msg.value = '下单失败: ' + e
+  } catch (error) {
+    // 网络异常时保留 clientOrderId，重试相同订单继续使用同一个幂等号。
+    msg.value = '下单失败: ' + error
     msgType.value = 'error'
   } finally {
     submitting.value = false
   }
 }
 
-function fmt(n) {
-  return n == null ? '-' : Number(n).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-}
-function fmtPct(n) {
-  return n == null ? '-' : Number(n).toFixed(2) + '%'
-}
-function posClass(n) { return n >= 0 ? 'pos' : 'neg' }
-function riskValueClass(n) { return n < 15 ? 'neg' : (n < 25 ? 'warn' : '') }
-function tradeLabel(type) {
-  if (type === 'BUY') return '买入'
-  if (type === 'FORCE_SELL') return '强平'
-  return '卖出'
-}
-
-async function quickSell(symbol, qty) {
-  if (!confirm('确认卖出全部 ' + qty + ' 股(' + symbol + ')?')) return
+async function quickSell(symbol, quantity) {
+  if (!confirm(`确认卖出全部 ${quantity} 股(${symbol})?`)) return
   try {
-    const res = await api.simOrder('SELL', symbol, Number(qty), 1)
-    msg.value = res.data?.message || res.message
-    msgType.value = res.code === 200 ? 'ok' : 'error'
+    const response = await api.simOrder('SELL', symbol, Number(quantity), 1)
+    msg.value = response.data?.message || response.message
+    msgType.value = response.code === 200 ? 'ok' : 'error'
     await load()
-  } catch (e) {
-    msg.value = '卖出失败: ' + e
+  } catch (error) {
+    msg.value = '卖出失败: ' + error
     msgType.value = 'error'
   }
 }
 
-onMounted(() => { load(); loadJdLive() })
+const polling = usePolling(async () => {
+  await Promise.all([load(), loadJdLive()])
+}, 30000)
+
+async function initialize() {
+  initializing.value = true
+  await Promise.all([load(), loadJdLive()])
+  initializing.value = false
+}
+
+onMounted(async () => {
+  await initialize()
+  polling.start()
+})
 </script>
 
 <template>
   <div class="sim">
-    <!-- 京东积存金实时价 (直连京东, 两个Card) -->
-    <div v-if="jdPrices" class="rt-grid">
-      <div v-for="(p, key) in jdPrices" :key="key" class="rt-card jd">
-        <div class="rt-name">{{ p.label }}</div>
-        <div class="rt-price jd-price">{{ fmt(p.price) }}</div>
-        <div class="rt-sub">
-          <span :class="(p.change || 0) >= 0 ? 'pos' : 'neg'">
-            {{ p.change }} ({{ fmtPct(p.change_pct) }})
-          </span>
-          <span class="rt-muted">{{ p.time }}</span>
-        </div>
-      </div>
+    <div class="sim-head">
+      <div><h2>模拟交易工作台</h2><span>账户资产、订单票据、持仓与成交记录</span></div>
+      <span class="sim-mode">PAPER TRADING</span>
     </div>
 
-    <!-- 实时价格 (黄金ETF + 伦敦金) -->
-    <div v-if="realtimePrices" class="rt-grid">
-      <div v-for="(m, key) in realtimePrices" :key="key" class="rt-card">
-        <div class="rt-name">{{ m.name }}</div>
-        <div class="rt-price">{{ fmt(m.price) }}</div>
-        <div class="rt-sub">
-          <span :class="(m.change || 0) >= 0 ? 'pos' : 'neg'">
-            {{ m.change }} ({{ fmtPct(m.change_pct) }})
-          </span>
-          <span class="rt-muted">昨收 {{ m.prev_close }}</span>
-        </div>
-      </div>
-    </div>
+    <DataState v-if="initializing && !account" state="loading" title="正在加载模拟账户"
+               message="正在同步账户资产、行情与最近成交。" />
+    <DataState v-else-if="!account && msgType === 'error'" state="error" title="模拟账户加载失败"
+               :message="msg" retryable @retry="initialize" />
 
-    <!-- 账户概览 -->
-    <div v-if="account" class="cards">
-      <div class="card">
-        <div class="card-title">总资产</div>
-        <div class="card-value">{{ fmt(account.totalAssets) }}</div>
-      </div>
-      <div class="card">
-        <div class="card-title">可用资金</div>
-        <div class="card-value accent">{{ fmt(account.cash) }}</div>
-      </div>
-      <div class="card">
-        <div class="card-title">持仓市值</div>
-        <div class="card-value">{{ fmt(account.marketValue) }}</div>
-      </div>
-      <div class="card">
-        <div class="card-title">净资产</div>
-        <div class="card-value">{{ fmt(account.netEquity) }}</div>
-      </div>
-      <div class="card">
-        <div class="card-title">借款</div>
-        <div class="card-value warn" v-if="account.loanBalance > 0">{{ fmt(account.loanBalance) }}</div>
-        <div class="card-value" v-else>0</div>
-      </div>
-      <div class="card">
-        <div class="card-title">总收益率</div>
-        <div class="card-value" :class="posClass(account.totalReturnPct)">
-          {{ fmtPct(account.totalReturnPct) }}
-        </div>
-      </div>
-      <div class="card" v-if="account.riskStatus && account.riskStatus !== 'NONE'">
-        <div class="card-title">维持保证金率
-          <span class="risk-badge" :class="'rk-' + String(account.riskStatus).toLowerCase()">{{ account.riskStatus }}</span>
-        </div>
-        <div class="card-value" :class="riskValueClass(account.maintMarginPct)">{{ fmtPct(account.maintMarginPct) }}</div>
-      </div>
-    </div>
+    <template v-if="account">
+      <AccountStrip :account="account" />
+      <MarketTape :realtime-prices="realtimePrices" :jd-prices="jdPrices" />
 
-    <!-- 下单 -->
-    <div class="panel">
-      <div class="panel-head"><h2>模拟盘下单</h2></div>
-      <div class="order-form">
-        <select v-model="order.symbol" class="select">
-          <option value="sh518850">黄金ETF华夏 (sh518850)</option>
-          <option value="hf_XAU">伦敦金 (hf_XAU)</option>
-          <option value="jd_zheshang">浙商积存金 (jd_zheshang)</option>
-          <option value="jd_minsheng">民生积存金 (jd_minsheng)</option>
-        </select>
-        <div class="type-toggle">
-          <button :class="['btn', order.type === 'BUY' ? 'buy' : '']" @click="order.type = 'BUY'">买入</button>
-          <button :class="['btn', order.type === 'SELL' ? 'sell' : '']" @click="order.type = 'SELL'">卖出</button>
-        </div>
-        <input type="number" v-model.number="order.quantity" class="num wide" min="1" placeholder="数量" />
-        <div v-if="order.type === 'BUY'" class="lev-group">
-          <label class="lev-label">杠杆</label>
-          <div class="lev-btns">
-            <button v-for="l in [1, 2, 3, 5]" :key="l"
-                    :class="['lev-btn', order.leverage === l ? 'active' : '']"
-                    @click="order.leverage = l">{{ l }}x</button>
-          </div>
-        </div>
-        <button class="btn primary" @click="submitOrder" :disabled="submitting">
-          {{ submitting ? '提交中…' : `提交 ${order.type === 'BUY' ? '买入' : '卖出'}` }}
-        </button>
+      <div class="trade-layout">
+      <OrderTicket
+        v-model:symbol="order.symbol"
+        v-model:type="order.type"
+        v-model:quantity="order.quantity"
+        v-model:leverage="order.leverage"
+        :selected-price="selectedPrice"
+        :estimated-notional="estimatedNotional"
+        :estimated-margin="estimatedMargin"
+        :ready="orderReady"
+        :submitting="submitting"
+        :message="msg"
+        :message-type="msgType"
+        @submit="submitOrder"
+      />
+        <PositionsTable :account="account" @quick-sell="quickSell" />
       </div>
-      <div v-if="msg" class="msg" :class="msgType">{{ msg }}</div>
-      <div v-if="order.type === 'BUY' && order.leverage > 1" class="lev-tip">
-        ⚠️ {{ order.leverage }}x 杠杆：仅冻结 {{ 100 / order.leverage }}% 保证金，其余为借款，价格下跌可能触发强平！
-      </div>
-    </div>
 
-    <!-- 当前持仓 -->
-    <div class="panel" v-if="account && Object.keys(account.positions).length">
-      <div class="panel-head"><h2>当前持仓</h2></div>
-      <table class="table">
-        <thead><tr><th>标的</th><th>数量</th><th>成本</th><th>现价</th><th>市值</th><th>杠杆</th><th>借款</th><th>盈亏</th><th>盈亏%</th><th>操作</th></tr></thead>
-        <tbody>
-          <tr v-for="(p, sym) in account.positions" :key="sym">
-            <td>{{ sym }}</td>
-            <td>{{ p.quantity }}</td>
-            <td>{{ p.avgCost }}</td>
-            <td>
-              {{ p.currentPrice }}
-              <span v-if="p.stale" class="stale-tag" :title="`最后行情：${p.quoteTime || '-'}`">行情过期</span>
-            </td>
-            <td>{{ fmt(p.marketValue) }}</td>
-            <td><span v-if="p.leverage > 1" class="lev-chip">{{ p.leverage }}x</span><span v-else>1x</span></td>
-            <td :class="p.loan > 0 ? 'warn' : ''">{{ p.loan > 0 ? fmt(p.loan) : '-' }}</td>
-            <td :class="posClass(p.profit)">{{ fmt(p.profit) }}</td>
-            <td :class="posClass(p.profitPct)">{{ fmtPct(p.profitPct) }}</td>
-            <td>
-              <button class="btn sell small" @click="quickSell(sym, p.quantity)">全平</button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-    <div v-else class="panel empty">暂无持仓，买入第一笔开始模拟交易</div>
-
-    <!-- 交易记录 -->
-    <div class="panel" v-if="trades.length">
-      <div class="panel-head"><h2>交易记录</h2></div>
-      <table class="table">
-        <thead><tr><th>时间</th><th>标的</th><th>方向</th><th>杠杆</th><th>价格</th><th>数量</th><th>金额</th></tr></thead>
-        <tbody>
-          <tr v-for="t in trades" :key="t.id">
-            <td>{{ t.createdAt?.replace('T', ' ').slice(0, 19) }}</td>
-            <td>{{ t.symbol }}</td>
-            <td :class="t.type === 'BUY' ? 'pos' : 'neg'">{{ tradeLabel(t.type) }}</td>
-            <td>{{ t.leverage > 1 ? t.leverage + 'x' : '-' }}</td>
-            <td>{{ t.price }}</td>
-            <td>{{ t.quantity }}</td>
-            <td>{{ fmt(t.amount) }}</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+      <TradeHistory :trades="trades" />
+    </template>
   </div>
 </template>
 
 <style scoped>
-.sim { display: flex; flex-direction: column; gap: 12px; }
-.rt-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.rt-card.jd::before { background: var(--accent); }
-.jd-price { color: var(--accent-strong); }
-.rt-card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 15px 18px; position: relative; overflow: hidden; }
-.rt-card::before { content: ''; position: absolute; top: 0; left: 0; bottom: 0; width: 2px; background: #777d84; }
-.rt-name { color: var(--muted); font-size: 12px; margin-bottom: 4px; }
-.rt-price { font-size: 28px; font-weight: 650; font-variant-numeric: tabular-nums; letter-spacing: -.025em; }
-.rt-sub { display: flex; align-items: center; gap: 12px; margin-top: 6px; font-size: 13px; }
-.rt-muted { color: var(--subtle); font-size: 11px; }
-.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; }
-.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; }
-.card-title { color: var(--muted); font-size: 11px; margin-bottom: 6px; }
-.card-value { font-size: 24px; font-weight: 650; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
-.card-value.accent { color: var(--accent-strong); }
-.panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; }
-.panel-head h2 { margin: 0 0 14px; font-size: 15px; font-weight: 650; }
-.panel.empty { color: var(--subtle); text-align: center; padding: 30px; }
-.order-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
-.select, .num { background: var(--surface); border: 1px solid var(--line-strong); color: var(--text); border-radius: var(--radius-sm); padding: 9px 11px; }
-.num.wide { width: 120px; }
-.type-toggle { display: flex; gap: 8px; }
-.lev-group { display: flex; align-items: center; gap: 8px; }
-.lev-label { color: var(--muted); font-size: 12px; }
-.lev-btns { display: flex; gap: 6px; }
-.lev-btn { background: var(--surface); border: 1px solid var(--line-strong); color: var(--muted); border-radius: var(--radius-sm); padding: 9px 12px; cursor: pointer; font-size: 12px; }
-.lev-btn.active { background: #2a2420; border-color: #7b6548; color: var(--accent-strong); font-weight: 650; }
-.lev-chip { background: var(--accent-soft); color: var(--accent-strong); border-radius: 3px; padding: 2px 6px; font-size: 11px; font-weight: 650; }
-.lev-tip { margin-top: 12px; padding: 10px 12px; border-radius: 6px; background: rgba(241,196,15,.1); color: #f1c40f; font-size: 13px; border: 1px solid rgba(241,196,15,.3); }
-.risk-badge { margin-left: 8px; border-radius: 3px; padding: 2px 6px; font-size: 10px; font-weight: 650; }
-.rk-safe { background: rgba(39,196,107,.15); color: #27c46b; }
-.rk-warn { background: rgba(241,196,15,.15); color: #f1c40f; }
-.rk-danger { background: rgba(239,83,80,.2); color: #ef5350; }
-.stale-tag { display: inline-block; margin-left: 6px; padding: 1px 5px; border-radius: 4px; background: rgba(241,196,15,.14); color: #f1c40f; font-size: 10px; vertical-align: 1px; }
-.btn.small { padding: 4px 10px; font-size: 12px; }
-.warn { color: #f1c40f; }
-.btn.buy { background: rgba(39,196,107,.15); color: #27c46b; border-color: #27c46b; }
-.btn.sell { background: rgba(239,83,80,.15); color: #ef5350; border-color: #ef5350; }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: #17140e; padding: 9px 16px; font-weight: 650; }
-.msg { margin-top: 12px; padding: 10px; border-radius: 6px; font-size: 13px; }
-.msg.ok { background: rgba(39,196,107,.12); color: #27c46b; }
-.msg.error { background: rgba(239,83,80,.12); color: #ef5350; }
-.table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.table th, .table td { text-align: left; padding: 9px 10px; border-bottom: 1px solid #25282c; }
-.table th { color: var(--muted); font-weight: 550; background: #131517; }
-.pos { color: #27c46b; }
-.neg { color: #ef5350; }
-@media (max-width: 700px) { .cards { grid-template-columns: 1fr 1fr; } }
+.sim { display: flex; flex-direction: column; gap: 10px; }
+.sim-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; min-height: 38px; }
+.sim-head h2 { margin: 0; color: var(--text); font-size: 16px; font-weight: 680; }
+.sim-head span { display: block; margin-top: 3px; color: var(--subtle); font-size: 10px; }
+.sim-mode { margin: 0 !important; color: var(--accent-strong) !important; border: 1px solid #51462f; background: rgba(201,166,95,.05); border-radius: 3px; padding: 3px 6px; font-size: 8px !important; font-weight: 700; letter-spacing: .08em; }
+.trade-layout { display: grid; grid-template-columns: 310px minmax(0, 1fr); gap: 10px; align-items: stretch; }
+@media (max-width: 860px) { .trade-layout { grid-template-columns: 1fr; } }
+@media (max-width: 600px) { .sim-head { align-items: flex-start; flex-direction: column; } }
 </style>

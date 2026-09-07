@@ -97,41 +97,41 @@ onMounted(() => {
   <div class="auth-page">
     <div class="auth-card">
       <div class="auth-brand">
-        <img src="/favicon.png" class="brand-icon" alt="logo" />
+        <img src="/favicon.svg" class="brand-icon" alt="Jarvis Finance" />
         <h1>贾维斯 · 金融投研</h1>
-        <p class="sub">DeepSeek 驱动 · 模拟盘交易</p>
+        <p class="sub">行情 · 策略 · 模拟交易</p>
       </div>
 
       <form @submit.prevent="submit" class="auth-form">
         <div v-if="mode === 'register'" class="field">
-          <label>昵称</label>
-          <input v-model="displayName" type="text" placeholder="如何称呼你" />
+          <label for="auth-display-name">昵称</label>
+          <input id="auth-display-name" v-model="displayName" type="text" placeholder="如何称呼你" />
         </div>
         <div class="field">
-          <label>邮箱</label>
-          <input v-model="email" type="email" placeholder="you@example.com" autocomplete="email" />
+          <label for="auth-email">邮箱</label>
+          <input id="auth-email" v-model="email" type="email" placeholder="you@example.com" autocomplete="email" />
         </div>
         <div class="field">
-          <label>密码</label>
+          <label for="auth-password">密码</label>
           <div class="pwd-row">
-            <input :type="showPwd ? 'text' : 'password'" v-model="password"
+            <input id="auth-password" :type="showPwd ? 'text' : 'password'" v-model="password"
                    :placeholder="mode === 'register' ? '至少10位' : '请输入密码'"
                    :autocomplete="mode === 'register' ? 'new-password' : 'current-password'" />
-            <button type="button" class="eye" @click="showPwd = !showPwd">{{ showPwd ? '🙈' : '👁' }}</button>
+            <button type="button" class="eye" :aria-label="showPwd ? '隐藏密码' : '显示密码'" @click="showPwd = !showPwd">{{ showPwd ? '🙈' : '👁' }}</button>
           </div>
         </div>
         <div v-if="mode === 'register'" class="field">
-          <label>邮箱验证码</label>
+          <label for="auth-code">邮箱验证码</label>
           <div class="code-row">
-            <input v-model="verificationCode" inputmode="numeric" maxlength="6" placeholder="6位验证码" />
+            <input id="auth-code" v-model="verificationCode" inputmode="numeric" maxlength="6" placeholder="6位验证码" />
             <button type="button" class="btn code-btn" :disabled="codeSending" @click="sendVerificationCode">
               {{ codeSending ? '发送中...' : (codeSent ? '重新发送' : '获取验证码') }}
             </button>
           </div>
         </div>
 
-        <div v-if="error" class="error">{{ error }}</div>
-        <div v-if="notice" class="notice">{{ notice }}</div>
+        <div v-if="error" class="error" role="alert">{{ error }}</div>
+        <div v-if="notice" class="notice" role="status" aria-live="polite">{{ notice }}</div>
 
         <button type="submit" class="btn primary big" :disabled="loading">
           {{ loading ? '处理中...' : (mode === 'login' ? '登 录' : '注册并开通模拟盘') }}
@@ -143,7 +143,7 @@ onMounted(() => {
 
       <div class="switch">
         {{ mode === 'login' ? '还没有账号？' : '已有账号？' }}
-        <a @click="switchMode">{{ mode === 'login' ? '注册' : '去登录' }}</a>
+        <button type="button" class="switch-link" @click="switchMode">{{ mode === 'login' ? '注册' : '去登录' }}</button>
       </div>
       <div class="hint">注册即自动开通 $100,000 模拟账户</div>
     </div>
@@ -164,8 +164,8 @@ onMounted(() => {
 }
 .auth-brand { text-align: center; margin-bottom: 24px; }
 .brand-icon {
-  width: 44px; height: 44px; border-radius: 7px; display: inline-block;
-  object-fit: cover;
+  width: 48px; height: 48px; display: inline-block;
+  object-fit: contain;
 }
 h1 { color: var(--text); font-size: 21px; font-weight: 650; letter-spacing: .01em; margin: 12px 0 4px; }
 .sub { color: var(--muted); font-size: 12px; margin: 0; }
@@ -192,6 +192,6 @@ h1 { color: var(--text); font-size: 21px; font-weight: 650; letter-spacing: .01e
 .github-btn { width: 100%; padding: 11px; color: var(--text); border: 1px solid var(--line-strong); background: #1b1e21; }
 .github-btn:hover { border-color: #555a60; background: #222529; }
 .switch { text-align: center; color: var(--muted); font-size: 13px; margin-top: 18px; }
-.switch a { color: var(--accent-strong); cursor: pointer; text-decoration: none; }
+.switch-link { border: 0; background: transparent; color: var(--accent-strong); cursor: pointer; padding: 0; font-size: inherit; }
 .hint { text-align: center; color: var(--subtle); font-size: 11px; margin-top: 8px; }
 </style>

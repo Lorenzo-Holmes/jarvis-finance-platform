@@ -1,15 +1,22 @@
 import * as echarts from 'echarts/core'
 import { BarChart, CandlestickChart, LineChart } from 'echarts/charts'
-import { DataZoomComponent, GridComponent, LegendComponent, TooltipComponent } from 'echarts/components'
+import {
+  DataZoomInsideComponent,
+  DataZoomSliderComponent,
+  GridComponent,
+  LegendPlainComponent,
+  TooltipComponent,
+} from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 
 echarts.use([
   BarChart,
   CandlestickChart,
   LineChart,
-  DataZoomComponent,
+  DataZoomInsideComponent,
+  DataZoomSliderComponent,
   GridComponent,
-  LegendComponent,
+  LegendPlainComponent,
   TooltipComponent,
   CanvasRenderer,
 ])

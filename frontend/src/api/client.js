@@ -22,7 +22,13 @@ export { API_BASE }
 let csrfToken = null
 let csrfPromise = null
 
-async function ensureCsrfToken(base) {
+function resetCsrfToken() {
+  csrfToken = null
+  csrfPromise = null
+}
+
+async function ensureCsrfToken(base, force = false) {
+  if (force) resetCsrfToken()
   if (csrfToken) return csrfToken
   if (!csrfPromise) {
     csrfPromise = fetch(`${base}/api/auth/csrf`, { credentials: 'include' })
@@ -46,12 +52,25 @@ async function request(base, path, options = {}, params = {}) {
   const method = (options.method || 'GET').toUpperCase()
   const headers = { ...(options.headers || {}) }
   if (options.body != null && !headers['Content-Type']) headers['Content-Type'] = 'application/json'
-  if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
-    headers['X-XSRF-TOKEN'] = await ensureCsrfToken(base)
+  const csrfRequired = !['GET', 'HEAD', 'OPTIONS'].includes(method)
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const requestHeaders = { ...headers }
+    if (csrfRequired) {
+      requestHeaders['X-XSRF-TOKEN'] = await ensureCsrfToken(base, attempt > 0)
+    }
+    const res = await fetch(url, {
+      ...options,
+      method,
+      headers: requestHeaders,
+      credentials: 'include',
+    })
+    const data = await res.json().catch(() => ({}))
+    // 浏览器可能保留了旧的 XSRF cookie；刷新一次 token，避免把 CSRF 失败呈现成登录失败。
+    if (attempt === 0 && csrfRequired && path.startsWith('/api/auth/') && (res.status === 401 || res.status === 403)) {
+      continue
+    }
+    return data
   }
-  const res = await fetch(url, { ...options, method, headers, credentials: 'include' })
-  const data = await res.json().catch(() => ({}))
-  return data
 }
 
 function get(base, path, params) { return request(base, path, { method: 'GET' }, params) }

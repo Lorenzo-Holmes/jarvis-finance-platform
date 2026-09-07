@@ -1,6 +1,16 @@
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { api } from '../api/client'
+import InstrumentList from './market/InstrumentList.vue'
+import DataState from './common/DataState.vue'
+import QuoteDetail from './market/QuoteDetail.vue'
+import TechnicalSummary from './market/TechnicalSummary.vue'
+import ResearchRail from './market/ResearchRail.vue'
+import { useMarketChart } from '../composables/useMarketChart'
+import { usePolling } from '../composables/usePolling'
+import { useLatestRequest } from '../composables/useLatestRequest'
+import { useFreshness } from '../composables/useFreshness'
+import { formatNumber, formatPercent } from '../utils/formatters'
 
 const market = ref('a_share')
 const selectedSymbol = ref('')
@@ -14,10 +24,13 @@ const loading = ref(false)
 const error = ref('')
 const analysis = ref('')
 const analysisLoading = ref(false)
-const chartRef = ref(null)
-let chart = null
-let pollTimer = null
-let echartsPromise = null
+const latestDataRequest = useLatestRequest()
+const freshness = useFreshness(90000)
+const marketChart = useMarketChart()
+const chartRef = marketChart.elementRef
+const polling = usePolling(async () => {
+  if (!loading.value) await loadData()
+}, 30000)
 
 const marketOptions = [
   { value: 'a_share', label: 'A股' },
@@ -31,21 +44,17 @@ const marketIntervals = computed(() => market.value === 'a_share'
 
 const currentInstruments = computed(() => instruments.value.filter(i => i.market === market.value))
 const currentInstrument = computed(() => currentInstruments.value.find(i => i.symbol === selectedSymbol.value))
+const currentMarketLabel = computed(() => marketOptions.find(item => item.value === market.value)?.label || '市场')
+const currentIntervalLabel = computed(() => marketIntervals.value.find(item => item.value === interval.value)?.label || interval.value)
+const chartState = computed(() => {
+  if (loading.value && !kline.value.length) return 'loading'
+  if (error.value && !kline.value.length) return 'error'
+  if (!loading.value && selectedSymbol.value && !kline.value.length) return 'empty'
+  return ''
+})
 
-function fmt(value) {
-  if (value == null || Number.isNaN(Number(value))) return '-'
-  return Number(value).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 4 })
-}
-
-function fmtPct(value) {
-  if (value == null || Number.isNaN(Number(value))) return '-'
-  return `${Number(value).toFixed(2)}%`
-}
-
-async function getEcharts() {
-  if (!echartsPromise) echartsPromise = import('../charts/echarts')
-  return echartsPromise
-}
+const fmt = value => formatNumber(value, 2, 4)
+const fmtPct = value => formatPercent(value)
 
 async function loadInstruments() {
   const response = await api.marketInstruments()
@@ -68,68 +77,50 @@ function chooseDefaultSymbol() {
 
 async function loadData() {
   if (!selectedSymbol.value) return
+  const requestVersion = latestDataRequest.begin()
+  const requestMarket = market.value
+  const requestSymbol = selectedSymbol.value
+  const requestInterval = interval.value
   loading.value = true
   error.value = ''
   try {
     const [quoteResponse, klineResponse] = await Promise.all([
-      api.marketAssetQuote(market.value, selectedSymbol.value),
-      api.marketAssetKline(market.value, selectedSymbol.value, interval.value, 120),
+      api.marketAssetQuote(requestMarket, requestSymbol),
+      api.marketAssetKline(requestMarket, requestSymbol, requestInterval, 120),
     ])
+    if (!latestDataRequest.isLatest(requestVersion)) return
     if (quoteResponse.code !== 200) throw new Error(quoteResponse.message || '报价加载失败')
     if (klineResponse.code !== 200) throw new Error(klineResponse.message || 'K线加载失败')
     quote.value = quoteResponse.data
     kline.value = klineResponse.data?.data || []
+    freshness.touch()
     range.value = klineResponse.data?.range || null
     technicalAnalysis.value = klineResponse.data?.analysis || null
     await nextTick()
-    await renderChart()
+    if (latestDataRequest.isLatest(requestVersion)) await renderChart()
   } catch (e) {
-    error.value = e?.message || String(e)
+    if (latestDataRequest.isLatest(requestVersion)) error.value = e?.message || String(e)
   } finally {
-    loading.value = false
+    if (latestDataRequest.isLatest(requestVersion)) loading.value = false
   }
 }
 
 async function renderChart() {
-  if (!chartRef.value) return
-  const echarts = await getEcharts()
-  chart ||= echarts.init(chartRef.value)
-  chart.setOption({
-    backgroundColor: 'transparent',
-    grid: { left: 55, right: 20, top: 24, bottom: 42 },
-    tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
-    xAxis: {
-      type: 'category',
-      data: kline.value.map(item => item.date),
-      axisLabel: { color: '#8f9498', hideOverlap: true },
-      axisLine: { lineStyle: { color: '#34383d' } },
-    },
-    yAxis: {
-      scale: true,
-      axisLabel: { color: '#8f9498' },
-      splitLine: { lineStyle: { color: '#24272b' } }
-    },
-    dataZoom: [{ type: 'inside' }, { type: 'slider', height: 18, bottom: 4 }],
-    series: [{
-      name: 'K线',
-      type: 'candlestick',
-      data: kline.value.map(item => [item.open, item.close, item.low, item.high]),
-      itemStyle: { color: '#ef5350', color0: '#27c46b', borderColor: '#ef5350', borderColor0: '#27c46b' },
-    }, {
-      name: 'SMA20',
-      type: 'line',
-      data: kline.value.map(item => item.sma20 ?? '-'),
-      showSymbol: false,
-      lineStyle: { color: '#d7b56d', width: 1.5 },
-    }, {
-      name: 'EMA12',
-      type: 'line',
-      data: kline.value.map(item => item.ema12 ?? '-'),
-      showSymbol: false,
-      lineStyle: { color: '#8f989f', width: 1.2 },
-    }],
-  }, true)
+  await marketChart.renderCandles(kline.value, {
+    withVolume: false,
+    visibleCount: 60,
+    overlays: [
+      { name: 'SMA20', key: 'sma20', color: '#d7b56d', width: 1.35 },
+      { name: 'EMA12', key: 'ema12', color: '#8f989f', width: 1.1 },
+    ],
+  })
 }
+
+function resizeChart() {
+  marketChart.resize()
+}
+
+defineExpose({ resizeChart })
 
 async function runAnalysis() {
   if (!quote.value || analysisLoading.value) return
@@ -172,125 +163,109 @@ watch([selectedSymbol, interval], () => {
 
 onMounted(async () => {
   await refresh()
-  pollTimer = setInterval(() => {
-    if (!loading.value) loadData()
-  }, 30000)
-  window.addEventListener('resize', () => chart?.resize())
-})
-
-onUnmounted(() => {
-  clearInterval(pollTimer)
-  chart?.dispose()
+  polling.start()
 })
 </script>
 
 <template>
   <div class="cross-market">
-    <div class="panel">
-      <div class="panel-head">
-        <div>
-          <h2>多市场行情与分析</h2>
-          <div class="hint">A股、美股、加密货币 · 公开行情源 · 每 30 秒刷新</div>
-        </div>
-        <div class="controls">
-          <select v-model="market" class="select">
-            <option v-for="item in marketOptions" :key="item.value" :value="item.value">{{ item.label }}</option>
-          </select>
-          <select v-model="selectedSymbol" class="select">
-            <option v-for="item in currentInstruments" :key="item.symbol" :value="item.symbol">
-              {{ item.name }} ({{ item.symbol }})
-            </option>
-          </select>
-          <select v-model="interval" class="select">
-            <option v-for="item in marketIntervals" :key="item.value" :value="item.value">{{ item.label }}</option>
-          </select>
-          <button class="btn" @click="refresh" :disabled="loading">{{ loading ? '加载中…' : '刷新' }}</button>
-        </div>
+    <div class="cross-toolbar">
+      <div class="market-switch" role="tablist" aria-label="市场切换">
+        <button v-for="item in marketOptions" :key="item.value" type="button" class="market-tab"
+                role="tab" :aria-selected="market === item.value"
+                :class="{ active: market === item.value }" @click="market = item.value">
+          {{ item.label }}
+        </button>
       </div>
-
-      <div v-if="error" class="error">{{ error }}</div>
-
-      <div v-if="quote" class="quote-grid">
-        <div class="quote-main">
-          <div class="hint">{{ currentInstrument?.name || quote.name }} · {{ quote.currency }}</div>
-          <div class="quote-price">{{ fmt(quote.price) }}</div>
-          <div :class="Number(quote.change || 0) >= 0 ? 'pos' : 'neg'">
-            {{ fmt(quote.change) }} ({{ fmtPct(quote.change_pct) }})
-          </div>
+      <div class="toolbar-right">
+        <div class="period-switch" role="group" aria-label="K线周期">
+          <button v-for="item in marketIntervals" :key="item.value" type="button" class="period-btn"
+                  :aria-pressed="interval === item.value"
+                  :class="{ active: interval === item.value }" @click="interval = item.value">
+            {{ item.label }}
+          </button>
         </div>
-        <div class="quote-meta">
-          <div>昨收 <b>{{ fmt(quote.prev_close) }}</b></div>
-          <div>开盘 <b>{{ fmt(quote.open) }}</b></div>
-          <div>最高/最低 <b>{{ fmt(quote.high) }} / {{ fmt(quote.low) }}</b></div>
-          <div class="hint">数据源：{{ quote.source }} · {{ quote.quote_time }}</div>
-        </div>
-      </div>
-
-      <div ref="chartRef" class="chart tall"></div>
-      <div v-if="range" class="hint">区间 {{ range.start }} ~ {{ range.end }}（{{ range.count }} 根）</div>
-
-      <div v-if="technicalAnalysis?.status === 'ok'" class="technical-panel">
-        <div class="technical-head">
-          <h3>技术指标摘要</h3>
-          <span class="hint">基于当前周期历史 K 线计算</span>
-        </div>
-        <div class="technical-grid">
-          <div><span>趋势</span><b :class="technicalAnalysis.trend">{{ technicalAnalysis.trend_label }}</b></div>
-          <div><span>动能</span><b>{{ technicalAnalysis.momentum_label }}</b></div>
-          <div><span>RSI(14)</span><b>{{ fmt(technicalAnalysis.indicators?.rsi14) }}</b></div>
-          <div><span>MACD</span><b>{{ fmt(technicalAnalysis.indicators?.macd) }}</b></div>
-          <div><span>20期支撑</span><b>{{ fmt(technicalAnalysis.support_20) }}</b></div>
-          <div><span>20期阻力</span><b>{{ fmt(technicalAnalysis.resistance_20) }}</b></div>
-        </div>
-        <div class="hint disclaimer">{{ technicalAnalysis.disclaimer }}</div>
+        <span class="refresh-note" :class="{ stale: freshness.stale }">{{ freshness.stale ? '数据可能陈旧' : `30s 自动刷新 · ${freshness.label}` }}</span>
+        <button type="button" class="btn" @click="refresh" :disabled="loading">{{ loading ? '加载中…' : '刷新' }}</button>
       </div>
     </div>
 
-    <div class="panel analysis-panel">
-      <div class="panel-head">
-        <h2>研究解读</h2>
-        <button class="btn primary" @click="runAnalysis" :disabled="!quote || analysisLoading">
-          {{ analysisLoading ? '分析中…' : '生成研究解读' }}
-        </button>
-      </div>
-      <div v-if="analysis" class="out">{{ analysis }}</div>
-      <div v-else class="hint">基于当前行情与技术指标生成研究性解读，不构成投资建议。</div>
+    <div v-if="error && kline.length" class="error">{{ error }}</div>
+
+    <div class="cross-layout">
+      <InstrumentList
+        :market-label="currentMarketLabel"
+        :instruments="currentInstruments"
+        :selected-symbol="selectedSymbol"
+        @select="selectedSymbol = $event"
+      />
+
+      <main class="panel chart-panel">
+        <div class="symbol-head">
+          <div class="symbol-title">
+            <div><b>{{ currentInstrument?.name || quote?.name || '选择标的' }}</b><span>{{ selectedSymbol }}</span></div>
+            <small>{{ currentMarketLabel }} · {{ quote?.currency || '-' }} · {{ quote?.source || '公开行情源' }}</small>
+          </div>
+          <div v-if="quote" class="headline-quote">
+            <b>{{ fmt(quote.price) }}</b>
+            <span :class="Number(quote.change || 0) >= 0 ? 'pos' : 'neg'">{{ fmt(quote.change) }} · {{ fmtPct(quote.change_pct) }}</span>
+          </div>
+        </div>
+        <div class="chart-shell">
+          <div ref="chartRef" class="chart tall"></div>
+          <DataState v-if="chartState" :state="chartState" overlay
+                     :message="chartState === 'error' ? error : chartState === 'empty' ? '当前标的暂时没有可绘制的历史数据。' : '正在加载报价、K 线与技术指标。'"
+                     :retryable="chartState === 'error'" @retry="refresh" />
+        </div>
+        <div class="chart-meta">
+          <span v-if="range">{{ range.start }} — {{ range.end }} · {{ range.count }} 根</span>
+          <span>拖动底部时间轴查看历史 · 滚轮缩放</span>
+        </div>
+      </main>
+
+      <aside class="right-rail">
+        <QuoteDetail :quote="quote" :interval-label="currentIntervalLabel" />
+        <TechnicalSummary :analysis="technicalAnalysis" />
+        <ResearchRail :content="analysis" :loading="analysisLoading" :disabled="!quote" @generate="runAnalysis" />
+      </aside>
     </div>
   </div>
 </template>
 
 <style scoped>
-.cross-market { display: flex; flex-direction: column; gap: 12px; }
-.panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; }
-.panel-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
-.panel-head h2 { margin: 0; font-size: 15px; font-weight: 650; }
-.controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.select { background: var(--surface); border: 1px solid var(--line-strong); color: var(--text); border-radius: var(--radius-sm); padding: 8px 10px; }
-.btn { background: #1c1f22; border: 1px solid var(--line-strong); color: var(--text); border-radius: var(--radius-sm); padding: 8px 14px; cursor: pointer; font-size: 12px; }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: #17140e; font-weight: 650; }
-.btn:disabled { opacity: .5; cursor: not-allowed; }
-.hint { color: var(--muted); font-size: 11px; line-height: 1.6; }
-.quote-grid { display: grid; grid-template-columns: 1.15fr .85fr; gap: 12px; margin-top: 14px; }
-.quote-main, .quote-meta { background: var(--surface); border: 1px solid #222529; border-radius: var(--radius-sm); padding: 14px; }
-.quote-price { font-size: 32px; font-weight: 650; letter-spacing: -.025em; font-variant-numeric: tabular-nums; margin: 6px 0; color: var(--accent-strong); }
-.quote-meta { display: grid; gap: 7px; align-content: center; color: var(--muted); font-size: 12px; }
-.quote-meta b { color: var(--text); margin-left: 6px; font-weight: 600; }
+.cross-market { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.cross-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 38px; border-bottom: 1px solid var(--line); }
+.market-switch { display: flex; align-items: stretch; gap: 20px; align-self: stretch; }
+.market-tab { position: relative; border: 0; background: transparent; color: var(--muted); padding: 0 1px 9px; font-size: 12px; cursor: pointer; }
+.market-tab.active { color: var(--text); font-weight: 650; }
+.market-tab.active::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--accent); }
+.toolbar-right { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding-bottom: 7px; }
+.period-switch { display: flex; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); }
+.period-btn { border: 0; background: transparent; color: var(--muted); border-radius: 2px; padding: 5px 8px; font-size: 10px; cursor: pointer; }
+.period-btn.active { background: var(--accent); color: #17140e; font-weight: 700; }
+.refresh-note { color: var(--subtle); font-size: 9px; white-space: nowrap; }
+.refresh-note.stale { color: var(--warn); }
+.btn { min-height: 30px; background: #1c1f22; border: 1px solid var(--line-strong); color: var(--text); border-radius: var(--radius-sm); padding: 5px 11px; cursor: pointer; font-size: 11px; }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.error { color: #ef5350; padding: 9px 10px; background: rgba(239,83,80,.08); border: 1px solid rgba(239,83,80,.18); border-radius: var(--radius-sm); font-size: 11px; }
+.cross-layout { display: grid; grid-template-columns: 220px minmax(0, 1fr) 300px; gap: 10px; align-items: stretch; min-width: 0; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
+.chart-panel { padding: 13px; min-width: 0; }
+.symbol-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; min-height: 45px; }
+.symbol-title > div { display: flex; align-items: baseline; gap: 8px; }
+.symbol-title b { color: var(--text); font-size: 15px; font-weight: 680; }
+.symbol-title span { color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+.symbol-title small { display: block; margin-top: 4px; color: var(--subtle); font-size: 9px; }
+.headline-quote { display: flex; align-items: baseline; gap: 9px; white-space: nowrap; }
+.headline-quote > b { color: var(--accent-strong); font-size: 24px; line-height: 1; font-weight: 680; letter-spacing: -.025em; font-variant-numeric: tabular-nums; }
+.headline-quote span { font-size: 10px; font-variant-numeric: tabular-nums; }
+.chart-shell { position: relative; margin-top: 10px; }
 .chart { width: 100%; background: var(--surface); border: 1px solid #222529; border-radius: var(--radius-sm); }
-.chart.tall { height: 420px; margin-top: 16px; }
-.pos { color: #27c46b; } .neg { color: #ef5350; }
-.error { color: #ef5350; padding: 10px; background: rgba(239,83,80,.1); border-radius: 6px; margin-top: 14px; }
-.analysis-panel { min-height: 100px; }
-.technical-panel { margin-top: 14px; padding: 13px; background: var(--surface); border: 1px solid #222529; border-radius: var(--radius-sm); }
-.technical-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
-.technical-head h3 { margin: 0; color: var(--text); font-size: 13px; font-weight: 650; }
-.technical-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
-.technical-grid > div { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
-.technical-grid span { color: var(--muted); font-size: 11px; }
-.technical-grid b { color: var(--text); font-size: 12px; line-height: 1.4; font-weight: 600; }
-.technical-grid b.bullish { color: #27c46b; }
-.technical-grid b.bearish { color: #ef5350; }
-.disclaimer { margin-top: 10px; }
-.out { margin-top: 14px; background: var(--surface); border: 1px solid #282b2f; border-left: 2px solid #72684f; border-radius: var(--radius-sm); padding: 12px; white-space: pre-wrap; color: var(--text); font-size: 12px; line-height: 1.7; }
-@media (max-width: 850px) { .quote-grid { grid-template-columns: 1fr; } .technical-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@media (max-width: 500px) { .technical-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.chart.tall { height: 520px; }
+.chart-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 7px; color: var(--subtle); font-size: 9px; }
+.right-rail { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.pos { color: #27c46b !important; } .neg { color: #ef5350 !important; }
+@media (max-width: 1180px) { .cross-layout { grid-template-columns: 195px minmax(0, 1fr) 265px; } .chart.tall { height: 480px; } }
+@media (max-width: 980px) { .cross-layout { grid-template-columns: 190px minmax(0, 1fr); } .right-rail { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 700px) { .cross-toolbar { align-items: flex-start; flex-direction: column; } .toolbar-right { width: 100%; justify-content: flex-start; overflow-x: auto; } .cross-layout { grid-template-columns: 1fr; } .right-rail { grid-column: auto; grid-template-columns: 1fr; } .chart.tall { height: 380px; } .symbol-head { align-items: flex-start; flex-direction: column; } .chart-meta { align-items: flex-start; flex-direction: column; } }
 </style>

@@ -1,12 +1,15 @@
 <script setup>
 import { ref, onMounted, nextTick } from 'vue'
 import { api } from '../api/client'
+import DataState from './common/DataState.vue'
 
 // ---- 对话 ----
 const messages = ref([])
 const input = ref('')
 const sending = ref(false)
 const aiStatus = ref(null)
+const statusLoading = ref(true)
+const statusError = ref('')
 const chatBox = ref(null)
 let currentChatAbort = null
 
@@ -14,16 +17,19 @@ let currentChatAbort = null
 const quoteData = ref(null)
 const quoteLoading = ref(false)
 const quoteResult = ref('')
+const quoteError = ref('')
 
 // ---- 财报解析 ----
 const reportText = ref('')
 const reportLoading = ref(false)
 const reportResult = ref('')
+const reportError = ref('')
 
 // ---- 产业链 ----
 const chainNode = ref('黄金')
 const chainLoading = ref(false)
 const chainResult = ref('')
+const chainError = ref('')
 
 const sugg = [
   '当前黄金ETF适合定投吗？',
@@ -32,10 +38,18 @@ const sugg = [
 ]
 
 async function loadStatus() {
+  statusLoading.value = true
+  statusError.value = ''
   try {
     const d = await api.aiStatus()
     aiStatus.value = d.data
-  } catch (e) { aiStatus.value = { available: false, message: 'AI服务未连接' } }
+    if (!d.data?.available) statusError.value = d.data?.message || d.message || '研究引擎当前不可用'
+  } catch (e) {
+    aiStatus.value = { available: false, message: '研究引擎未连接' }
+    statusError.value = e?.message || '研究引擎未连接'
+  } finally {
+    statusLoading.value = false
+  }
 }
 
 function push(role, content) {
@@ -93,37 +107,53 @@ function useSuggestion(s) { input.value = s }
 
 // 智能报价解读
 async function runQuote() {
-  quoteLoading.value = true; quoteResult.value = ''
+  quoteLoading.value = true
+  quoteResult.value = ''
+  quoteError.value = ''
   try {
     const q = await api.marketPrices()
     const rt = q.data?.gold_etf
-    if (!rt) { quoteResult.value = '未获取到行情' ; return }
+    if (!rt) throw new Error('未获取到黄金ETF行情')
     quoteData.value = rt
     const d = await api.aiQuote(rt)
-    quoteResult.value = d.data?.content || '（无回复）'
-  } catch (e) { quoteResult.value = '⚠️ ' + e }
-  finally { quoteLoading.value = false }
+    quoteResult.value = d.data?.content || '（暂无研究结论）'
+  } catch (e) {
+    quoteError.value = e?.message || String(e)
+  } finally {
+    quoteLoading.value = false
+  }
 }
 
 // 财报解析
 async function runReport() {
   if (!reportText.value.trim()) return
-  reportLoading.value = true; reportResult.value = ''
+  reportLoading.value = true
+  reportResult.value = ''
+  reportError.value = ''
   try {
     const d = await api.aiFinancialReport(reportText.value.trim())
-    reportResult.value = d.data?.content || '（无回复）'
-  } catch (e) { reportResult.value = '⚠️ ' + e }
-  finally { reportLoading.value = false }
+    reportResult.value = d.data?.content || '（暂无研究结论）'
+  } catch (e) {
+    reportError.value = e?.message || String(e)
+  } finally {
+    reportLoading.value = false
+  }
 }
 
 // 产业链
 async function runChain() {
-  chainLoading.value = true; chainResult.value = ''
+  if (!chainNode.value.trim()) return
+  chainLoading.value = true
+  chainResult.value = ''
+  chainError.value = ''
   try {
     const d = await api.aiChain(chainNode.value.trim())
-    chainResult.value = d.data?.content || '（无回复）'
-  } catch (e) { chainResult.value = '⚠️ ' + e }
-  finally { chainLoading.value = false }
+    chainResult.value = d.data?.content || '（暂无研究结论）'
+  } catch (e) {
+    chainError.value = e?.message || String(e)
+  } finally {
+    chainLoading.value = false
+  }
 }
 
 onMounted(() => {
@@ -134,95 +164,135 @@ onMounted(() => {
 
 <template>
   <div class="ai">
-    <!-- 状态 -->
-    <div class="status-bar">
-      <span class="dot" :class="aiStatus?.available ? 'ok' : 'bad'"></span>
-      研究引擎 · {{ aiStatus?.provider || 'DeepSeek' }} / {{ aiStatus?.model || '...' }}
-      <span class="hint" style="margin-left:auto">{{ aiStatus?.available ? '已连接' : aiStatus?.message }}</span>
+    <div class="research-head">
+      <div>
+        <h2>研究工作台</h2>
+        <span>行情、财报与产业链研究能力</span>
+      </div>
+      <div class="engine-status" :title="statusError || '研究引擎状态'">
+        <i :class="aiStatus?.available ? 'ok' : 'bad'"></i>
+        <span>{{ aiStatus?.provider || 'Research Engine' }} · {{ statusLoading ? '检查中' : (aiStatus?.model || '未连接') }}</span>
+        <b>{{ statusLoading ? 'CHECKING' : (aiStatus?.available ? 'ONLINE' : 'OFFLINE') }}</b>
+      </div>
     </div>
 
-    <div class="grid">
-      <!-- 对话 -->
-      <div class="panel chat-panel">
-        <div class="panel-head"><h2>投研助手</h2></div>
-        <div class="chat-window" ref="chatBox">
-          <div v-for="(m, i) in messages" :key="i" class="chat-item" :class="m.role">
-            <div class="role">{{ m.role === 'user' ? '你' : '研究助手' }}</div>
-            <div class="bubble">{{ m.content }}</div>
+    <div class="research-layout">
+      <aside class="toolbox">
+        <section class="tool-section">
+          <div class="tool-head"><div><b>行情快照</b><span>黄金ETF</span></div><button type="button" class="text-action" @click="runQuote" :disabled="quoteLoading">{{ quoteLoading ? '分析中' : '生成' }}</button></div>
+          <div v-if="quoteData" class="quote-snapshot">
+            <b>{{ quoteData.price }}</b>
+            <span :class="quoteData.change >= 0 ? 'pos' : 'neg'">{{ quoteData.change }} · {{ quoteData.change_pct }}%</span>
+            <small>昨收 {{ quoteData.prev_close }}</small>
           </div>
-        </div>
-        <div class="sugg">
-          <button v-for="s in sugg" :key="s" class="chip" @click="useSuggestion(s)">{{ s }}</button>
-        </div>
-        <div class="chat-input">
-          <input v-model="input" @keyup.enter="sendChat" placeholder="输入市场、策略或财报问题" :disabled="sending" />
-          <button class="btn primary" @click="sending ? stopChat() : sendChat()">{{ sending ? '停止生成' : '发送' }}</button>
-        </div>
-      </div>
+          <DataState v-if="quoteLoading" state="loading" title="正在生成行情摘要" compact />
+          <DataState v-else-if="quoteError" state="error" title="行情研究失败" :message="quoteError" compact retryable @retry="runQuote" />
+          <div v-else-if="quoteResult" class="tool-output">{{ quoteResult }}</div>
+          <div v-else class="tool-empty">获取当前黄金ETF行情并生成研究摘要。</div>
+        </section>
 
-      <!-- 功能卡片 -->
-      <div class="side">
-        <!-- 智能报价 -->
-        <div class="panel">
-          <div class="panel-head"><h2>行情解读</h2></div>
-          <div class="row">
-            <button class="btn" @click="runQuote" :disabled="quoteLoading">{{ quoteLoading ? '分析中…' : '生成研究摘要' }}</button>
-          </div>
-          <div v-if="quoteData" class="quote-mini">
-            现价 <b>{{ quoteData.price }}</b> · 昨收 {{ quoteData.prev_close }}
-            <span :class="quoteData.change >= 0 ? 'pos' : 'neg'">{{ quoteData.change }} ({{ quoteData.change_pct }}%)</span>
-          </div>
-          <div v-if="quoteResult" class="out">{{ quoteResult }}</div>
-        </div>
+        <section class="tool-section">
+          <div class="tool-head"><div><b>财报解析</b><span>文本研究</span></div><button type="button" class="text-action" @click="runReport" :disabled="reportLoading || !reportText.trim()">{{ reportLoading ? '解析中' : '解析' }}</button></div>
+          <textarea v-model="reportText" aria-label="财报文本" placeholder="粘贴财报内容或关键数据…" rows="5"></textarea>
+          <DataState v-if="reportLoading" state="loading" title="正在解析财报" compact />
+          <DataState v-else-if="reportError" state="error" title="财报解析失败" :message="reportError" compact retryable @retry="runReport" />
+          <div v-else-if="reportResult" class="tool-output">{{ reportResult }}</div>
+        </section>
 
-        <!-- 财报解析 -->
-        <div class="panel">
-          <div class="panel-head"><h2>财报解析</h2></div>
-          <textarea v-model="reportText" placeholder="粘贴财报内容或关键数据…" rows="4"></textarea>
-          <button class="btn" @click="runReport" :disabled="reportLoading">{{ reportLoading ? '解析中…' : '解析财报' }}</button>
-          <div v-if="reportResult" class="out">{{ reportResult }}</div>
+        <section class="tool-section">
+          <div class="tool-head"><div><b>产业链研究</b><span>主题分析</span></div><button type="button" class="text-action" @click="runChain" :disabled="chainLoading || !chainNode.trim()">{{ chainLoading ? '分析中' : '分析' }}</button></div>
+          <input v-model="chainNode" class="input" aria-label="产业链主题" placeholder="黄金 / 铜 / 芯片…" />
+          <DataState v-if="chainLoading" state="loading" title="正在分析产业链" compact />
+          <DataState v-else-if="chainError" state="error" title="产业链分析失败" :message="chainError" compact retryable @retry="runChain" />
+          <div v-else-if="chainResult" class="tool-output">{{ chainResult }}</div>
+        </section>
+      </aside>
+
+      <main class="panel conversation-panel">
+        <div class="conversation-head">
+          <div><b>研究会话</b><span>结合市场、策略或材料继续追问</span></div>
+          <span class="context-note">保留最近 20 条上下文</span>
         </div>
 
-        <!-- 产业链 -->
-        <div class="panel">
-          <div class="panel-head"><h2>产业链研究</h2></div>
-          <div class="row">
-            <input v-model="chainNode" class="input" placeholder="输入产业链节点，如：黄金" />
-            <button class="btn" @click="runChain" :disabled="chainLoading">{{ chainLoading ? '分析中…' : '分析' }}</button>
-          </div>
-          <div v-if="chainResult" class="out">{{ chainResult }}</div>
+        <div class="prompt-templates">
+          <span>研究模板</span>
+          <button v-for="s in sugg" :key="s" type="button" @click="useSuggestion(s)">{{ s }}</button>
         </div>
-      </div>
+
+        <div class="chat-window" ref="chatBox" role="log" aria-live="polite" aria-relevant="additions text" aria-label="研究会话记录">
+          <div v-for="(m, i) in messages" :key="i" class="message-row" :class="m.role">
+            <div class="message-meta"><span>{{ m.role === 'user' ? 'YOU' : 'JARVIS RESEARCH' }}</span><i></i></div>
+            <div class="message-content">{{ m.content }}</div>
+          </div>
+        </div>
+
+        <div class="composer">
+          <input v-model="input" @keyup.enter="sendChat" aria-label="研究问题" placeholder="输入研究问题，例如：比较黄金ETF与伦敦金近期走势" :disabled="sending" />
+          <button type="button" class="send-btn" @click="sending ? stopChat() : sendChat()" :class="{ stop: sending }" :aria-label="sending ? '停止生成' : '提交研究问题'">{{ sending ? '停止' : '提交研究' }}</button>
+        </div>
+        <div class="research-disclaimer">生成内容用于研究辅助，请结合原始数据和风险约束独立判断。</div>
+      </main>
     </div>
   </div>
 </template>
 
 <style scoped>
-.ai { display: flex; flex-direction: column; gap: 12px; }
-.status-bar { display: flex; align-items: center; gap: 8px; min-height: 36px; color: var(--muted); font-size: 11px; padding: 7px 10px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); }
-.dot { width: 6px; height: 6px; border-radius: 50%; background: var(--bad); }
-.dot.ok { background: var(--ok); }
-.grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(320px, .75fr); gap: 12px; }
-.panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; }
-.panel-head h2 { margin: 0 0 12px; font-size: 15px; font-weight: 650; color: var(--text); }
-.chat-panel { display: flex; flex-direction: column; }
-.chat-window { flex: 1; height: 420px; overflow: auto; background: var(--surface); border: 1px solid #222529; border-radius: var(--radius-sm); padding: 14px; }
-.chat-item { margin-bottom: 14px; }
-.chat-item.user .bubble { background: var(--accent-soft); border: 1px solid rgba(215,181,109,.24); }
-.chat-item.assistant .bubble { background: #17191b; border: 1px solid var(--line); }
-.role { font-size: 10px; color: var(--subtle); margin-bottom: 4px; letter-spacing: .04em; }
-.bubble { padding: 10px 12px; border-radius: var(--radius-sm); font-size: 13px; line-height: 1.7; white-space: pre-wrap; color: var(--text); }
-.sugg { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; }
-.chip { background: transparent; border: 1px solid var(--line-strong); color: var(--muted); border-radius: var(--radius-sm); padding: 5px 9px; font-size: 11px; cursor: pointer; }
-.chat-input { display: flex; gap: 8px; }
-.chat-input input, .input { flex: 1; background: var(--surface); border: 1px solid var(--line-strong); color: var(--text); border-radius: var(--radius-sm); padding: 10px 11px; outline: none; }
-textarea { width: 100%; background: var(--surface); border: 1px solid var(--line-strong); color: var(--text); border-radius: var(--radius-sm); padding: 10px; margin-bottom: 10px; resize: vertical; outline: none; }
-.btn { background: #1c1f22; border: 1px solid var(--line-strong); color: var(--text); border-radius: var(--radius-sm); padding: 8px 14px; cursor: pointer; font-size: 12px; }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: #17140e; font-weight: 650; }
-.row { display: flex; gap: 8px; flex-wrap: wrap; }
-.out { margin-top: 12px; background: var(--surface); border: 1px solid #282b2f; border-left: 2px solid #72684f; border-radius: var(--radius-sm); padding: 11px 12px; white-space: pre-wrap; font-size: 12px; line-height: 1.7; color: var(--text); min-height: 40px; max-height: 260px; overflow: auto; }
-.quote-mini { margin: 12px 0; font-size: 12px; color: var(--text); }
+.ai { display: flex; flex-direction: column; gap: 10px; }
+.research-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; min-height: 38px; }
+.research-head h2 { margin: 0; color: var(--text); font-size: 16px; font-weight: 680; }
+.research-head > div:first-child > span { display: block; margin-top: 3px; color: var(--subtle); font-size: 10px; }
+.engine-status { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 9px; }
+.engine-status i { width: 6px; height: 6px; border-radius: 50%; background: var(--bad); }
+.engine-status i.ok { background: var(--ok); }
+.engine-status b { color: var(--subtle); border: 1px solid var(--line-strong); border-radius: 3px; padding: 2px 5px; font-size: 8px; letter-spacing: .06em; }
+.research-layout { display: grid; grid-template-columns: 310px minmax(0, 1fr); gap: 10px; align-items: stretch; min-width: 0; }
+.toolbox { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.tool-section, .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
+.tool-section { padding: 12px; }
+.tool-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 9px; }
+.tool-head > div { display: flex; flex-direction: column; gap: 3px; }
+.tool-head b { color: var(--text); font-size: 11px; font-weight: 650; }
+.tool-head span { color: var(--subtle); font-size: 8px; }
+.text-action { border: 0; background: transparent; color: var(--accent-strong); padding: 1px 0; font-size: 9px; cursor: pointer; }
+.text-action:disabled { opacity: .42; cursor: not-allowed; }
+.quote-snapshot { display: grid; grid-template-columns: 1fr auto; gap: 3px 8px; align-items: baseline; margin-top: 10px; padding: 9px 10px; background: var(--surface); border: 1px solid #222529; border-radius: var(--radius-sm); }
+.quote-snapshot > b { color: var(--accent-strong); font-size: 19px; line-height: 1; font-weight: 680; font-variant-numeric: tabular-nums; }
+.quote-snapshot > span { font-size: 9px; font-variant-numeric: tabular-nums; }
+.quote-snapshot small { grid-column: 1 / -1; color: var(--subtle); font-size: 8px; }
+.input, textarea { width: 100%; background: var(--surface); border: 1px solid var(--line-strong); color: var(--text); border-radius: var(--radius-sm); outline: none; font-size: 10px; }
+.input { height: 32px; padding: 0 9px; margin-top: 9px; }
+textarea { padding: 8px 9px; margin-top: 9px; resize: vertical; line-height: 1.5; }
+.input:focus, textarea:focus { border-color: #695b40; }
+.tool-section :deep(.data-state) { margin-top: 9px; }
+.tool-output { margin-top: 9px; max-height: 170px; overflow: auto; border-left: 2px solid #72684f; background: var(--surface); padding: 8px 9px; color: var(--text); font-size: 9px; line-height: 1.6; white-space: pre-wrap; }
+.tool-empty { margin-top: 9px; color: var(--subtle); font-size: 9px; line-height: 1.55; }
+.conversation-panel { display: flex; flex-direction: column; min-width: 0; padding: 13px; }
+.conversation-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.conversation-head > div { display: flex; align-items: baseline; gap: 8px; }
+.conversation-head b { color: var(--text); font-size: 12px; font-weight: 680; }
+.conversation-head span { color: var(--subtle); font-size: 9px; }
+.context-note { color: var(--muted) !important; }
+.prompt-templates { display: flex; align-items: center; gap: 6px; padding: 9px 0; overflow-x: auto; }
+.prompt-templates > span { color: var(--subtle); font-size: 8px; white-space: nowrap; margin-right: 2px; }
+.prompt-templates button { flex: 0 0 auto; border: 1px solid var(--line-strong); background: transparent; color: var(--muted); border-radius: 3px; padding: 5px 7px; font-size: 9px; cursor: pointer; }
+.prompt-templates button:hover { border-color: #5b503b; color: var(--text); background: rgba(201,166,95,.04); }
+.chat-window { flex: 1; min-height: 470px; max-height: 620px; overflow: auto; background: var(--surface); border: 1px solid #222529; border-radius: var(--radius-sm); }
+.message-row { display: grid; grid-template-columns: 108px minmax(0, 1fr); gap: 12px; padding: 13px 14px; border-bottom: 1px solid #222529; }
+.message-row:last-child { border-bottom: 0; }
+.message-row.user { background: #151719; }
+.message-row.assistant { background: #121416; }
+.message-meta { display: flex; align-items: flex-start; gap: 6px; color: var(--subtle); font-size: 8px; letter-spacing: .045em; }
+.message-meta i { width: 4px; height: 4px; margin-top: 4px; border-radius: 50%; background: #555a60; }
+.message-row.assistant .message-meta i { background: var(--accent); }
+.message-content { color: var(--text); font-size: 11px; line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; }
+.composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; margin-top: 9px; }
+.composer input { width: 100%; height: 38px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius-sm); color: var(--text); padding: 0 10px; font-size: 10px; outline: none; }
+.composer input:focus { border-color: #695b40; }
+.send-btn { min-width: 92px; border: 1px solid var(--accent); border-radius: var(--radius-sm); background: var(--accent); color: #17140e; padding: 0 12px; font-size: 10px; font-weight: 700; cursor: pointer; }
+.send-btn.stop { border-color: #684043; background: rgba(239,83,80,.08); color: #e47d79; }
+.research-disclaimer { margin-top: 6px; color: var(--subtle); font-size: 8px; line-height: 1.5; }
 .pos { color: #27c46b; } .neg { color: #ef5350; }
-.side { display: flex; flex-direction: column; gap: 12px; }
-@media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+@media (max-width: 980px) { .research-layout { grid-template-columns: 270px minmax(0, 1fr); } .chat-window { min-height: 430px; } }
+@media (max-width: 760px) { .research-layout { grid-template-columns: 1fr; } .toolbox { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); } .tool-section:first-child { grid-column: 1 / -1; } .message-row { grid-template-columns: 1fr; gap: 5px; } }
+@media (max-width: 520px) { .research-head { align-items: flex-start; flex-direction: column; } .toolbox { grid-template-columns: 1fr; } .tool-section:first-child { grid-column: auto; } .chat-window { min-height: 390px; } .composer { grid-template-columns: 1fr; } .send-btn { min-height: 36px; } }
 </style>

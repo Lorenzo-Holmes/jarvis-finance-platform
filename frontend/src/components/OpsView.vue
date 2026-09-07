@@ -1,13 +1,13 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { api } from '../api/client'
+import { usePolling } from '../composables/usePolling'
 
 const java = ref(null)   // Java + DB readiness
 const db = ref(null)     // 数据库详细状态（登录后）
 const py = ref(null)     // Python AI 服务（经 Java 代理检查）
 const engine = ref(null) // AI provider/model
 const lastCheck = ref('')
-let timer = null
 
 async function check() {
   lastCheck.value = new Date().toLocaleTimeString('zh-CN')
@@ -32,91 +32,99 @@ async function check() {
 
 function ok(v) { return !v || v.error ? 'bad' : 'ok' }
 
-onMounted(() => { check(); timer = setInterval(check, 10000) })
-onUnmounted(() => clearInterval(timer))
+const services = computed(() => [
+  {
+    name: 'Java API', layer: '核心后端', state: java.value?.error ? '异常' : (java.value?.status === 'ready' ? 'Ready' : '检查中'),
+    health: ok(java.value), latency: java.value?.database?.latency_ms, detail: java.value?.service || java.value?.error || '等待探针',
+    probe: 'https://agent.shengxia.me/api/health/ready', path: '/api/health/ready',
+  },
+  {
+    name: 'PostgreSQL', layer: '数据层', state: db.value?.error ? '异常' : (db.value?.status === 'up' ? '可查询' : '检查中'),
+    health: ok(db.value), latency: db.value?.latency_ms, detail: db.value?.product || db.value?.error || '等待探针',
+  },
+  {
+    name: 'Python Service', layer: '研究服务', state: py.value?.error ? '异常' : (py.value?.status === 'ok' ? '运行中' : '检查中'),
+    health: ok(py.value), latency: null, detail: py.value?.service || py.value?.error || '等待探针',
+    probe: 'https://agent.shengxia.me/api/health/ai', path: '/api/health/ai',
+  },
+  {
+    name: 'Research Engine', layer: '模型能力', state: engine.value?.error ? '异常' : (engine.value ? '已配置' : '检查中'),
+    health: ok(engine.value), latency: null,
+    detail: engine.value?.error || (engine.value ? `${engine.value.provider || '-'} / ${engine.value.model || '-'}` : '等待探针'),
+    probe: 'https://agent.shengxia.me/api/ai/capabilities', path: '/api/ai/capabilities',
+  },
+])
+const allHealthy = computed(() => services.value.every(service => service.health === 'ok'))
+
+const polling = usePolling(check, 10000)
+onMounted(() => { check(); polling.start() })
 </script>
 
 <template>
   <div class="ops">
-    <div class="grid">
-      <div class="card">
-        <h2>Java 主后端 / Readiness</h2>
-        <div class="status" :class="ok(java)">
-          <span class="dot"></span>
-          {{ java?.error ? '异常' : (java?.status === 'ready' ? 'Ready' : '检查中') }}
-        </div>
-        <div class="small" v-if="java && !java.error">
-          服务: {{ java.service }}<br/>
-          DB: {{ java.database?.status }} · {{ java.database?.latency_ms ?? '-' }} ms<br/>
-          时间: {{ java.time?.replace('T', ' ') }}
-        </div>
-        <div class="small bad" v-else-if="java?.error">{{ java.error }}</div>
-        <a class="link" href="https://agent.shengxia.me/api/health/ready" target="_blank" rel="noopener">探针: /api/health/ready → Java + DB</a>
-      </div>
-
-      <div class="card">
-        <h2>PostgreSQL</h2>
-        <div class="status" :class="ok(db)">
-          <span class="dot"></span>
-          {{ db?.error ? '异常' : (db?.status === 'up' ? '可查询' : '检查中') }}
-        </div>
-        <div class="small" v-if="db && !db.error">
-          产品: {{ db.product || '-' }}<br/>
-          SELECT 1: {{ db.latency_ms ?? '-' }} ms
-        </div>
-        <div class="small bad" v-else-if="db?.error">{{ db.error }}</div>
-      </div>
-
-      <div class="card">
-        <h2>Python AI 层</h2>
-        <div class="status" :class="ok(py)">
-          <span class="dot"></span>
-          {{ py?.error ? '异常' : (py?.status === 'ok' ? '运行中' : '检查中') }}
-        </div>
-        <div class="small" v-if="py && !py.error">
-          服务: {{ py.service }}<br/>
-          时间: {{ py.time?.replace('T', ' ') }}
-        </div>
-        <div class="small bad" v-else-if="py?.error">{{ py.error }}</div>
-        <a class="link" href="https://agent.shengxia.me/api/health/ai" target="_blank" rel="noopener">探针: /api/health/ai → Java → Python</a>
-      </div>
-
-      <div class="card">
-        <h2>AI 引擎</h2>
-        <div class="status" :class="ok(engine)">
-          <span class="dot"></span>
-          {{ engine?.error ? '异常' : '已配置' }}
-        </div>
-        <div class="small" v-if="engine && !engine.error">
-          Provider: {{ engine.provider }}<br/>
-          Model: {{ engine.model }}
-        </div>
-        <div class="small bad" v-else-if="engine?.error">{{ engine.error }}</div>
-        <a class="link" href="https://agent.shengxia.me/api/ai/capabilities" target="_blank" rel="noopener">探针: /api/ai/capabilities → Java → Python</a>
-      </div>
+    <div class="ops-head">
+      <div><h2>服务健康</h2><span>核心后端、数据库与研究服务状态</span></div>
+      <div class="ops-summary" :class="allHealthy ? 'ok' : 'bad'" role="status" aria-live="polite"><i></i>{{ allHealthy ? 'ALL SYSTEMS OPERATIONAL' : 'ATTENTION REQUIRED' }}</div>
     </div>
 
-    <div class="card">
-      <h2>最后检查时间</h2>
-      <div class="value">{{ lastCheck || '--' }}</div>
-      <div class="small">自动刷新：10 秒</div>
+    <section class="health-panel">
+      <div class="health-table-wrap">
+        <table class="health-table">
+          <thead><tr><th>服务</th><th>层级</th><th>状态</th><th>延迟</th><th>详情</th><th>探针</th></tr></thead>
+          <tbody>
+            <tr v-for="service in services" :key="service.name">
+              <td><div class="service-name"><i :class="service.health"></i><b>{{ service.name }}</b></div></td>
+              <td>{{ service.layer }}</td>
+              <td><span class="state-text" :class="service.health">{{ service.state }}</span></td>
+              <td>{{ service.latency == null ? '-' : service.latency + ' ms' }}</td>
+              <td class="detail-cell" :class="service.health === 'bad' ? 'bad-text' : ''">{{ service.detail }}</td>
+              <td>
+                <a v-if="service.probe" :href="service.probe" target="_blank" rel="noopener">{{ service.path }}</a>
+                <span v-else>-</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <div class="ops-footer">
+      <span>最后检查 <b>{{ lastCheck || '--' }}</b></span>
+      <span>自动刷新间隔 <b>10 秒</b></span>
+      <button type="button" @click="check">立即检查</button>
     </div>
   </div>
 </template>
 
 <style scoped>
-.ops { display: flex; flex-direction: column; gap: 12px; }
-.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
-.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; }
-.card h2 { margin: 0 0 12px; font-size: 14px; font-weight: 650; color: var(--text); }
-.status { display: inline-flex; align-items: center; gap: 7px; padding: 5px 8px; border-radius: 3px; border: 1px solid var(--line); font-size: 11px; background: var(--surface); }
-.dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
-.status.ok .dot { background: var(--ok); }
-.status.bad .dot { background: #ef5350; }
-.status.ok { color: #27c46b; }
-.status.bad { color: #ef5350; }
-.small { color: var(--muted); font-size: 11px; margin-top: 10px; line-height: 1.7; }
-.bad { color: #ef5350; }
-.link { color: var(--accent-strong); text-decoration: none; font-size: 12px; margin-top: 10px; display: inline-block; }
-.value { font-size: 20px; font-weight: 650; color: var(--text); font-variant-numeric: tabular-nums; }
+.ops { display: flex; flex-direction: column; gap: 10px; }
+.ops-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 38px; }
+.ops-head h2 { margin: 0; color: var(--text); font-size: 16px; font-weight: 680; }
+.ops-head > div:first-child > span { display: block; margin-top: 3px; color: var(--subtle); font-size: 10px; }
+.ops-summary { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line); border-radius: 3px; background: var(--surface); padding: 4px 7px; color: var(--muted); font-size: 8px; font-weight: 700; letter-spacing: .055em; }
+.ops-summary i { width: 6px; height: 6px; border-radius: 50%; background: var(--bad); }
+.ops-summary.ok { color: #67c98e; }
+.ops-summary.ok i { background: var(--ok); }
+.ops-summary.bad { color: #e47d79; }
+.health-panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.health-table-wrap { width: 100%; overflow-x: auto; }
+.health-table { width: 100%; min-width: 820px; border-collapse: collapse; font-size: 10px; }
+.health-table th, .health-table td { text-align: left; padding: 11px 12px; border-bottom: 1px solid #24272b; color: var(--muted); white-space: nowrap; }
+.health-table th { position: sticky; top: 0; z-index: 2; background: #131517; color: var(--subtle); font-size: 9px; font-weight: 550; letter-spacing: .02em; box-shadow: 0 1px 0 #24272b; }
+.health-table tbody tr:last-child td { border-bottom: 0; }
+.health-table tbody tr:hover td { background: #17191b; }
+.service-name { display: flex; align-items: center; gap: 8px; }
+.service-name i { width: 6px; height: 6px; border-radius: 50%; background: var(--bad); }
+.service-name i.ok { background: var(--ok); }
+.service-name b { color: var(--text); font-size: 10px; font-weight: 650; }
+.state-text { color: var(--muted); font-weight: 600; }
+.state-text.ok { color: #67c98e; }
+.state-text.bad, .bad-text { color: #e47d79 !important; }
+.detail-cell { max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
+.health-table a { color: var(--accent-strong); text-decoration: none; font-size: 9px; }
+.health-table a:hover { text-decoration: underline; }
+.ops-footer { display: flex; align-items: center; gap: 18px; color: var(--subtle); font-size: 9px; }
+.ops-footer b { color: var(--muted); font-weight: 600; font-variant-numeric: tabular-nums; }
+.ops-footer button { margin-left: auto; border: 1px solid var(--line-strong); background: #1c1f22; color: var(--text); border-radius: var(--radius-sm); padding: 5px 9px; font-size: 9px; cursor: pointer; }
+@media (max-width: 650px) { .ops-head { align-items: flex-start; flex-direction: column; } .ops-footer { align-items: flex-start; flex-wrap: wrap; } .ops-footer button { margin-left: 0; } }
 </style>
