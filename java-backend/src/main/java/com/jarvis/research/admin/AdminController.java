@@ -1,0 +1,73 @@
+package com.jarvis.research.admin;
+
+import com.jarvis.research.common.ApiResponse;
+import com.jarvis.research.security.CurrentUser;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.Map;
+
+import static com.jarvis.research.admin.AdminDtos.*;
+
+/** 管理员后台 API。SecurityConfig 负责将 /api/admin/** 限制为 ADMIN 角色。 */
+@RestController
+@RequestMapping("/api/admin")
+@RequiredArgsConstructor
+public class AdminController {
+
+    private final AdminService adminService;
+
+    @GetMapping("/users")
+    public ApiResponse<Map<String, Object>> users(
+            @RequestParam(defaultValue = "") String query,
+            @RequestParam(defaultValue = "50") int limit) {
+        return ApiResponse.ok(adminService.listUsers(query, limit));
+    }
+
+    @GetMapping("/users/{userId}")
+    public ApiResponse<Map<String, Object>> user(@PathVariable Long userId) {
+        return ApiResponse.ok(adminService.userDetails(userId));
+    }
+
+    @PatchMapping("/users/{userId}/status")
+    public ApiResponse<Map<String, Object>> status(@PathVariable Long userId,
+                                                   @Valid @RequestBody StatusRequest body,
+                                                   HttpServletRequest request) {
+        return ApiResponse.ok(adminService.updateStatus(
+                CurrentUser.id(), userId, body.getEnabled(), clientIp(request)));
+    }
+
+    @PatchMapping("/users/{userId}/role")
+    public ApiResponse<Map<String, Object>> role(@PathVariable Long userId,
+                                                 @Valid @RequestBody RoleRequest body,
+                                                 HttpServletRequest request) {
+        return ApiResponse.ok(adminService.updateRole(
+                CurrentUser.id(), userId, body.getRole(), clientIp(request)));
+    }
+
+    @PutMapping("/users/{userId}/quota")
+    public ApiResponse<Map<String, Object>> quota(@PathVariable Long userId,
+                                                 @Valid @RequestBody QuotaRequest body,
+                                                 HttpServletRequest request) {
+        return ApiResponse.ok(adminService.updateQuota(
+                CurrentUser.id(), userId, body, clientIp(request)));
+    }
+
+    @PutMapping("/users/{userId}/permissions")
+    public ApiResponse<Map<String, Object>> permissions(@PathVariable Long userId,
+                                                        @Valid @RequestBody PermissionsRequest body,
+                                                        HttpServletRequest request) {
+        return ApiResponse.ok(adminService.updatePermissions(
+                CurrentUser.id(), userId, body, clientIp(request)));
+    }
+
+    private String clientIp(HttpServletRequest request) {
+        String cf = request.getHeader("CF-Connecting-IP");
+        if (cf != null && !cf.isBlank()) return cf.trim();
+        String forwarded = request.getHeader("X-Forwarded-For");
+        if (forwarded != null && !forwarded.isBlank()) return forwarded.split(",", 2)[0].trim();
+        return request.getRemoteAddr();
+    }
+}

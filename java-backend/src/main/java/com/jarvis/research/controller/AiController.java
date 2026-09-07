@@ -3,8 +3,9 @@ package com.jarvis.research.controller;
 import com.jarvis.research.security.CurrentUser;
 import com.jarvis.research.service.AiProxyService;
 import com.jarvis.research.service.AiRateLimitService;
+import com.jarvis.research.service.FeaturePermissionService;
 import jakarta.servlet.http.HttpServletResponse;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -20,11 +21,24 @@ import java.util.concurrent.atomic.AtomicReference;
  */
 @RestController
 @RequestMapping("/api/ai")
-@RequiredArgsConstructor
 public class AiController {
 
     private final AiProxyService aiProxyService;
     private final AiRateLimitService aiRateLimitService;
+    private final FeaturePermissionService featurePermissionService;
+
+    @Autowired
+    public AiController(AiProxyService aiProxyService, AiRateLimitService aiRateLimitService,
+                        FeaturePermissionService featurePermissionService) {
+        this.aiProxyService = aiProxyService;
+        this.aiRateLimitService = aiRateLimitService;
+        this.featurePermissionService = featurePermissionService;
+    }
+
+    /** 兼容不加载 Spring 容器的旧单元测试。 */
+    public AiController(AiProxyService aiProxyService, AiRateLimitService aiRateLimitService) {
+        this(aiProxyService, aiRateLimitService, null);
+    }
 
     @GetMapping("/capabilities")
     public Map<String, Object> capabilities() {
@@ -33,13 +47,13 @@ public class AiController {
 
     @PostMapping("/chat")
     public Map<String, Object> chat(@RequestBody Map<String, Object> body) {
-        consumeAiQuota();
-        return aiProxyService.post("/api/ai/chat", body);
+        consumeAiQuota("AI_CHAT");
+        return postAndRecord("/api/ai/chat", body);
     }
 
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter chatStream(@RequestBody Map<String, Object> body, HttpServletResponse response) {
-        consumeAiQuota();
+        consumeAiQuota("AI_CHAT_STREAM");
         response.setHeader("Cache-Control", "no-cache, no-transform");
         response.setHeader("X-Accel-Buffering", "no");
 
@@ -75,29 +89,38 @@ public class AiController {
 
     @PostMapping("/financial/report")
     public Map<String, Object> financialReport(@RequestBody Map<String, Object> body) {
-        consumeAiQuota();
-        return aiProxyService.post("/api/ai/financial/report", body);
+        consumeAiQuota("AI_REPORT");
+        return postAndRecord("/api/ai/financial/report", body);
     }
 
     @PostMapping("/analyze/sentiment")
     public Map<String, Object> sentiment(@RequestBody Map<String, Object> body) {
-        consumeAiQuota();
-        return aiProxyService.post("/api/ai/analyze/sentiment", body);
+        consumeAiQuota("AI_SENTIMENT");
+        return postAndRecord("/api/ai/analyze/sentiment", body);
     }
 
     @PostMapping("/analyze/chain")
     public Map<String, Object> chain(@RequestBody Map<String, Object> body) {
-        consumeAiQuota();
-        return aiProxyService.post("/api/ai/analyze/chain", body);
+        consumeAiQuota("AI_CHAIN");
+        return postAndRecord("/api/ai/analyze/chain", body);
     }
 
     @PostMapping("/quote")
     public Map<String, Object> quote(@RequestBody Map<String, Object> body) {
-        consumeAiQuota();
-        return aiProxyService.post("/api/ai/quote", body);
+        consumeAiQuota("AI_QUOTE");
+        return postAndRecord("/api/ai/quote", body);
     }
 
-    private void consumeAiQuota() {
+    private void consumeAiQuota(String featureKey) {
+        if (featurePermissionService != null) {
+            featurePermissionService.require(CurrentUser.id(), featureKey);
+        }
         aiRateLimitService.consume(CurrentUser.id());
+    }
+
+    private Map<String, Object> postAndRecord(String path, Object body) {
+        Map<String, Object> response = aiProxyService.post(path, body);
+        aiRateLimitService.recordTokens(CurrentUser.id(), response);
+        return response;
     }
 }

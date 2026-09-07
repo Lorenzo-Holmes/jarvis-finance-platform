@@ -6,11 +6,14 @@ import com.jarvis.research.config.JarvisProperties;
 import com.jarvis.research.security.AuthDtos.*;
 import com.jarvis.research.security.AuthService;
 import com.jarvis.research.security.CurrentUser;
+import com.jarvis.research.security.GitHubOAuthService;
 import com.jarvis.research.service.AuthRateLimitService;
+import com.jarvis.research.service.EmailVerificationService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
 import org.springframework.security.web.csrf.CsrfToken;
@@ -18,17 +21,21 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.Duration;
 import java.util.Map;
+import java.io.IOException;
 
 /** 认证 API：JWT 仅写入 HttpOnly Cookie，不暴露给前端 JavaScript。 */
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
+@Slf4j
 public class AuthController {
 
     private final AuthService authService;
     private final JarvisProperties props;
     private final AuthRateLimitService authRateLimitService;
     private final AuditService auditService;
+    private final EmailVerificationService emailVerificationService;
+    private final GitHubOAuthService gitHubOAuthService;
 
     @GetMapping("/csrf")
     public ApiResponse<Map<String, String>> csrf(CsrfToken token) {
@@ -48,6 +55,42 @@ public class AuthController {
         writeAuthCookie(response, auth.getToken(), auth.getExpiresIn());
         auth.setToken(null);
         return ApiResponse.ok(auth, "注册成功");
+    }
+
+    @PostMapping("/verification/email")
+    public ApiResponse<Void> sendEmailVerification(@Valid @RequestBody EmailVerificationRequest req,
+                                                    HttpServletRequest request) {
+        authRateLimitService.checkEmailCodeSend(clientIp(request), req.getEmail());
+        emailVerificationService.sendRegistrationCode(req.getEmail());
+        return ApiResponse.ok(null, "如果邮箱可用，验证码将发送至该邮箱");
+    }
+
+    @PostMapping("/verification/email/confirm")
+    public ApiResponse<Void> confirmEmailVerification(
+            @Valid @RequestBody EmailVerificationConfirmRequest req) {
+        emailVerificationService.confirmRegistrationCode(req.getEmail(), req.getCode());
+        return ApiResponse.ok(null, "邮箱验证成功");
+    }
+
+    @GetMapping("/github/authorize")
+    public void githubAuthorize(HttpServletResponse response) throws IOException {
+        response.sendRedirect(gitHubOAuthService.authorizationUrl());
+    }
+
+    @GetMapping("/github/callback")
+    public void githubCallback(@RequestParam(required = false) String code,
+                               @RequestParam(required = false) String state,
+                               HttpServletRequest request,
+                               HttpServletResponse response) throws IOException {
+        try {
+            AuthResponse auth = gitHubOAuthService.complete(code, state, clientIp(request));
+            writeAuthCookie(response, auth.getToken(), auth.getExpiresIn());
+            redirectFrontend(response, "oauth=success");
+        } catch (Exception e) {
+            // 回调页只显示通用失败状态，详细错误留在服务端日志，避免泄露 OAuth 信息。
+            log.warn("GitHub OAuth callback failed", e);
+            redirectFrontend(response, "oauth=error");
+        }
     }
 
     @PostMapping("/login")
@@ -107,5 +150,11 @@ public class AuthController {
             builder.domain(auth.getCookieDomain());
         }
         return builder;
+    }
+
+    private void redirectFrontend(HttpServletResponse response, String query) throws IOException {
+        String target = props.getOauth().getFrontendRedirectUri();
+        if (target == null || target.isBlank()) target = "http://localhost:5173";
+        response.sendRedirect(target + (target.contains("?") ? "&" : "?") + query);
     }
 }

@@ -101,3 +101,13 @@ docs/
 inspiration_flow_dashboard_ai.ipynb
 skills/TEMPLATE.md
 web/runtime-config.js
+
+# Local document generation and deployment staging
+.docgen/
+.release-staging/
+.deploy-staging/
+.trae-html-share-packages/
+doc/Skills/
+doc/.srs-render*/
+doc/.srs-work/
+doc/.srs-a11y-audit*.json

@@ -42,6 +42,26 @@ jarvis:
     cookie-domain: ${AUTH_COOKIE_DOMAIN:}
     cookie-secure: ${AUTH_COOKIE_SECURE:false}
     same-site: Strict
+    bootstrap-admin-email: ${BOOTSTRAP_ADMIN_EMAIL:}
+    require-email-verification: ${AUTH_REQUIRE_EMAIL_VERIFICATION:true}
+  oauth:
+    enabled: ${GITHUB_OAUTH_ENABLED:false}
+    client-id: ${GITHUB_CLIENT_ID:}
+    client-secret: ${GITHUB_CLIENT_SECRET:}
+    redirect-uri: ${GITHUB_REDIRECT_URI:http://localhost:8200/api/auth/github/callback}
+    frontend-redirect-uri: ${GITHUB_FRONTEND_REDIRECT_URI:http://localhost:5173}
+    authorize-url: ${GITHUB_AUTHORIZE_URL:https://github.com/login/oauth/authorize}
+    token-url: ${GITHUB_TOKEN_URL:https://github.com/login/oauth/access_token}
+    user-url: ${GITHUB_USER_URL:https://api.github.com/user}
+    emails-url: ${GITHUB_EMAILS_URL:https://api.github.com/user/emails}
+    state-ttl-seconds: ${GITHUB_OAUTH_STATE_TTL_SECONDS:600}
+  email:
+    provider: ${AUTH_EMAIL_PROVIDER:resend}
+    api-key: ${RESEND_API_KEY:}
+    from: ${RESEND_FROM:JARVIS 投研 <noreply@example.com>}
+    api-url: ${RESEND_API_URL:https://api.resend.com/emails}
+    code-ttl-seconds: ${AUTH_EMAIL_CODE_TTL_SECONDS:600}
+    max-verify-attempts: ${AUTH_EMAIL_MAX_VERIFY_ATTEMPTS:5}
   # JWT 认证
   jwt:
     # 必须通过环境变量提供；未配置时应用启动失败，避免误用仓库内默认密钥。

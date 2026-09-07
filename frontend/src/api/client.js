@@ -116,6 +116,8 @@ export const api = {
   // 认证
   register: (email, password, displayName) => post(API_BASE, '/api/auth/register', { email, password, displayName }),
   login: (email, password) => post(API_BASE, '/api/auth/login', { email, password }),
+  sendEmailVerification: (email) => post(API_BASE, '/api/auth/verification/email', { email }),
+  confirmEmailVerification: (email, code) => post(API_BASE, '/api/auth/verification/email/confirm', { email, code }),
   me: () => get(API_BASE, '/api/auth/me'),
   logout: () => post(API_BASE, '/api/auth/logout', {}),
   health: () => get(API_BASE, '/api/health'),
@@ -130,6 +132,11 @@ export const api = {
   // 市场数据 (Java 主管数据存储: 实时价格 + K线)
   marketPrices: () => get(API_BASE, '/api/market/prices'),
   marketKline: (params) => get(API_BASE, '/api/market/kline', params),
+  marketInstruments: () => get(API_BASE, '/api/market/instruments'),
+  marketAssetQuote: (market, symbol) => get(API_BASE, '/api/market/extended/quote', { market, symbol }),
+  marketAssetKline: (market, symbol, interval, limit) => get(
+    API_BASE, '/api/market/extended/kline', { market, symbol, interval, limit },
+  ),
 
   // Python AI 服务健康状态也由 Java 代理查询。
   aiServiceHealth: () => get(API_BASE, '/api/health/ai'),
@@ -145,6 +152,22 @@ export const api = {
   aiFinancialReport: (content) => post(API_BASE, '/api/ai/financial/report', { content }),
   aiChain: (node, context = '') => post(API_BASE, '/api/ai/analyze/chain', { node, context }),
   aiSentiment: (reports) => post(API_BASE, '/api/ai/analyze/sentiment', { reports }),
+
+  // 管理员账户、配额和功能权限
+  adminUsers: (query = '', limit = 50) => get(API_BASE, '/api/admin/users', { query, limit }),
+  adminUser: (userId) => get(API_BASE, `/api/admin/users/${userId}`),
+  adminUpdateStatus: (userId, enabled) => request(API_BASE, `/api/admin/users/${userId}/status`, {
+    method: 'PATCH', body: JSON.stringify({ enabled }),
+  }),
+  adminUpdateRole: (userId, role) => request(API_BASE, `/api/admin/users/${userId}/role`, {
+    method: 'PATCH', body: JSON.stringify({ role }),
+  }),
+  adminUpdateQuota: (userId, body) => request(API_BASE, `/api/admin/users/${userId}/quota`, {
+    method: 'PUT', body: JSON.stringify(body),
+  }),
+  adminUpdatePermissions: (userId, body) => request(API_BASE, `/api/admin/users/${userId}/permissions`, {
+    method: 'PUT', body: JSON.stringify(body),
+  }),
 
   // ===== 京东积存金：Java 定时采集 + Java 数据库 =====
   jdPrices: () => get(API_BASE, '/api/market/jd/prices'),

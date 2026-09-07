@@ -6,6 +6,8 @@ import LoginView from './components/LoginView.vue'
 const SimTradeView = defineAsyncComponent(() => import('./components/SimTradeView.vue'))
 const AiCenter = defineAsyncComponent(() => import('./components/AiCenter.vue'))
 const OpsView = defineAsyncComponent(() => import('./components/OpsView.vue'))
+const CrossMarketView = defineAsyncComponent(() => import('./components/CrossMarketView.vue'))
+const AdminView = defineAsyncComponent(() => import('./components/AdminView.vue'))
 
 let echartsModulePromise = null
 function getEcharts() {
@@ -26,7 +28,8 @@ async function logout() {
 }
 
 // ---- Tab ----
-const tabs = ['行情', '回测', '模拟盘', 'AI中心', '运维']
+const baseTabs = ['行情', '多市场', '回测', '模拟盘', 'AI中心', '运维']
+const tabs = computed(() => user.value?.role === 'ADMIN' ? [...baseTabs, '管理'] : baseTabs)
 const activeTab = ref('行情')
 function switchTab(name) {
   activeTab.value = name
@@ -381,6 +384,11 @@ onUnmounted(() => {
         </div>
       </section>
 
+      <!-- A股/美股/加密货币 -->
+      <section v-show="activeTab === '多市场'" class="panel-wrap">
+        <CrossMarketView />
+      </section>
+
       <!-- 回测 -->
       <section v-show="activeTab === '回测'" class="panel-wrap">
         <div class="panel">
@@ -429,6 +437,11 @@ onUnmounted(() => {
       <!-- 运维监控 -->
       <section v-show="activeTab === '运维'" class="panel-wrap">
         <OpsView />
+      </section>
+
+      <!-- 管理员后台 -->
+      <section v-if="user?.role === 'ADMIN'" v-show="activeTab === '管理'" class="panel-wrap">
+        <AdminView />
       </section>
 
       <footer class="foot">

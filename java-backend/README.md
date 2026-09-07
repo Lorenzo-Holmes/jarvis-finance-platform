@@ -45,6 +45,10 @@ java -jar target/gold-research-backend-*.jar
 | GET | `/api/auth/csrf` | 获取 Cookie-CSRF token |
 | POST | `/api/auth/register` | 注册并写入 HttpOnly JWT Cookie |
 | POST | `/api/auth/login` | 登录并写入 HttpOnly JWT Cookie |
+| POST | `/api/auth/verification/email` | Resend 发送注册验证码（需 CSRF） |
+| POST | `/api/auth/verification/email/confirm` | 校验一次性邮箱验证码 |
+| GET | `/api/auth/github/authorize` | 跳转 GitHub OAuth 授权 |
+| GET | `/api/auth/github/callback` | GitHub OAuth 回调并写入登录 Cookie |
 | GET | `/api/auth/me` | 当前用户 |
 | POST | `/api/auth/logout` | 清除登录 Cookie |
 | GET | `/api/health` / `/api/health/live` | Java liveness |
@@ -71,6 +75,7 @@ java -jar target/gold-research-backend-*.jar
 - 行情与日 K 由 Java 定时采集，GET 接口不负责外部抓取或写库。
 - HttpOnly JWT Cookie 配合 Cookie-CSRF；浏览器 POST 必须携带 `X-XSRF-TOKEN`。
 - AI 请求按用户限流，Python 只接受 `X-Internal-Service-Token`。
+- AI 功能权限由 Java 后端按 `AI_CHAT`、`AI_CHAT_STREAM`、`AI_REPORT`、`AI_SENTIMENT`、`AI_CHAIN`、`AI_QUOTE` 白名单校验。
 - AI 流式链路使用 MVC `SseEmitter`；浏览器主动停止/断开时取消 Java → Python 订阅。
 - 生产 Hikari 获取连接超时 5 秒、validation 2 秒，readiness 使用数据库 `SELECT 1`。
 - Actuator/Prometheus 仅监听 `127.0.0.1:8201`，供服务器本机监控抓取。

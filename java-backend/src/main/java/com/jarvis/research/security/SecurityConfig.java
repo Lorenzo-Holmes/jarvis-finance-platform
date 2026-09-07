@@ -55,8 +55,10 @@ public class SecurityConfig {
             .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                 // 公开接口
-                .requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/logout", "/api/auth/csrf").permitAll()
+                .requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/logout", "/api/auth/csrf",
+                        "/api/auth/verification/**", "/api/auth/github/**").permitAll()
                 .requestMatchers("/api/health", "/api/health/live", "/api/health/ready").permitAll()
+                .requestMatchers("/api/admin/**").hasRole("ADMIN")
                 // management port 仅监听 127.0.0.1:8201；允许本机 Prometheus/health 探针抓取。
                 .requestMatchers("/actuator/health/**", "/actuator/prometheus", "/actuator/metrics/**").permitAll()
                 .requestMatchers("/api/market/**").permitAll()   // 市场数据公开

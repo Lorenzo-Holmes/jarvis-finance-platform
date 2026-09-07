@@ -1,18 +1,23 @@
 <script setup>
-import { ref } from 'vue'
-import { api } from '../api/client'
+import { onMounted, ref } from 'vue'
+import { API_BASE, api } from '../api/client'
 
 const emit = defineEmits(['logged-in'])
 const mode = ref('login')           // login | register
 const email = ref('')
 const password = ref('')
 const displayName = ref('')
+const verificationCode = ref('')
+const codeSent = ref(false)
+const codeSending = ref(false)
+const notice = ref('')
 const loading = ref(false)
 const error = ref('')
 const showPwd = ref(false)
 
 async function submit() {
   error.value = ''
+  notice.value = ''
   if (!email.value || !password.value) {
     error.value = '请输入邮箱和密码'
     return
@@ -21,6 +26,15 @@ async function submit() {
   try {
     let res
     if (mode.value === 'register') {
+      if (!verificationCode.value.trim()) {
+        error.value = '请先获取并填写邮箱验证码'
+        return
+      }
+      const verify = await api.confirmEmailVerification(email.value, verificationCode.value.trim())
+      if (verify.code !== 200) {
+        error.value = verify.message || '邮箱验证码验证失败'
+        return
+      }
       if (!displayName.value.trim()) displayName.value = email.value.split('@')[0]
       res = await api.register(email.value, password.value, displayName.value)
     } else {
@@ -38,10 +52,45 @@ async function submit() {
   }
 }
 
+async function sendVerificationCode() {
+  error.value = ''
+  notice.value = ''
+  if (!email.value) {
+    error.value = '请先输入邮箱'
+    return
+  }
+  codeSending.value = true
+  try {
+    const res = await api.sendEmailVerification(email.value)
+    if (res.code === 200) {
+      codeSent.value = true
+      notice.value = '验证码已发送，请检查邮箱（有效期 10 分钟）'
+    } else {
+      error.value = res.message || '验证码发送失败'
+    }
+  } catch (e) {
+    error.value = String(e)
+  } finally {
+    codeSending.value = false
+  }
+}
+
+function githubLogin() {
+  window.location.href = `${API_BASE}/api/auth/github/authorize`
+}
+
 function switchMode() {
   mode.value = mode.value === 'login' ? 'register' : 'login'
   error.value = ''
+  notice.value = ''
+  verificationCode.value = ''
+  codeSent.value = false
 }
+
+onMounted(() => {
+  const params = new URLSearchParams(window.location.search)
+  if (params.get('oauth') === 'error') error.value = 'GitHub 登录失败，请重试或使用邮箱登录'
+})
 </script>
 
 <template>
@@ -71,13 +120,26 @@ function switchMode() {
             <button type="button" class="eye" @click="showPwd = !showPwd">{{ showPwd ? '🙈' : '👁' }}</button>
           </div>
         </div>
+        <div v-if="mode === 'register'" class="field">
+          <label>邮箱验证码</label>
+          <div class="code-row">
+            <input v-model="verificationCode" inputmode="numeric" maxlength="6" placeholder="6位验证码" />
+            <button type="button" class="btn code-btn" :disabled="codeSending" @click="sendVerificationCode">
+              {{ codeSending ? '发送中...' : (codeSent ? '重新发送' : '获取验证码') }}
+            </button>
+          </div>
+        </div>
 
         <div v-if="error" class="error">{{ error }}</div>
+        <div v-if="notice" class="notice">{{ notice }}</div>
 
         <button type="submit" class="btn primary big" :disabled="loading">
           {{ loading ? '处理中...' : (mode === 'login' ? '登 录' : '注册并开通模拟盘') }}
         </button>
       </form>
+
+      <div class="oauth-divider"><span>或</span></div>
+      <button type="button" class="btn github-btn" @click="githubLogin">使用 GitHub 登录 / 注册</button>
 
       <div class="switch">
         {{ mode === 'login' ? '还没有账号？' : '已有账号？' }}
@@ -119,12 +181,20 @@ h1 { color: #e9effb; font-size: 22px; margin: 12px 0 4px; }
 }
 .field input:focus { outline: none; border-color: #4da8ff; }
 .pwd-row { position: relative; }
+.code-row { display: flex; gap: 8px; }
+.code-row input { flex: 1; min-width: 0; }
+.code-btn { white-space: nowrap; padding: 10px 12px; font-size: 12px; }
 .eye {
   position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
   background: none; border: none; cursor: pointer; font-size: 16px;
 }
 .btn.primary.big { margin-top: 4px; padding: 12px; font-size: 15px; font-weight: 600; }
 .error { color: #ef5350; font-size: 13px; }
+.notice { color: #67d6a0; font-size: 13px; }
+.oauth-divider { display: flex; align-items: center; gap: 10px; color: #5a6b8c; font-size: 12px; margin: 20px 0 10px; }
+.oauth-divider::before, .oauth-divider::after { content: ''; height: 1px; background: #243453; flex: 1; }
+.github-btn { width: 100%; padding: 11px; color: #e9effb; border: 1px solid #3b4f72; background: #18243b; }
+.github-btn:hover { border-color: #8ba0c8; }
 .switch { text-align: center; color: #8ba0c8; font-size: 14px; margin-top: 18px; }
 .switch a { color: #4da8ff; cursor: pointer; text-decoration: underline; }
 .hint { text-align: center; color: #5a6b8c; font-size: 12px; margin-top: 8px; }

@@ -22,10 +22,13 @@ public class AuthRateLimitService {
     private static final Duration LOGIN_WINDOW = Duration.ofMinutes(15);
     private static final int REGISTER_LIMIT = 5;
     private static final Duration REGISTER_WINDOW = Duration.ofHours(1);
+    private static final int EMAIL_CODE_LIMIT = 5;
+    private static final Duration EMAIL_CODE_WINDOW = Duration.ofHours(1);
 
     private final Map<String, Window> loginAccountWindows = new ConcurrentHashMap<>();
     private final Map<String, Window> loginIpWindows = new ConcurrentHashMap<>();
     private final Map<String, Window> registerWindows = new ConcurrentHashMap<>();
+    private final Map<String, Window> emailCodeWindows = new ConcurrentHashMap<>();
 
     public void checkLogin(String clientIp, String email) {
         String normalizedEmail = email == null ? "" : email.trim().toLowerCase(Locale.ROOT);
@@ -38,6 +41,11 @@ public class AuthRateLimitService {
     public void checkRegister(String clientIp) {
         consume(registerWindows, safe(clientIp),
                 REGISTER_LIMIT, REGISTER_WINDOW, "注册请求过于频繁，请稍后再试");
+    }
+
+    public void checkEmailCodeSend(String clientIp, String email) {
+        consume(emailCodeWindows, safe(clientIp) + ":" + safe(email).toLowerCase(Locale.ROOT),
+                EMAIL_CODE_LIMIT, EMAIL_CODE_WINDOW, "验证码发送请求过于频繁，请稍后再试");
     }
 
     private void consume(Map<String, Window> windows, String key, int limit,

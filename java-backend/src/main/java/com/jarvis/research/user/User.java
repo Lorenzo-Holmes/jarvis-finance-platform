@@ -37,6 +37,11 @@ public class User {
     @Column(nullable = false)
     private boolean enabled = true;
 
+    /** 账户角色：USER / ADMIN。权限判断必须在后端完成。 */
+    @Builder.Default
+    @Column(nullable = false, length = 24)
+    private String role = "USER";
+
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 

@@ -1,6 +1,7 @@
 package com.jarvis.research.controller;
 
 import com.jarvis.research.common.ApiResponse;
+import com.jarvis.research.market.ExtendedMarketDataService;
 import com.jarvis.research.market.MarketDataService;
 import com.jarvis.research.service.JdGoldService;
 import org.springframework.http.HttpStatus;
@@ -19,10 +20,14 @@ public class MarketController {
 
     private final MarketDataService marketService;
     private final JdGoldService jdGoldService;
+    private final ExtendedMarketDataService extendedMarketDataService;
 
-    public MarketController(MarketDataService marketService, JdGoldService jdGoldService) {
+    public MarketController(MarketDataService marketService,
+                             JdGoldService jdGoldService,
+                             ExtendedMarketDataService extendedMarketDataService) {
         this.marketService = marketService;
         this.jdGoldService = jdGoldService;
+        this.extendedMarketDataService = extendedMarketDataService;
     }
 
     /** 最近有效行情；纯查询，不触发外部抓取或数据库写入。 */
@@ -89,5 +94,27 @@ public class MarketController {
             throw new IllegalArgumentException("interval 必须为 day/1/5/15/30/60");
         }
         return ApiResponse.ok(marketService.getMinuteKline(market, minutes, limit));
+    }
+
+    /** A股、美股、加密货币的受控标的列表。 */
+    @GetMapping("/instruments")
+    public ApiResponse<Object> instruments() {
+        return ApiResponse.ok(extendedMarketDataService.listInstruments());
+    }
+
+    /** 查询受控标的的最新报价。 */
+    @GetMapping("/extended/quote")
+    public ApiResponse<Object> extendedQuote(@RequestParam String market,
+                                             @RequestParam String symbol) {
+        return ApiResponse.ok(extendedMarketDataService.quote(market, symbol));
+    }
+
+    /** 查询受控标的K线。 */
+    @GetMapping("/extended/kline")
+    public ApiResponse<Object> extendedKline(@RequestParam String market,
+                                             @RequestParam String symbol,
+                                             @RequestParam(defaultValue = "1d") String interval,
+                                             @RequestParam(defaultValue = "120") int limit) {
+        return ApiResponse.ok(extendedMarketDataService.kline(market, symbol, interval, limit));
     }
 }

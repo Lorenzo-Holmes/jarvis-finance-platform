@@ -382,6 +382,10 @@ sudo /usr/local/sbin/jarvis-smoke-test
 10. AI capabilities（不消耗生成额度）；
 11. logout。
 
+生产启用邮箱注册时，还需在 `/etc/jarvis/java.env` 配置 `RESEND_API_KEY`、`RESEND_FROM`，并保持
+`AUTH_REQUIRE_EMAIL_VERIFICATION=true`。启用 GitHub 登录时配置 `GITHUB_OAUTH_ENABLED=true`、
+`GITHUB_CLIENT_ID`、`GITHUB_CLIENT_SECRET` 与 `GITHUB_REDIRECT_URI`，且回调地址必须与 GitHub OAuth App 完全一致。
+
 任何一步 HTTP/业务响应异常都会返回非零退出码。
 
 ## 13. 验证

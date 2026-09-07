@@ -40,6 +40,26 @@ public class AuthDtos {
     }
 
     @Data
+    public static class EmailVerificationRequest {
+        @NotBlank(message = "邮箱不能为空")
+        @Email(message = "邮箱格式不正确")
+        @Size(max = 120, message = "邮箱长度不能超过120字符")
+        private String email;
+    }
+
+    @Data
+    public static class EmailVerificationConfirmRequest {
+        @NotBlank(message = "邮箱不能为空")
+        @Email(message = "邮箱格式不正确")
+        @Size(max = 120, message = "邮箱长度不能超过120字符")
+        private String email;
+
+        @NotBlank(message = "验证码不能为空")
+        @Size(min = 6, max = 6, message = "验证码应为6位")
+        private String code;
+    }
+
+    @Data
     public static class AuthResponse {
         private String token;
         private String tokenType = "Bearer";
@@ -58,6 +78,8 @@ public class AuthDtos {
         private Long id;
         private String email;
         private String displayName;
+        private String role;
+        private boolean enabled;
         private BigDecimal simCash;
         private BigDecimal simInitialCash;
     }
