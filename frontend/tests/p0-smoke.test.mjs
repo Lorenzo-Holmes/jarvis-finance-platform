@@ -36,6 +36,7 @@ class FakeEventSource {
 globalThis.EventSource = FakeEventSource
 
 const { API_BASE, api } = await import('../src/api/client.js')
+const { marketPreferencesKey, readMarketPreferences, writeMarketPreferences } = await import('../src/utils/marketPreferences.js')
 
 test('local development keeps browser on the Java/Vite same-origin API', () => {
   assert.equal(API_BASE, '')
@@ -67,6 +68,27 @@ test('market price stream parses JSON events and closes cleanly', () => {
 
   close()
   assert.equal(source.closed, true)
+})
+
+test('market preferences persist per user and discard malformed entries', () => {
+  let value = null
+  const storage = {
+    getItem: () => value,
+    setItem: (_key, nextValue) => { value = nextValue },
+  }
+  const key = marketPreferencesKey({ id: 23 })
+  assert.equal(writeMarketPreferences(storage, key, {
+    watchlist: [
+      { market: 'us_stock', symbol: 'AAPL', name: 'Apple', currency: 'USD', source: 'Yahoo Finance' },
+      { market: 'us_stock', symbol: 'AAPL', name: 'duplicate' },
+      { market: 'us_stock', symbol: 'https://bad.example', name: 'invalid' },
+    ],
+    hiddenDefaultKeys: ['a_share:sh600519', 'not-a-market-key'],
+  }), true)
+  assert.deepEqual(readMarketPreferences(storage, key), {
+    watchlist: [{ market: 'us_stock', symbol: 'AAPL', name: 'Apple', currency: 'USD', source: 'Yahoo Finance' }],
+    hiddenDefaultKeys: ['a_share:sh600519'],
+  })
 })
 
 async function sourceFiles(dir) {

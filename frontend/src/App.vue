@@ -50,7 +50,7 @@ onMounted(session.restore)
       <MarketPage v-if="visitedTabs.has('行情')" v-show="activeTab === '行情'" :active="activeTab === '行情'" />
 
       <section v-if="activeTab === '多市场'" class="panel-wrap">
-        <CrossMarketView />
+        <CrossMarketView :user="user" />
       </section>
 
       <BacktestPage v-if="visitedTabs.has('回测')" v-show="activeTab === '回测'" :active="activeTab === '回测'" />
