@@ -3,7 +3,7 @@ import { onMounted, ref } from 'vue'
 import { API_BASE, api } from '../api/client'
 
 const emit = defineEmits(['logged-in'])
-const mode = ref('login')           // login | register
+const mode = ref('login')           // login | register | reset
 const email = ref('')
 const password = ref('')
 const displayName = ref('')
@@ -25,6 +25,23 @@ async function submit() {
   loading.value = true
   try {
     let res
+    if (mode.value === 'reset') {
+      if (!verificationCode.value.trim()) {
+        error.value = '请先获取并填写密码重置验证码'
+        return
+      }
+      res = await api.resetPassword(email.value, verificationCode.value.trim(), password.value)
+      if (res.code === 200) {
+        mode.value = 'login'
+        password.value = ''
+        verificationCode.value = ''
+        codeSent.value = false
+        notice.value = '密码已重置，请使用新密码登录'
+      } else {
+        error.value = res.message || '密码重置失败'
+      }
+      return
+    }
     if (mode.value === 'register') {
       if (!verificationCode.value.trim()) {
         error.value = '请先获取并填写邮箱验证码'
@@ -61,10 +78,14 @@ async function sendVerificationCode() {
   }
   codeSending.value = true
   try {
-    const res = await api.sendEmailVerification(email.value)
+    const res = mode.value === 'reset'
+      ? await api.requestPasswordReset(email.value)
+      : await api.sendEmailVerification(email.value)
     if (res.code === 200) {
       codeSent.value = true
-      notice.value = '验证码已发送，请检查邮箱（有效期 10 分钟）'
+      notice.value = mode.value === 'reset'
+        ? '如果该邮箱已注册，重置验证码会发送至邮箱（有效期 10 分钟）'
+        : '验证码已发送，请检查邮箱（有效期 10 分钟）'
     } else {
       error.value = res.message || '验证码发送失败'
     }
@@ -79,12 +100,17 @@ function githubLogin() {
   window.location.href = `${API_BASE}/api/auth/github/authorize`
 }
 
-function switchMode() {
-  mode.value = mode.value === 'login' ? 'register' : 'login'
+function setMode(nextMode) {
+  mode.value = nextMode
   error.value = ''
   notice.value = ''
+  password.value = ''
   verificationCode.value = ''
   codeSent.value = false
+}
+
+function switchMode() {
+  setMode(mode.value === 'login' ? 'register' : 'login')
 }
 
 onMounted(() => {
@@ -115,13 +141,13 @@ onMounted(() => {
           <label for="auth-password">密码</label>
           <div class="pwd-row">
             <input id="auth-password" :type="showPwd ? 'text' : 'password'" v-model="password"
-                   :placeholder="mode === 'register' ? '至少10位' : '请输入密码'"
-                   :autocomplete="mode === 'register' ? 'new-password' : 'current-password'" />
+                   :placeholder="mode === 'login' ? '请输入密码' : (mode === 'reset' ? '设置至少10位新密码' : '至少10位')"
+                   :autocomplete="mode === 'login' ? 'current-password' : 'new-password'" />
             <button type="button" class="eye" :aria-label="showPwd ? '隐藏密码' : '显示密码'" @click="showPwd = !showPwd">{{ showPwd ? '🙈' : '👁' }}</button>
           </div>
         </div>
-        <div v-if="mode === 'register'" class="field">
-          <label for="auth-code">邮箱验证码</label>
+        <div v-if="mode !== 'login'" class="field">
+          <label for="auth-code">{{ mode === 'reset' ? '密码重置验证码' : '邮箱验证码' }}</label>
           <div class="code-row">
             <input id="auth-code" v-model="verificationCode" inputmode="numeric" maxlength="6" placeholder="6位验证码" />
             <button type="button" class="btn code-btn" :disabled="codeSending" @click="sendVerificationCode">
@@ -134,18 +160,26 @@ onMounted(() => {
         <div v-if="notice" class="notice" role="status" aria-live="polite">{{ notice }}</div>
 
         <button type="submit" class="btn primary big" :disabled="loading">
-          {{ loading ? '处理中...' : (mode === 'login' ? '登 录' : '注册并开通模拟盘') }}
+          {{ loading ? '处理中...' : (mode === 'login' ? '登 录' : mode === 'reset' ? '重置密码' : '注册并开通模拟盘') }}
         </button>
       </form>
 
-      <div class="oauth-divider"><span>或</span></div>
-      <button type="button" class="btn github-btn" @click="githubLogin">使用 GitHub 登录 / 注册</button>
+      <template v-if="mode !== 'reset'">
+        <div class="oauth-divider"><span>或</span></div>
+        <button type="button" class="btn github-btn" @click="githubLogin">使用 GitHub 登录 / 注册</button>
 
-      <div class="switch">
-        {{ mode === 'login' ? '还没有账号？' : '已有账号？' }}
-        <button type="button" class="switch-link" @click="switchMode">{{ mode === 'login' ? '注册' : '去登录' }}</button>
+        <div class="switch">
+          {{ mode === 'login' ? '还没有账号？' : '已有账号？' }}
+          <button type="button" class="switch-link" @click="switchMode">{{ mode === 'login' ? '注册' : '去登录' }}</button>
+        </div>
+        <div v-if="mode === 'login'" class="switch reset-link">
+          <button type="button" class="switch-link" @click="setMode('reset')">忘记密码？</button>
+        </div>
+      </template>
+      <div v-else class="switch">
+        已经想起密码？ <button type="button" class="switch-link" @click="setMode('login')">返回登录</button>
       </div>
-      <div class="hint">注册即自动开通 $100,000 模拟账户</div>
+      <div class="hint">{{ mode === 'reset' ? '重置成功后，已签发的旧登录凭证会立即失效' : '注册即自动开通 $100,000 模拟账户' }}</div>
     </div>
   </div>
 </template>

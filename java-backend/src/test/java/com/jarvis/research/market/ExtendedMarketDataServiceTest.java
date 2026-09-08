@@ -1,12 +1,22 @@
 package com.jarvis.research.market;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import org.springframework.http.HttpStatus;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.web.reactive.function.client.ClientResponse;
+import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.server.ResponseStatusException;
+import reactor.core.publisher.Mono;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.time.Clock;
+import java.time.Duration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -55,6 +65,17 @@ class ExtendedMarketDataServiceTest {
     }
 
     @Test
+    void shortQuoteCacheIsHardBoundedForUntrustedCustomSymbols() {
+        long now = System.nanoTime();
+        for (int i = 0; i < 2_200; i++) {
+            ReflectionTestUtils.invokeMethod(service, "cacheQuote",
+                    "us_stock:SYM" + i, Map.of("price", 100 + i), now);
+        }
+
+        assertEquals(2_000, service.quoteCacheSize());
+    }
+
+    @Test
     void computesTechnicalIndicatorsAndSummaryFromKlineRows() {
         List<java.util.Map<String, Object>> rows = new ArrayList<>();
         for (int i = 0; i < 40; i++) {
@@ -81,5 +102,31 @@ class ExtendedMarketDataServiceTest {
         assertNotNull(summary.get("indicators"));
         assertNotNull(summary.get("support_20"));
         assertNotNull(summary.get("resistance_20"));
+    }
+
+    @Test
+    void switchesToEastmoneyAndStopsCallingTencentAfterCircuitOpens() {
+        AtomicInteger tencentCalls = new AtomicInteger();
+        WebClient client = WebClient.builder().exchangeFunction(request -> {
+            if ("qt.gtimg.cn".equals(request.url().getHost())) {
+                tencentCalls.incrementAndGet();
+                return Mono.error(new IllegalStateException("injected Tencent failure"));
+            }
+            return Mono.just(ClientResponse.create(HttpStatus.OK)
+                    .header("Content-Type", "application/json")
+                    .body("{\"data\":{\"f43\":123000,\"f60\":122000,\"f58\":\"测试标的\",\"f169\":1000,\"f170\":82,\"f46\":122000,\"f44\":124000,\"f45\":121000}}")
+                    .build());
+        }).build();
+        MarketSourceCircuitBreaker breaker = new MarketSourceCircuitBreaker(
+                new SimpleMeterRegistry(), 1, Duration.ofHours(1), Clock.systemUTC());
+        ExtendedMarketDataService isolated = new ExtendedMarketDataService(new ObjectMapper(), breaker, client);
+
+        Map<String, Object> first = isolated.quote("a_share", "sh600519");
+        Map<String, Object> second = isolated.quote("a_share", "sh600520");
+
+        assertEquals("EastMoney (fallback)", first.get("source"));
+        assertEquals("EastMoney (fallback)", second.get("source"));
+        assertEquals(1, tencentCalls.get(), "Tencent 熔断后不应再次被调用");
+        assertEquals("OPEN", breaker.state("extended.tencent.stock"));
     }
 }

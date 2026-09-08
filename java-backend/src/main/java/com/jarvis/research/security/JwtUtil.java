@@ -26,10 +26,15 @@ public class JwtUtil {
     }
 
     public String generateToken(Long userId, String email) {
+        return generateToken(userId, email, 0);
+    }
+
+    public String generateToken(Long userId, String email, int credentialVersion) {
         Date now = new Date();
         return Jwts.builder()
                 .subject(String.valueOf(userId))
                 .claim("email", email)
+                .claim("cv", credentialVersion)
                 .issuedAt(now)
                 .expiration(new Date(now.getTime() + expiration))
                 .signWith(key)

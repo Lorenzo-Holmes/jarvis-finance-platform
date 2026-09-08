@@ -50,7 +50,7 @@ const services = computed(() => [
   {
     name: 'Research Engine', layer: '模型能力', state: engine.value?.error ? '异常' : (engine.value ? '已配置' : '检查中'),
     health: ok(engine.value), latency: null,
-    detail: engine.value?.error || (engine.value ? `${engine.value.provider || '-'} / ${engine.value.model || '-'}` : '等待探针'),
+    detail: engine.value?.error || (engine.value ? `${engine.value.provider || '-'} / ${engine.value.display_name || engine.value.model || '-'}` : '等待探针'),
     probe: 'https://agent.shengxia.me/api/ai/capabilities', path: '/api/ai/capabilities',
   },
 ])

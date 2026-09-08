@@ -1,6 +1,7 @@
 package com.jarvis.research.service;
 
 import com.jarvis.research.audit.AuditService;
+import com.jarvis.research.market.MarketDataService;
 import com.jarvis.research.market.PriceSnapshotRepository;
 import com.jarvis.research.user.SimAccount;
 import com.jarvis.research.user.SimAccountRepository;
@@ -10,6 +11,8 @@ import com.jarvis.research.user.SimTrade;
 import com.jarvis.research.user.SimTradeRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -41,6 +44,19 @@ public class SimRiskService {
     private final PlatformTransactionManager transactionManager;
     private final AuditService auditService;
 
+    @Autowired(required = false)
+    private MarketDataService marketDataService;
+    @Autowired(required = false)
+    private JdGoldService jdGoldService;
+    @Autowired(required = false)
+    private SimTradingTelemetry telemetry;
+    @Autowired(required = false)
+    private PostgresTransientFailureClassifier transientFailureClassifier;
+    @Value("${jarvis.sim-trading.retry.max-attempts:3}")
+    private int retryMaxAttempts = 3;
+    @Value("${jarvis.sim-trading.retry.initial-delay-ms:100}")
+    private long retryInitialDelayMs = 100L;
+
     @Scheduled(initialDelay = 5000, fixedDelayString = "${jarvis.risk.poll-interval-ms:30000}")
     public void checkAndLiquidate() {
         List<Long> activeUserIds = accountRepository.findByStatus("ACTIVE").stream()
@@ -48,10 +64,34 @@ public class SimRiskService {
                 .toList();
         TransactionTemplate tx = new TransactionTemplate(transactionManager);
         for (Long userId : activeUserIds) {
+            if (telemetry != null) telemetry.recordRiskAccountScan();
             try {
-                tx.executeWithoutResult(status -> checkOneAccount(userId));
+                executeRiskCheckWithRetry(tx, userId);
             } catch (Exception e) {
                 log.error("风险扫描失败: userId={}", userId, e);
+            }
+        }
+    }
+
+    private void executeRiskCheckWithRetry(TransactionTemplate tx, Long userId) {
+        int attempts = Math.max(1, retryMaxAttempts);
+        for (int attempt = 1; attempt <= attempts; attempt++) {
+            try {
+                tx.executeWithoutResult(status -> checkOneAccount(userId));
+                return;
+            } catch (RuntimeException failure) {
+                boolean retryable = transientFailureClassifier != null
+                        && transientFailureClassifier.isTransient(failure);
+                if (!retryable || attempt == attempts) throw failure;
+                long delay = Math.min(1000L, Math.max(0L, retryInitialDelayMs) * (1L << (attempt - 1)));
+                log.warn("PostgreSQL 风控事务遇到可重试锁冲突，将退避重试: userId={}, attempt={}/{}, delayMs={}",
+                        userId, attempt, attempts, delay);
+                try {
+                    Thread.sleep(delay);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw failure;
+                }
             }
         }
     }
@@ -70,6 +110,7 @@ public class SimRiskService {
                 QuotePoint quote = latestQuote(position.getSymbol());
                 if (quote == null || quote.stale() || quote.price().signum() <= 0) {
                     completeValuation = false;
+                    if (telemetry != null) telemetry.recordRiskStaleSkip();
                     log.warn("跳过强平检查: userId={}, symbol={} 行情缺失或已过期",
                             account.getUserId(), position.getSymbol());
                     break;
@@ -123,6 +164,7 @@ public class SimRiskService {
         accountRepository.save(account);
         auditService.record(account.getUserId(), "FORCE_LIQUIDATION", "sim_account", null,
                 "maintPct=" + round2(maintPct) + " cash=" + account.getCash());
+        if (telemetry != null) telemetry.recordLiquidation();
         log.warn("模拟盘强平完成: userId={}, maintPct={}, cash={}",
                 account.getUserId(), round2(maintPct), account.getCash());
     }
@@ -136,6 +178,8 @@ public class SimRiskService {
             default -> null;
         };
         if (market == null) return null;
+        QuotePoint live = liveQuote(symbol, market);
+        if (live != null) return live;
         return snapshotRepository.findTopByMarketOrderByTsDesc(market)
                 .map(snapshot -> {
                     BigDecimal price = new BigDecimal(String.valueOf(snapshot.getPrice()));
@@ -146,6 +190,28 @@ public class SimRiskService {
                 })
                 .filter(quote -> quote.price().signum() > 0)
                 .orElse(null);
+    }
+
+    private QuotePoint liveQuote(String symbol, String market) {
+        try {
+            Object raw = null;
+            if (market.startsWith("jd_") && jdGoldService != null) {
+                Map<String, Object> quote = jdGoldService.latestQuote(symbol);
+                if (!quote.containsKey("error")) raw = quote;
+            } else if (marketDataService != null) {
+                raw = marketDataService.getLatestPrices().get(market);
+            }
+            if (!(raw instanceof Map<?, ?> quote) || quote.get("price") == null) return null;
+            BigDecimal price = new BigDecimal(String.valueOf(quote.get("price")));
+            Object rawTime = quote.get("quote_time") != null ? quote.get("quote_time") : quote.get("time");
+            LocalDateTime ts = rawTime == null ? null : LocalDateTime.parse(String.valueOf(rawTime));
+            long maxAgeSeconds = market.startsWith("jd_") ? 180L : 120L;
+            boolean stale = ts == null || ts.isBefore(LocalDateTime.now().minusSeconds(maxAgeSeconds));
+            return new QuotePoint(value(price), stale);
+        } catch (Exception e) {
+            log.debug("秒级风控行情不可用，回退数据库快照: symbol={}, message={}", symbol, e.getMessage());
+            return null;
+        }
     }
 
     private record QuotePoint(BigDecimal price, boolean stale) {}

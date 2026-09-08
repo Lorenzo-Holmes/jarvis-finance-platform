@@ -115,7 +115,9 @@ def test_readiness_requires_configured_ai_provider(monkeypatch):
         "available": True,
         "provider": "test-provider",
         "model": "test-model",
+        "display_name": "Test Model",
     })
     ready = ai_main.ready()
     assert ready["status"] == "ready"
     assert ready["provider"] == "test-provider"
+    assert ready["display_name"] == "Test Model"

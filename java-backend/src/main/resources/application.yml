@@ -10,6 +10,7 @@ spring:
   jpa:
     hibernate:
       ddl-auto: update
+    open-in-view: false
     show-sql: false
     properties:
       hibernate:
@@ -17,6 +18,12 @@ spring:
   flyway:
     # 本地 H2 仍由 Hibernate 自动建表；生产 profile 切 PostgreSQL 后启用 Flyway。
     enabled: false
+  task:
+    scheduling:
+      # 秒级行情、积存金、风控和日K任务隔离，避免单个慢上游阻塞全部定时任务。
+      pool:
+        size: 6
+      thread-name-prefix: jarvis-scheduler-
 
 server:
   port: 8200
@@ -28,6 +35,24 @@ jarvis:
     realtime-url: https://qt.gtimg.cn/q={symbol}
     kline-url: https://web.ifzq.gtimg.cn/appstock/app/fqkline/get
     default-symbol: sh518850
+  market:
+    # 实时报价每秒刷新内存缓存；SSE 使用单一 1Hz 广播器；数据库仍按 30s 快照持久化。
+    live-poll-interval-ms: ${MARKET_LIVE_POLL_INTERVAL_MS:1000}
+    stream-interval-ms: ${MARKET_STREAM_INTERVAL_MS:1000}
+    stream-max-subscribers: ${MARKET_STREAM_MAX_SUBSCRIBERS:2000}
+    persist-interval-ms: ${MARKET_PERSIST_INTERVAL_MS:30000}
+    circuit-breaker:
+      failure-threshold: ${MARKET_CIRCUIT_FAILURE_THRESHOLD:3}
+      open-duration-seconds: ${MARKET_CIRCUIT_OPEN_DURATION_SECONDS:30}
+  sim-trading:
+    retry:
+      max-attempts: ${SIM_TRADING_RETRY_MAX_ATTEMPTS:3}
+      initial-delay-ms: ${SIM_TRADING_RETRY_INITIAL_DELAY_MS:100}
+      multiplier: ${SIM_TRADING_RETRY_MULTIPLIER:2.0}
+      max-delay-ms: ${SIM_TRADING_RETRY_MAX_DELAY_MS:1000}
+  jd:
+    live-poll-interval-ms: ${JD_LIVE_POLL_INTERVAL_MS:1000}
+    persist-interval-ms: ${JD_PERSIST_INTERVAL_MS:30000}
   # Python 辅助微服务 (数据采集/AI预处理), 可选
   python-service:
     enabled: true
@@ -39,6 +64,7 @@ jarvis:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:https://f.shengxia.me,http://localhost:5173,http://127.0.0.1:5173}
   auth:
     cookie-name: jarvis_token
+    device-cookie-name: ${AUTH_DEVICE_COOKIE_NAME:jarvis_device}
     cookie-domain: ${AUTH_COOKIE_DOMAIN:}
     cookie-secure: ${AUTH_COOKIE_SECURE:false}
     same-site: Strict

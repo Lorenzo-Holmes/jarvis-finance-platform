@@ -48,6 +48,29 @@ public class AuthDtos {
     }
 
     @Data
+    public static class PasswordResetRequest {
+        @NotBlank(message = "邮箱不能为空")
+        @Email(message = "邮箱格式不正确")
+        @Size(max = 120, message = "邮箱长度不能超过120字符")
+        private String email;
+
+        @NotBlank(message = "验证码不能为空")
+        @Size(min = 6, max = 6, message = "验证码应为6位")
+        private String code;
+
+        @NotBlank(message = "新密码不能为空")
+        @Size(min = 10, max = 72, message = "密码长度需10-72位")
+        private String newPassword;
+    }
+
+    @Data
+    public static class ProfileUpdateRequest {
+        @NotBlank(message = "昵称不能为空")
+        @Size(max = 60, message = "昵称长度不能超过60字符")
+        private String displayName;
+    }
+
+    @Data
     public static class EmailVerificationConfirmRequest {
         @NotBlank(message = "邮箱不能为空")
         @Email(message = "邮箱格式不正确")

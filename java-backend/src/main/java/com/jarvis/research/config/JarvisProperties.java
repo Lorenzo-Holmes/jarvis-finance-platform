@@ -39,6 +39,8 @@ public class JarvisProperties {
     @Data
     public static class Auth {
         private String cookieName = "jarvis_token";
+        /** 匿名设备维度限流使用的长期 HttpOnly 随机标识，不包含用户身份信息。 */
+        private String deviceCookieName = "jarvis_device";
         private String cookieDomain = "";
         private boolean cookieSecure = false;
         private String sameSite = "Lax";

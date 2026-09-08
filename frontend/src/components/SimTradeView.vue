@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { api } from '../api/client'
 import DataState from './common/DataState.vue'
 import AccountStrip from './trading/AccountStrip.vue'
@@ -18,6 +18,7 @@ const realtimePrices = ref(null)
 const jdPrices = ref(null)
 const submitting = ref(false)
 let pendingOrderAttempt = null
+let closePriceStream = null
 
 const order = reactive({
   symbol: 'sh518850',
@@ -26,18 +27,21 @@ const order = reactive({
   leverage: 1,
 })
 
-const selectedPrice = computed(() => {
-  if (order.symbol === 'sh518850') return Number(realtimePrices.value?.gold_etf?.price || 0)
-  if (order.symbol === 'hf_XAU') return Number(realtimePrices.value?.london_gold?.price || 0)
-  if (order.symbol === 'jd_zheshang') return Number(jdPrices.value?.zheshang?.price || 0)
-  if (order.symbol === 'jd_minsheng') return Number(jdPrices.value?.minsheng?.price || 0)
-  return 0
+const selectedQuote = computed(() => {
+  if (order.symbol === 'sh518850') return realtimePrices.value?.gold_etf || null
+  if (order.symbol === 'hf_XAU') return realtimePrices.value?.london_gold || null
+  if (order.symbol === 'jd_zheshang') return jdPrices.value?.zheshang || null
+  if (order.symbol === 'jd_minsheng') return jdPrices.value?.minsheng || null
+  return null
 })
+const selectedPrice = computed(() => Number(selectedQuote.value?.price || 0))
 const estimatedNotional = computed(() => selectedPrice.value * Math.max(0, Number(order.quantity || 0)))
 const estimatedMargin = computed(() => order.type === 'BUY'
   ? estimatedNotional.value / Math.max(1, Number(order.leverage || 1))
   : estimatedNotional.value)
-const orderReady = computed(() => selectedPrice.value > 0 && Number(order.quantity) > 0)
+const orderReady = computed(() => selectedPrice.value > 0
+  && Number(order.quantity) > 0
+  && !selectedQuote.value?.stale)
 
 async function loadJdLive() {
   try {
@@ -46,6 +50,14 @@ async function loadJdLive() {
       jdPrices.value = response.data
     }
   } catch (_) { /* 保留上一次有效值 */ }
+}
+
+function startPriceStream() {
+  if (closePriceStream) return
+  closePriceStream = api.marketPriceStream(payload => {
+    if (payload?.market && Object.keys(payload.market).length) realtimePrices.value = payload.market
+    if (payload?.jd && Object.keys(payload.jd).length) jdPrices.value = payload.jd
+  })
 }
 
 async function loadRealtime() {
@@ -74,6 +86,11 @@ async function load() {
 
 async function submitOrder() {
   if (submitting.value) return
+  if (selectedQuote.value?.stale) {
+    msg.value = '源行情时间已陈旧，已暂停下单，请等待新行情。'
+    msgType.value = 'error'
+    return
+  }
   msg.value = ''
   submitting.value = true
 
@@ -140,8 +157,11 @@ async function initialize() {
 
 onMounted(async () => {
   await initialize()
+  startPriceStream()
   polling.start()
 })
+
+onBeforeUnmount(() => closePriceStream?.())
 </script>
 
 <template>

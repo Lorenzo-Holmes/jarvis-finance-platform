@@ -4,6 +4,7 @@ import com.jarvis.research.common.ExternalWebClients;
 import com.jarvis.research.config.JarvisProperties;
 import com.jarvis.research.user.EmailVerificationCode;
 import com.jarvis.research.user.EmailVerificationCodeRepository;
+import com.jarvis.research.user.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -25,10 +26,12 @@ import java.util.concurrent.ThreadLocalRandom;
 public class EmailVerificationService {
 
     private static final String REGISTER_PURPOSE = "REGISTER";
+    private static final String PASSWORD_RESET_PURPOSE = "PASSWORD_RESET";
 
     private final EmailVerificationCodeRepository repository;
     private final PasswordEncoder passwordEncoder;
     private final JarvisProperties properties;
+    private final UserRepository userRepository;
 
     @Transactional
     public void sendRegistrationCode(String rawEmail) {
@@ -52,7 +55,42 @@ public class EmailVerificationService {
                 .createdAt(now)
                 .build();
         repository.save(entity);
-        sendByResend(email, code);
+        sendByResend(email, code,
+                "JARVIS 金融投研平台注册验证码",
+                "你的注册验证码是：");
+    }
+
+    /**
+     * 请求密码重置验证码。不存在的邮箱直接静默返回，Controller 始终给出通用提示，
+     * 避免利用接口枚举平台注册邮箱。
+     */
+    @Transactional
+    public void sendPasswordResetCode(String rawEmail) {
+        String email = normalizeEmail(rawEmail);
+        if (!userRepository.existsByEmail(email)) return;
+
+        LocalDateTime now = LocalDateTime.now();
+        EmailVerificationCode latest = repository
+                .findTopByEmailAndPurposeAndUsedAtIsNullOrderByCreatedAtDesc(email, PASSWORD_RESET_PURPOSE)
+                .orElse(null);
+        if (latest != null && latest.getCreatedAt() != null
+                && latest.getCreatedAt().plusSeconds(60).isAfter(now)) {
+            throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS, "验证码发送过于频繁，请稍后再试");
+        }
+
+        String code = String.valueOf(ThreadLocalRandom.current().nextInt(100000, 1_000_000));
+        EmailVerificationCode entity = EmailVerificationCode.builder()
+                .email(email)
+                .purpose(PASSWORD_RESET_PURPOSE)
+                .codeHash(passwordEncoder.encode(code))
+                .expiresAt(now.plusSeconds(properties.getEmail().getCodeTtlSeconds()))
+                .attempts(0)
+                .createdAt(now)
+                .build();
+        repository.save(entity);
+        sendByResend(email, code,
+                "JARVIS 金融投研平台密码重置验证码",
+                "你的密码重置验证码是：");
     }
 
     @Transactional
@@ -78,6 +116,29 @@ public class EmailVerificationService {
         repository.save(entity);
     }
 
+    /** 密码重置时原子校验并消费一次性验证码。 */
+    @Transactional
+    public void consumePasswordResetVerification(String rawEmail, String rawCode) {
+        String email = normalizeEmail(rawEmail);
+        String code = rawCode == null ? "" : rawCode.trim();
+        EmailVerificationCode entity = repository
+                .findTopByEmailAndPurposeAndUsedAtIsNullOrderByCreatedAtDesc(email, PASSWORD_RESET_PURPOSE)
+                .orElseThrow(() -> invalidCode());
+        LocalDateTime now = LocalDateTime.now();
+        if (entity.getExpiresAt().isBefore(now)
+                || entity.getAttempts() >= properties.getEmail().getMaxVerifyAttempts()) {
+            throw invalidCode();
+        }
+        entity.setAttempts(entity.getAttempts() + 1);
+        if (!passwordEncoder.matches(code, entity.getCodeHash())) {
+            repository.save(entity);
+            throw invalidCode();
+        }
+        entity.setVerifiedAt(now);
+        entity.setUsedAt(now);
+        repository.save(entity);
+    }
+
     /** 注册事务中消费已验证凭证，防止同一个验证码重复注册。 */
     @Transactional
     public void consumeRegistrationVerification(String rawEmail) {
@@ -90,7 +151,7 @@ public class EmailVerificationService {
         repository.save(entity);
     }
 
-    private void sendByResend(String email, String code) {
+    private void sendByResend(String email, String code, String subject, String intro) {
         JarvisProperties.Email config = properties.getEmail();
         if (!"resend".equalsIgnoreCase(config.getProvider())) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "当前邮箱服务商未实现");
@@ -109,8 +170,8 @@ public class EmailVerificationService {
                     .bodyValue(Map.of(
                             "from", config.getFrom(),
                             "to", List.of(email),
-                            "subject", "JARVIS 金融投研平台注册验证码",
-                            "html", "<p>你的注册验证码是：</p><p style=\"font-size:28px;font-weight:bold;letter-spacing:6px\">"
+                            "subject", subject,
+                            "html", "<p>" + intro + "</p><p style=\"font-size:28px;font-weight:bold;letter-spacing:6px\">"
                                     + code + "</p><p>验证码 10 分钟内有效。如非本人操作，请忽略此邮件。</p>"))
                     .retrieve()
                     .toBodilessEntity()

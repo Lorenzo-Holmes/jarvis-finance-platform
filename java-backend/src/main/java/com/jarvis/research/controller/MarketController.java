@@ -3,10 +3,17 @@ package com.jarvis.research.controller;
 import com.jarvis.research.common.ApiResponse;
 import com.jarvis.research.market.ExtendedMarketDataService;
 import com.jarvis.research.market.MarketDataService;
+import com.jarvis.research.market.MarketPriceStreamService;
+import com.jarvis.research.market.PublicMarketRateLimitService;
 import com.jarvis.research.service.JdGoldService;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+
+import jakarta.servlet.http.HttpServletRequest;
+
 
 /**
  * 市场数据接口 (Java 主管数据存储)
@@ -21,19 +28,34 @@ public class MarketController {
     private final MarketDataService marketService;
     private final JdGoldService jdGoldService;
     private final ExtendedMarketDataService extendedMarketDataService;
+    private final MarketPriceStreamService marketPriceStreamService;
+    private final PublicMarketRateLimitService publicMarketRateLimitService;
 
     public MarketController(MarketDataService marketService,
                              JdGoldService jdGoldService,
-                             ExtendedMarketDataService extendedMarketDataService) {
+                             ExtendedMarketDataService extendedMarketDataService,
+                             MarketPriceStreamService marketPriceStreamService,
+                             PublicMarketRateLimitService publicMarketRateLimitService) {
         this.marketService = marketService;
         this.jdGoldService = jdGoldService;
         this.extendedMarketDataService = extendedMarketDataService;
+        this.marketPriceStreamService = marketPriceStreamService;
+        this.publicMarketRateLimitService = publicMarketRateLimitService;
     }
 
-    /** 最近有效行情；纯查询，不触发外部抓取或数据库写入。 */
+    /** 最近有效行情；优先返回 Java 内存中的秒级报价。 */
     @GetMapping("/prices")
     public ApiResponse<Object> prices() {
         return ApiResponse.ok(marketService.getLatestPrices());
+    }
+
+    /**
+     * 秒级行情 SSE。浏览器建立一个长连接后，每秒收到一次黄金ETF、伦敦金和积存金最新报价；
+     * 断线由 EventSource 自动重连，避免前端每秒创建多个 HTTP 请求。
+     */
+    @GetMapping(value = "/prices/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter priceStream() {
+        return marketPriceStreamService.subscribe();
     }
 
     /** 京东积存金最近有效价格（数据来自 Java 定时采集并落库）。 */
@@ -105,7 +127,9 @@ public class MarketController {
     /** 解析用户输入的自定义标的，并返回安全的标准化 symbol。 */
     @GetMapping("/instruments/resolve")
     public ApiResponse<Object> resolveInstrument(@RequestParam String market,
-                                                 @RequestParam String query) {
+                                                 @RequestParam String query,
+                                                 HttpServletRequest request) {
+        publicMarketRateLimitService.checkResolve(clientIp(request));
         return ApiResponse.ok(extendedMarketDataService.resolveInstrument(market, query));
     }
 
@@ -118,7 +142,9 @@ public class MarketController {
     /** 查询标准化标的的最新报价。 */
     @GetMapping("/extended/quote")
     public ApiResponse<Object> extendedQuote(@RequestParam String market,
-                                             @RequestParam String symbol) {
+                                             @RequestParam String symbol,
+                                             HttpServletRequest request) {
+        publicMarketRateLimitService.checkQuote(clientIp(request));
         return ApiResponse.ok(extendedMarketDataService.quote(market, symbol));
     }
 
@@ -127,7 +153,15 @@ public class MarketController {
     public ApiResponse<Object> extendedKline(@RequestParam String market,
                                              @RequestParam String symbol,
                                              @RequestParam(defaultValue = "1d") String interval,
-                                             @RequestParam(defaultValue = "120") int limit) {
+                                             @RequestParam(defaultValue = "120") int limit,
+                                             HttpServletRequest request) {
+        publicMarketRateLimitService.checkKline(clientIp(request));
         return ApiResponse.ok(extendedMarketDataService.kline(market, symbol, interval, limit));
+    }
+
+    private String clientIp(HttpServletRequest request) {
+        String trustedProxyIp = request.getHeader("X-Real-IP");
+        if (trustedProxyIp != null && !trustedProxyIp.isBlank()) return trustedProxyIp.trim();
+        return request.getRemoteAddr();
     }
 }

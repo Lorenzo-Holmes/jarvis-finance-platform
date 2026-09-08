@@ -21,8 +21,40 @@ problems=()
 if ! curl --silent --show-error --fail --max-time 8 "$JAVA_READY_URL" >/dev/null; then
   problems+=("Java/DB readiness 失败")
 fi
-if ! curl --silent --show-error --fail --max-time 8 "$JAVA_METRICS_URL" >/dev/null; then
+metrics_body="$(curl --silent --show-error --fail --max-time 8 "$JAVA_METRICS_URL" 2>/dev/null || true)"
+if [ -z "$metrics_body" ]; then
   problems+=("Java Prometheus management endpoint 失败")
+elif ! printf '%s' "$metrics_body" | grep -q '^jarvis_market_stream_subscribers '; then
+  problems+=("Java 自定义行情指标缺失")
+else
+  metric_value() {
+    local metric="$1"
+    local selector="${2:-}"
+    if [ -n "$selector" ]; then
+      printf '%s\n' "$metrics_body" | awk -v metric="$metric" -v selector="$selector" '
+        index($0, metric "{") == 1 && index($0, selector) > 0 { print $NF; exit }
+      '
+    else
+      printf '%s\n' "$metrics_body" | awk -v metric="$metric" '$1 == metric { print $2; exit }'
+    fi
+  }
+
+  for collector in core jd; do
+    age="$(metric_value jarvis_market_poll_last_run_age_seconds "collector=\"$collector\"")"
+    if [ -z "$age" ]; then
+      problems+=("行情采集 heartbeat 指标缺失: $collector")
+    elif ! awk -v value="$age" 'BEGIN { exit !(value <= 20) }'; then
+      problems+=("行情采集 heartbeat 超时: ${collector}=${age}s")
+    fi
+  done
+
+  subscribers="$(metric_value jarvis_market_stream_subscribers)"
+  broadcast_age="$(metric_value jarvis_market_stream_last_broadcast_age_seconds)"
+  if [ -n "$subscribers" ] && [ -n "$broadcast_age" ] \
+      && awk -v value="$subscribers" 'BEGIN { exit !(value > 0) }' \
+      && ! awk -v value="$broadcast_age" 'BEGIN { exit !(value <= 15) }'; then
+    problems+=("SSE 行情广播 heartbeat 超时: ${broadcast_age}s (${subscribers} subscribers)")
+  fi
 fi
 
 PYTHON_SERVICE_TOKEN=""

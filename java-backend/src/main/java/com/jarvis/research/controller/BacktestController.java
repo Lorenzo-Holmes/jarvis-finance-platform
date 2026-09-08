@@ -24,7 +24,8 @@ public class BacktestController {
             @RequestParam(name = "short_ma", defaultValue = "5") int shortMa,
             @RequestParam(name = "long_ma", defaultValue = "20") int longMa,
             @RequestParam(name = "initial_cash", defaultValue = "100000") double initialCash,
-            @RequestParam(defaultValue = "120") int limit) {
-        return ApiResponse.ok(backtestService.run(market, shortMa, longMa, initialCash, limit));
+            @RequestParam(defaultValue = "120") int limit,
+            @RequestParam(name = "as_of", required = false) String asOf) {
+        return ApiResponse.ok(backtestService.run(market, shortMa, longMa, initialCash, limit, asOf));
     }
 }

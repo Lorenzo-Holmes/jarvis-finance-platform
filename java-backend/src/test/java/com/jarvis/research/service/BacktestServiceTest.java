@@ -51,6 +51,31 @@ class BacktestServiceTest {
                 "SELL 成交数量不能在清仓后被记录成0");
         assertTrue(Double.isFinite(((Number) result.get("annual_return_pct")).doubleValue()));
         assertEquals(20, ((Number) ((Map<?, ?>) result.get("range")).get("bars")).intValue());
+        assertEquals("double-ma-v1", result.get("strategy_version"));
+        assertTrue(String.valueOf(result.get("data_fingerprint")).startsWith("sha256:"));
+        assertEquals("2026-01-20", result.get("as_of"));
+    }
+
+    @Test
+    void supportsAsOfBoundaryForReproducibleRuns() {
+        MarketDataService marketDataService = mock(MarketDataService.class);
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (int i = 1; i <= 5; i++) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("date", "2026-02-0" + i);
+            row.put("close", 10.0 + i);
+            rows.add(row);
+        }
+        when(marketDataService.getDailyKline("gold_etf", 5, "2026-02-05"))
+                .thenReturn(Map.of("data", rows));
+
+        BacktestService service = new BacktestService(marketDataService);
+        Map<String, Object> result = service.run(
+                "gold_etf", 2, 3, 100000.0, 5, "2026-02-05");
+
+        assertEquals("2026-02-05", result.get("as_of"));
+        assertEquals("2026-02-05", ((Map<?, ?>) result.get("params")).get("as_of"));
+        assertTrue(String.valueOf(result.get("data_fingerprint")).startsWith("sha256:"));
     }
 
     @Test

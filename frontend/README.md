@@ -1,60 +1,59 @@
-# 贾维斯黄金 - Vue.js 演示前端
+# JARVIS 金融投研平台前端
 
-纯 GitHub Pages 展示前端，与后端分离。展示黄金历史K线 + 双均线回测。
+Vue 3 + Vite 金融研究终端。浏览器只访问 Java 主后端 `/api/**`；Python AI 服务只允许 Java 通过内部服务令牌调用，前端不直连 Python 或第三方行情源。
 
 ## 本地开发
 
 ```bash
 cd frontend
 npm install
-npm run dev        # http://localhost:5173/gold-trading/
+npm run dev
 ```
 
-开发模式通过 vite 代理将 `/api` 转发到本机后端 `http://127.0.0.1:8100`。
+默认访问 `http://localhost:5173/`。Vite 将 `/api/**` 代理到 Java `http://127.0.0.1:8200`。
 
-## 构建
+## P0 测试与构建
 
 ```bash
-npm run build      # 产物在 dist/
+npm run test:p0
+npm run build
 ```
 
-## 部署到 GitHub Pages
+P0 测试使用 Node 20 内置 `node:test`，验证秒级行情 EventSource 解析/关闭行为，并扫描 `src/`，禁止浏览器代码出现 Python 8100、`/py` 内部路由或 AI/内部服务 Secret。CI 会在生产构建前执行该门禁。构建产物位于 `dist/`。
 
-仓库已配置 GitHub Actions (`deploy-frontend.yml`)，推送到 `main` 且改动 `frontend/` 时自动构建并部署到：
+## 生产入口
 
-```
-https://<你的用户名>.github.io/gold-trading/
-```
+生产前端使用 `https://f.shengxia.me`，API 统一访问 `https://agent.shengxia.me/api/**`。
 
-部署前需在仓库 Settings → Pages 开启：**Source = GitHub Actions**。
+认证使用 Java 写入的 HttpOnly JWT Cookie；浏览器写操作同时携带 Cookie-CSRF `X-XSRF-TOKEN`。不要在前端保存 JWT、AI API Key、GitHub Client Secret 或 Python 内部服务令牌。
 
-## 连接后端
+## 实时行情
 
-前后端分离，纯静态页无法直接访问你本机的后端，需要**通过 URL 参数指定后端地址**：
+- 黄金 ETF、伦敦金、积存金：`GET /api/market/prices/stream` SSE 秒级推送。
+- SSE 异常时行情页保留 30 秒 HTTP 轮询兜底。
+- A 股、美股、Crypto：当前报价 1 秒刷新；K 线与交易时段维持低频刷新，避免每秒请求历史接口。
+- 模拟盘订单票据复用秒级 SSE 报价；后端成交与风控同样优先使用秒级内存行情。
 
-```
-https://<你的用户名>.github.io/gold-trading/?api=http://<你本机IP>:8100
-```
+## 主要页面
 
-- 本机后端需监听 `0.0.0.0:8100`（已开启 CORS）
-- `<你本机IP>` 为局域网/公网可达地址
-- 未带 `?api=` 时，页面显示"无法连接后端"，但结构仍可展示
-
-## 目录
-
-```
-frontend/
-├── src/
-│   ├── App.vue          # 主页面(概览+K线+回测)
-│   ├── api/client.js    # API 客户端 + 地址解析
-│   ├── main.js          # 入口
-│   └── style.css        # 样式
-├── public/              # 静态资源
-├── vite.config.js       # base=/gold-trading/ + 开发代理
-└── package.json
+```text
+src/
+├── pages/
+│   ├── MarketPage.vue        # 黄金/伦敦金/积存金行情工作台
+│   └── BacktestPage.vue      # 双均线可复现回测
+├── components/
+│   ├── CrossMarketView.vue   # A股/美股/Crypto 多市场终端
+│   ├── SimTradeView.vue      # 模拟交易与风控状态
+│   ├── AiCenter.vue          # AI 研究助手
+│   ├── AdminView.vue         # 用户/配额/权限管理
+│   └── LoginView.vue         # 登录/注册/密码重置
+├── api/client.js             # 统一 Java API 客户端
+└── composables/              # 图表、轮询、会话、freshness 等复用逻辑
 ```
 
 ## 技术栈
 
-- Vue 3 + Vite 5
-- ECharts 5（K线图、净值曲线）
+- Vue 3
+- Vite 5
+- ECharts 5
+- SSE / EventSource

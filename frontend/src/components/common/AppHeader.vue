@@ -1,9 +1,24 @@
 <script setup>
+import { ref, watch } from 'vue'
+
 const props = defineProps({
   user: { type: Object, default: null },
 })
 
-const emit = defineEmits(['logout'])
+const emit = defineEmits(['logout', 'update-profile'])
+const editingProfile = ref(false)
+const displayName = ref('')
+
+watch(() => props.user?.displayName, value => {
+  displayName.value = value || ''
+}, { immediate: true })
+
+function saveProfile() {
+  const value = displayName.value.trim()
+  if (!value) return
+  emit('update-profile', value)
+  editingProfile.value = false
+}
 </script>
 
 <template>
@@ -14,6 +29,13 @@ const emit = defineEmits(['logout'])
     </div>
     <div class="nav-right">
       <div v-if="props.user" class="user-chip">
+        <template v-if="editingProfile">
+          <input v-model="displayName" class="profile-input" maxlength="60" aria-label="昵称" @keyup.enter="saveProfile" @keyup.esc="editingProfile = false" />
+          <button class="btn small" type="button" @click="saveProfile">保存</button>
+        </template>
+        <button v-else class="profile-name" type="button" title="修改昵称" @click="editingProfile = true">
+          {{ props.user.displayName || props.user.email || '已登录' }}
+        </button>
         <span class="email">{{ props.user.email || '已登录' }}</span>
         <span v-if="props.user.role === 'ADMIN'" class="role-tag">ADMIN</span>
         <button class="btn small" type="button" @click="emit('logout')">退出</button>
@@ -30,6 +52,10 @@ const emit = defineEmits(['logout'])
 .nav-right { display: flex; align-items: center; gap: 12px; }
 .user-chip { display: flex; align-items: center; gap: 10px; }
 .email { color: var(--muted); font-size: 12px; }
+.profile-name { border: 0; background: transparent; color: var(--text); padding: 0; cursor: pointer; font-size: 12px; }
+.profile-name:hover { color: var(--accent-strong); }
+.profile-input { width: 120px; height: 30px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius-sm); color: var(--text); padding: 0 8px; font-size: 12px; outline: none; }
+.profile-input:focus { border-color: #695b40; }
 .role-tag { color: var(--accent-strong); border: 1px solid #5f5138; background: rgba(201,166,95,.08); border-radius: 3px; padding: 2px 5px; font-size: 9px; font-weight: 700; letter-spacing: .05em; }
 .guest-state { color: var(--subtle); font-size: 11px; letter-spacing: .04em; }
 .btn { background: #1c1f22; border: 1px solid var(--line-strong); color: var(--text); border-radius: var(--radius-sm); cursor: pointer; font-weight: 550; }

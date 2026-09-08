@@ -38,7 +38,10 @@ public class AuthController {
     private final GitHubOAuthService gitHubOAuthService;
 
     @GetMapping("/csrf")
-    public ApiResponse<Map<String, String>> csrf(CsrfToken token) {
+    public ApiResponse<Map<String, String>> csrf(CsrfToken token,
+                                                 HttpServletRequest request,
+                                                 HttpServletResponse response) {
+        deviceId(request, response);
         return ApiResponse.ok(Map.of(
                 "token", token.getToken(),
                 "headerName", token.getHeaderName()
@@ -49,8 +52,8 @@ public class AuthController {
     public ApiResponse<AuthResponse> register(@Valid @RequestBody RegisterRequest req,
                                               HttpServletRequest request,
                                               HttpServletResponse response) {
-        authRateLimitService.checkRegister(clientIp(request));
         String clientIp = clientIp(request);
+        authRateLimitService.checkRegister(clientIp, deviceId(request, response));
         AuthResponse auth = authService.register(req, clientIp);
         writeAuthCookie(response, auth.getToken(), auth.getExpiresIn());
         auth.setToken(null);
@@ -59,8 +62,9 @@ public class AuthController {
 
     @PostMapping("/verification/email")
     public ApiResponse<Void> sendEmailVerification(@Valid @RequestBody EmailVerificationRequest req,
-                                                    HttpServletRequest request) {
-        authRateLimitService.checkEmailCodeSend(clientIp(request), req.getEmail());
+                                                    HttpServletRequest request,
+                                                    HttpServletResponse response) {
+        authRateLimitService.checkEmailCodeSend(clientIp(request), req.getEmail(), deviceId(request, response));
         emailVerificationService.sendRegistrationCode(req.getEmail());
         return ApiResponse.ok(null, "如果邮箱可用，验证码将发送至该邮箱");
     }
@@ -70,6 +74,31 @@ public class AuthController {
             @Valid @RequestBody EmailVerificationConfirmRequest req) {
         emailVerificationService.confirmRegistrationCode(req.getEmail(), req.getCode());
         return ApiResponse.ok(null, "邮箱验证成功");
+    }
+
+    @PostMapping("/password/reset/request")
+    public ApiResponse<Void> requestPasswordReset(@Valid @RequestBody EmailVerificationRequest req,
+                                                  HttpServletRequest request,
+                                                  HttpServletResponse response) {
+        authRateLimitService.checkEmailCodeSend(clientIp(request), req.getEmail(), deviceId(request, response));
+        emailVerificationService.sendPasswordResetCode(req.getEmail());
+        return ApiResponse.ok(null, "如果该邮箱已注册，密码重置验证码将发送至该邮箱");
+    }
+
+    @PostMapping("/password/reset")
+    public ApiResponse<Void> resetPassword(@Valid @RequestBody PasswordResetRequest req,
+                                           HttpServletRequest request,
+                                           HttpServletResponse response) {
+        authService.resetPassword(req, clientIp(request));
+        response.addHeader(HttpHeaders.SET_COOKIE,
+                baseCookie("").maxAge(Duration.ZERO).build().toString());
+        return ApiResponse.ok(null, "密码已重置，请使用新密码登录");
+    }
+
+    @PatchMapping("/profile")
+    public ApiResponse<UserInfo> updateProfile(@Valid @RequestBody ProfileUpdateRequest req,
+                                               HttpServletRequest request) {
+        return ApiResponse.ok(authService.updateProfile(CurrentUser.id(), req, clientIp(request)), "资料已更新");
     }
 
     @GetMapping("/github/authorize")
@@ -97,8 +126,8 @@ public class AuthController {
     public ApiResponse<AuthResponse> login(@Valid @RequestBody LoginRequest req,
                                            HttpServletRequest request,
                                            HttpServletResponse response) {
-        authRateLimitService.checkLogin(clientIp(request), req.getEmail());
         String clientIp = clientIp(request);
+        authRateLimitService.checkLogin(clientIp, req.getEmail(), deviceId(request, response));
         AuthResponse auth = authService.login(req, clientIp);
         writeAuthCookie(response, auth.getToken(), auth.getExpiresIn());
         auth.setToken(null);
@@ -127,14 +156,34 @@ public class AuthController {
         response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
     }
 
-    private String clientIp(HttpServletRequest request) {
-        // 生产 Java 只监听 127.0.0.1，外部请求必须经过受信任的 Nginx/Cloudflare。
-        String cf = request.getHeader("CF-Connecting-IP");
-        if (cf != null && !cf.isBlank()) return cf.trim();
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            return forwarded.split(",", 2)[0].trim();
+    private String deviceId(HttpServletRequest request, HttpServletResponse response) {
+        String cookieName = props.getAuth().getDeviceCookieName();
+        if (request.getCookies() != null) {
+            for (jakarta.servlet.http.Cookie cookie : request.getCookies()) {
+                if (cookieName.equals(cookie.getName()) && cookie.getValue() != null
+                        && cookie.getValue().matches("[A-Za-z0-9_-]{20,80}")) {
+                    return cookie.getValue();
+                }
+            }
         }
+        String value = java.util.UUID.randomUUID().toString().replace("-", "");
+        ResponseCookie.ResponseCookieBuilder cookie = ResponseCookie.from(cookieName, value)
+                .httpOnly(true)
+                .secure(props.getAuth().isCookieSecure())
+                .sameSite(props.getAuth().getSameSite())
+                .path("/")
+                .maxAge(Duration.ofDays(365));
+        if (props.getAuth().getCookieDomain() != null && !props.getAuth().getCookieDomain().isBlank()) {
+            cookie.domain(props.getAuth().getCookieDomain());
+        }
+        response.addHeader(HttpHeaders.SET_COOKIE, cookie.build().toString());
+        return value;
+    }
+
+    private String clientIp(HttpServletRequest request) {
+        // 只读取 Nginx 覆写的 X-Real-IP，不信任客户端自行提交的转发头。
+        String trustedProxyIp = request.getHeader("X-Real-IP");
+        if (trustedProxyIp != null && !trustedProxyIp.isBlank()) return trustedProxyIp.trim();
         return request.getRemoteAddr();
     }
 

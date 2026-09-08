@@ -76,6 +76,19 @@ async function request(base, path, options = {}, params = {}) {
 function get(base, path, params) { return request(base, path, { method: 'GET' }, params) }
 function post(base, path, body) { return request(base, path, { method: 'POST', body: JSON.stringify(body) }) }
 
+function openSse(base, path, eventName, onEvent, onError) {
+  const source = new EventSource(`${base}${path}`, { withCredentials: true })
+  source.addEventListener(eventName, event => {
+    try {
+      onEvent?.(JSON.parse(event.data))
+    } catch (_) {
+      onEvent?.(event.data)
+    }
+  })
+  source.onerror = error => onError?.(error)
+  return () => source.close()
+}
+
 async function postSse(base, path, body, onEvent, signal) {
   const token = await ensureCsrfToken(base)
   const res = await fetch(`${base}${path}`, {
@@ -137,6 +150,11 @@ export const api = {
   login: (email, password) => post(API_BASE, '/api/auth/login', { email, password }),
   sendEmailVerification: (email) => post(API_BASE, '/api/auth/verification/email', { email }),
   confirmEmailVerification: (email, code) => post(API_BASE, '/api/auth/verification/email/confirm', { email, code }),
+  requestPasswordReset: (email) => post(API_BASE, '/api/auth/password/reset/request', { email }),
+  resetPassword: (email, code, newPassword) => post(API_BASE, '/api/auth/password/reset', { email, code, newPassword }),
+  updateProfile: (displayName) => request(API_BASE, '/api/auth/profile', {
+    method: 'PATCH', body: JSON.stringify({ displayName }),
+  }),
   me: () => get(API_BASE, '/api/auth/me'),
   logout: () => post(API_BASE, '/api/auth/logout', {}),
   health: () => get(API_BASE, '/api/health'),
@@ -150,6 +168,9 @@ export const api = {
   }),
   // 市场数据 (Java 主管数据存储: 实时价格 + K线)
   marketPrices: () => get(API_BASE, '/api/market/prices'),
+  marketPriceStream: (onEvent, onError) => openSse(
+    API_BASE, '/api/market/prices/stream', 'prices', onEvent, onError,
+  ),
   marketKline: (params) => get(API_BASE, '/api/market/kline', params),
   marketInstruments: () => get(API_BASE, '/api/market/instruments'),
   resolveMarketInstrument: (market, query) => get(API_BASE, '/api/market/instruments/resolve', { market, query }),

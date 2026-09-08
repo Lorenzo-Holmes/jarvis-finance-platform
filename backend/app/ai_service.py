@@ -12,6 +12,8 @@ from typing import Iterator, List, Dict, Optional, Any
 
 import requests
 
+from .research_tools import deterministic_context, quote_metrics
+
 logger = logging.getLogger(__name__)
 
 AI_BASE_URL = os.getenv(
@@ -22,6 +24,7 @@ AI_MODEL = os.getenv(
     "AI_MODEL",
     os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash:0731"),
 )
+AI_MODEL_DISPLAY_NAME = os.getenv("AI_MODEL_DISPLAY_NAME", AI_MODEL)
 AI_API_KEY = os.getenv(
     "AI_API_KEY",
     os.getenv("DEEPSEEK_API_KEY", os.getenv("OLLAMA_API_KEY", "")),
@@ -37,7 +40,23 @@ FIN_SYS_PROMPT = (
     "你是「库里帕酱」，贾维斯金融投研平台的 AI 投资助手。"
     "你擅长：实时金价解读、黄金ETF投资咨询、财报解析、产业链挖掘、研报情感分析、智能报价。"
     "回答专业、简洁、可执行，涉及持仓建议时提示风险，不承诺收益。"
+    "当系统提供确定性研究上下文时，其中的价格和量化指标由程序计算，是唯一可信数值口径；"
+    "不得擅自修改、重算或编造这些数值。上下文缺少所需数据时必须明确说明数据不足。"
 )
+
+
+def _research_context_message(raw_context: Optional[Dict[str, Any]]) -> Optional[Dict[str, str]]:
+    calculated = deterministic_context(raw_context)
+    if not calculated:
+        return None
+    return {
+        "role": "system",
+        "content": (
+            "以下是 JARVIS 确定性金融计算层生成的只读研究上下文。"
+            "请直接引用这些数值进行解释，不要自行改写数值口径：\n"
+            + json.dumps(calculated, ensure_ascii=False, separators=(",", ":"))
+        ),
+    }
 
 
 def _key() -> str:
@@ -89,13 +108,18 @@ def _chat_request(messages: List[Dict[str, str]], temperature: float = 0.7,
         raise RuntimeError(f"AI 上游响应格式异常: {e}")
 
 
-def open_chat_stream(messages: List[Dict[str, str]], temperature: float = 0.7) -> Iterator[Dict[str, Any]]:
+def open_chat_stream(messages: List[Dict[str, str]], temperature: float = 0.7,
+                     research_context: Optional[Dict[str, Any]] = None) -> Iterator[Dict[str, Any]]:
     """打开 OpenAI-compatible 流式对话并返回增量事件迭代器。
 
     上游连接和 HTTP 状态会在本函数返回前完成校验，因此 FastAPI 可以在开始
     SSE 响应之前把连接/鉴权等错误映射为 502，而不是先返回 200 再失败。
     """
-    full = [{"role": "system", "content": FIN_SYS_PROMPT}] + messages
+    full = [{"role": "system", "content": FIN_SYS_PROMPT}]
+    context_message = _research_context_message(research_context)
+    if context_message:
+        full.append(context_message)
+    full.extend(messages)
     payload: Dict[str, Any] = {
         "model": AI_MODEL,
         "messages": full,
@@ -165,9 +189,14 @@ def open_chat_stream(messages: List[Dict[str, str]], temperature: float = 0.7) -
     return events()
 
 
-def chat(messages: List[Dict[str, str]], temperature: float = 0.7) -> Dict[str, Any]:
-    """通用对话。messages: [{"role","content"}...]"""
-    full = [{"role": "system", "content": FIN_SYS_PROMPT}] + messages
+def chat(messages: List[Dict[str, str]], temperature: float = 0.7,
+         research_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """通用对话。量化上下文先由 Python 确定性计算，再交给模型解释。"""
+    full = [{"role": "system", "content": FIN_SYS_PROMPT}]
+    context_message = _research_context_message(research_context)
+    if context_message:
+        full.append(context_message)
+    full.extend(messages)
     return _chat_request(full, temperature=temperature)
 
 
@@ -180,6 +209,7 @@ def capabilities() -> Dict[str, Any]:
         "protocol": "openai-chat",
         "streaming": True,
         "model": AI_MODEL,
+        "display_name": AI_MODEL_DISPLAY_NAME,
         "key_configured": ok,
         "message": "已配置" if ok else "缺少 AI_API_KEY 环境变量",
         "skills": [
@@ -189,6 +219,7 @@ def capabilities() -> Dict[str, Any]:
             "产业链挖掘",
             "研报情感分析",
             "智能报价",
+            "模拟盘持仓与杠杆风险分析",
         ],
     }
 
@@ -224,10 +255,13 @@ def analyze_chain(node: str, context: str = "") -> Dict[str, Any]:
 
 
 def smart_quote(price_data: Dict[str, Any]) -> Dict[str, Any]:
-    """智能报价解读 (结合实时行情)"""
+    """智能报价解读：派生数值先由 Python 计算，LLM 只负责文字解释。"""
+    metrics = quote_metrics(price_data)
     prompt = (
-        "你是黄金投资助手，基于以下实时行情给出简洁的智能解读与操作参考：\n"
-        f"{json.dumps(price_data, ensure_ascii=False, default=str)}\n"
+        "你是黄金投资助手。以下【确定性计算结果】由程序生成，禁止自行修改其中数值；"
+        "请基于这些结果给出简洁的行情解读与操作参考。\n"
+        f"确定性计算结果: {json.dumps(metrics, ensure_ascii=False, default=str)}\n"
+        f"原始行情: {json.dumps(price_data, ensure_ascii=False, default=str)}\n"
         "要求: 3-5 条要点, 含趋势判断/风险提示, 200字内。"
     )
     return _chat_request([{"role": "user", "content": prompt}], temperature=0.5, max_tokens=600)

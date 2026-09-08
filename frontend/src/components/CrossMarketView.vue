@@ -33,7 +33,12 @@ const freshness = useFreshness(90000)
 const marketChart = useMarketChart()
 const chartRef = marketChart.elementRef
 let lastDailyRefreshAt = 0
-const polling = usePolling(async () => {
+// 报价与 K 线解耦：报价 1 秒刷新，K 线/交易时段维持低频刷新，避免每秒请求重型历史接口。
+const quotePolling = usePolling(async () => {
+  const shouldWatch = market.value === 'crypto' || session.value?.is_open
+  if (shouldWatch) await loadQuoteOnly()
+}, 1000)
+const maintenancePolling = usePolling(async () => {
   await loadSession()
   if (interval.value === '1d') {
     if (Date.now() - lastDailyRefreshAt < 30000) return
@@ -125,6 +130,21 @@ function chooseDefaultSymbol() {
   }
   if (!marketIntervals.value.some(i => i.value === interval.value)) {
     interval.value = marketIntervals.value[0].value
+  }
+}
+
+async function loadQuoteOnly() {
+  if (!selectedSymbol.value) return
+  const requestMarket = market.value
+  const requestSymbol = selectedSymbol.value
+  try {
+    const response = await api.marketAssetQuote(requestMarket, requestSymbol)
+    if (market.value !== requestMarket || selectedSymbol.value !== requestSymbol) return
+    if (response.code !== 200) return
+    quote.value = response.data
+    freshness.touch()
+  } catch (_) {
+    // 秒级报价失败时保留最后有效值；15s maintenance 仍会继续尝试完整刷新。
   }
 }
 
@@ -222,7 +242,8 @@ watch([selectedSymbol, interval], () => {
 
 onMounted(async () => {
   await refresh()
-  polling.start()
+  quotePolling.start()
+  maintenancePolling.start()
 })
 </script>
 

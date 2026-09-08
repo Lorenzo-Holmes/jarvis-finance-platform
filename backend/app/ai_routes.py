@@ -42,6 +42,8 @@ class ChatMessage(BaseModel):
 class ChatReq(BaseModel):
     messages: List[ChatMessage] = Field(min_length=1, max_length=20)
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)
+    # 仅由 Java 主后端注入；Python 会在调用 LLM 前对其中行情/K线做确定性计算。
+    research_context: Optional[Dict[str, Any]] = None
 
 
 class ReportReq(BaseModel):
@@ -78,14 +80,23 @@ def get_capabilities():
 @router.post("/chat")
 def chat(req: ChatReq):
     messages = [message.model_dump() for message in req.messages]
-    return {"code": 200, "message": "ok", "data": _guard(ai_service.chat, messages=messages, temperature=req.temperature)}
+    return {"code": 200, "message": "ok", "data": _guard(
+        ai_service.chat,
+        messages=messages,
+        temperature=req.temperature,
+        research_context=req.research_context,
+    )}
 
 
 @router.post("/chat/stream")
 def chat_stream(req: ChatReq):
     messages = [message.model_dump() for message in req.messages]
     try:
-        events = ai_service.open_chat_stream(messages=messages, temperature=req.temperature)
+        events = ai_service.open_chat_stream(
+            messages=messages,
+            temperature=req.temperature,
+            research_context=req.research_context,
+        )
     except RuntimeError as e:
         raise HTTPException(status_code=502, detail=str(e))
 

@@ -64,10 +64,8 @@ public class AdminController {
     }
 
     private String clientIp(HttpServletRequest request) {
-        String cf = request.getHeader("CF-Connecting-IP");
-        if (cf != null && !cf.isBlank()) return cf.trim();
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) return forwarded.split(",", 2)[0].trim();
+        String trustedProxyIp = request.getHeader("X-Real-IP");
+        if (trustedProxyIp != null && !trustedProxyIp.isBlank()) return trustedProxyIp.trim();
         return request.getRemoteAddr();
     }
 }

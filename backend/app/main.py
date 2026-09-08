@@ -38,6 +38,7 @@ def ready():
         "service": "jarvis-ai-service (python)",
         "provider": caps.get("provider"),
         "model": caps.get("model"),
+        "display_name": caps.get("display_name"),
     }
 
 

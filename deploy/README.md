@@ -112,6 +112,27 @@ AI_API_KEY
 
 不要把真实 Secret 提交到 Git。
 
+### 4.1 并发与行情容灾配置
+
+生产 PostgreSQL 连接池默认通过 `DB_LOCK_TIMEOUT_MS=3000` 设置会话级锁等待上限；模拟交易对 PostgreSQL
+死锁、锁超时和序列化失败最多重试 3 次，并使用 100/200/400ms 退避。可通过以下环境变量调整，但不建议关闭上限：
+
+```text
+DB_LOCK_TIMEOUT_MS=3000
+SIM_TRADING_RETRY_MAX_ATTEMPTS=3
+SIM_TRADING_RETRY_INITIAL_DELAY_MS=100
+SIM_TRADING_RETRY_MULTIPLIER=2.0
+SIM_TRADING_RETRY_MAX_DELAY_MS=1000
+MARKET_CIRCUIT_FAILURE_THRESHOLD=3
+MARKET_CIRCUIT_OPEN_DURATION_SECONDS=30
+```
+
+行情源熔断状态、源切换和 stale 行情会进入 Prometheus 指标。Grafana 模板位于
+`deploy/monitoring/grafana/`；部署时挂载其中的 provisioning 与 dashboard 目录，并设置 `PROMETHEUS_URL`。
+
+Nginx 配置会清理客户端自带的 `X-Forwarded-For/CF-Connecting-IP`，应用只读取 Nginx 覆写的 `X-Real-IP`。
+若前面使用 Cloudflare，应在 Nginx 的 `server {}` 级别按 Cloudflare 官方 IP 段配置 `real_ip`，再 reload Nginx。
+
 ## 5. PostgreSQL 初始化
 
 示例（按实际 PostgreSQL 版本/权限调整）：
@@ -210,7 +231,7 @@ deploy/nginx/agent-api.locations.conf
 它会：
 
 - `/api/*` → `127.0.0.1:8200`
-- `/api/ai/chat/stream` 使用独立 SSE 配置，关闭 Nginx buffering/request buffering/gzip；
+- `/api/ai/chat/stream` 与 `/api/market/prices/stream` 使用独立 SSE 配置，关闭 Nginx buffering/request buffering/gzip；
 - `/py`、`/py/*` → 404；
 - `/actuator`、`/actuator/*` → 404；
 - Python 8100 与 Java management 8201 均无公网路由。
@@ -372,18 +393,22 @@ sudo /usr/local/sbin/jarvis-smoke-test
 
 1. 本机 Java liveness；
 2. 本机 Java + DB readiness；
-3. 公网 liveness/readiness；
-4. `/py/api/health` 必须为 404；
-5. CSRF token；
-6. Cookie 登录与 `/api/auth/me`；
-7. 登录态数据库 health；
-8. 行情与日 K；
-9. 模拟账户读取（**不自动下单**）；
-10. AI capabilities（不消耗生成额度）；
-11. logout。
+3. localhost Prometheus 可抓取且 `jarvis_market_stream_subscribers` 自定义指标已注册；
+4. 公网 liveness/readiness；
+5. `/py/api/health` 必须为 404；
+6. CSRF token；
+7. Cookie 登录与 `/api/auth/me`；
+8. 登录态数据库 health；
+9. 行情与日 K；
+10. 秒级行情 SSE 能读到真实 `prices` data frame；
+11. 固定 `as_of` 回测连续两次的 `data_fingerprint` / `final_equity` 一致；
+12. 模拟账户读取（**不自动下单**）；
+13. AI capabilities（不消耗生成额度）；
+14. logout。
 
 生产启用邮箱注册时，还需在 `/etc/jarvis/java.env` 配置 `RESEND_API_KEY`、`RESEND_FROM`，并保持
-`AUTH_REQUIRE_EMAIL_VERIFICATION=true`。启用 GitHub 登录时配置 `GITHUB_OAUTH_ENABLED=true`、
+`AUTH_REQUIRE_EMAIL_VERIFICATION=true`。认证入口要求 Cookie-CSRF，并通过匿名 HttpOnly `jarvis_device` 做补充设备维度限流；登录按账号/IP/设备，注册按 IP/设备，验证码按邮箱/IP/设备分别限流。
+启用 GitHub 登录时配置 `GITHUB_OAUTH_ENABLED=true`、
 `GITHUB_CLIENT_ID`、`GITHUB_CLIENT_SECRET` 与 `GITHUB_REDIRECT_URI`，且回调地址必须与 GitHub OAuth App 完全一致。
 
 任何一步 HTTP/业务响应异常都会返回非零退出码。
@@ -442,7 +467,8 @@ jarvis-monitor.timer
 默认每 5 分钟检查：
 
 - Java + PostgreSQL readiness；
-- `127.0.0.1:8201/actuator/prometheus` 是否可抓取；
+- `127.0.0.1:8201/actuator/prometheus` 是否可抓取，且 JARVIS 自定义行情指标已注册；
+- 核心行情/积存金采集 heartbeat 是否在 20 秒内，SSE 有在线订阅者时广播 heartbeat 是否在 15 秒内；
 - Python AI readiness；
 - PostgreSQL 最新备份是否超过 30 小时；
 - 最近一次备份 systemd service 是否失败；
@@ -466,14 +492,15 @@ Java 生产 profile 同时开启 Spring Boot Actuator + Prometheus：
 127.0.0.1:8201/actuator/health
 ```
 
-management 端口只监听 localhost，Nginx 显式拒绝 `/actuator`。Prometheus 指标可用于后续 Grafana/告警规则，包括 `http.server.requests`、JVM、进程、Hikari 连接池等。
+management 端口只监听 localhost，Nginx 显式拒绝 `/actuator`。除 `http.server.requests`、JVM、进程、Hikari 外，当前还暴露核心行情与模拟交易指标：行情采集成功/失败、源延迟、stale 状态、采集调度 heartbeat、陈旧快照跳过、SSE 在线连接/广播 heartbeat/发送失败、模拟订单成功/幂等重放、风控 stale skip、强平次数。
+
+Prometheus 告警规则模板位于 `deploy/monitoring/jarvis-alerts.yml`，规则只使用固定市场名和有限枚举标签，不包含 userId 或自由输入 symbol。接入现有 Prometheus 时将该文件加入 `rule_files`，再用 `promtool check rules` 校验后 reload。
 
 ## 16. 上线后
 
 当前已具备自动备份/恢复、readiness、smoke test、关键服务即时告警与 Prometheus 指标。下一阶段仍建议：
 
 - 定期离机/异地复制 PostgreSQL 备份并演练恢复；
-- 接入正式 Prometheus/Grafana，配置 5xx、429/502、Hikari 饱和度趋势告警；
+- 接入正式 Prometheus/Grafana，并在现有 `jarvis-alerts.yml` 基础上补充 5xx、429/502、Hikari 饱和度趋势面板/告警；
 - 配置 journald/Nginx 日志保留周期；
-- 增加交易/强平业务指标；
 - Cloudflare/WAF 规则。

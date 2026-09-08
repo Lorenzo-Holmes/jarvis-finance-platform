@@ -9,6 +9,8 @@ spring:
       validation-timeout: 2000
       maximum-pool-size: 10
       minimum-idle: 2
+      # 防止 PostgreSQL 锁等待无限占用连接；死锁由应用层有界重试处理。
+      connection-init-sql: SET lock_timeout = '${DB_LOCK_TIMEOUT_MS:3000}ms'
   jpa:
     hibernate:
       ddl-auto: validate

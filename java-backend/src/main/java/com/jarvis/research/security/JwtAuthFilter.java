@@ -59,6 +59,12 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                         chain.doFilter(request, response);
                         return;
                     }
+                    Integer tokenCredentialVersion = claims.get("cv", Integer.class);
+                    int tokenVersion = tokenCredentialVersion == null ? 0 : tokenCredentialVersion;
+                    if (tokenVersion != user.getCredentialVersion()) {
+                        chain.doFilter(request, response);
+                        return;
+                    }
                     role = user.getRole();
                 }
                 List<SimpleGrantedAuthority> authorities = List.of(

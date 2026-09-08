@@ -6,7 +6,7 @@ import { formatNumber, formatPercent } from '../utils/formatters'
 
 const props = defineProps({ active: { type: Boolean, default: false } })
 
-const bt = reactive({ short_ma: 5, long_ma: 20, initial_cash: 100000, running: false })
+const bt = reactive({ short_ma: 5, long_ma: 20, initial_cash: 100000, as_of: '', running: false })
 const historyLimit = ref(120)
 const result = ref(null)
 const error = ref('')
@@ -41,6 +41,7 @@ async function runBacktest() {
       long_ma: bt.long_ma,
       initial_cash: bt.initial_cash,
       limit: historyLimit.value,
+      as_of: bt.as_of || undefined,
     })
     if (response.code !== 200 || !response.data) throw new Error(response.message || '回测失败')
     result.value = response.data
@@ -112,6 +113,11 @@ watch(() => props.active, async active => {
           </select>
           <span>样本越长，策略结果越不易受短期行情影响。</span>
         </div>
+        <div class="bt-field">
+          <label>回测截止日</label>
+          <input type="date" v-model="bt.as_of" class="bt-input" />
+          <span>可选。填写后锁定历史数据窗口，便于之后复现实验结果。</span>
+        </div>
         <div v-if="validation" class="bt-validation">{{ validation }}</div>
         <button class="btn primary bt-run" type="button" @click="runBacktest" :disabled="bt.running || invalid">
           {{ bt.running ? '正在计算…' : '运行策略回测' }}
@@ -129,6 +135,11 @@ watch(() => props.active, async active => {
             <div class="bt-metric"><span>最大回撤</span><b class="neg">{{ formatPercent(result.max_drawdown_pct) }}</b></div>
             <div class="bt-metric"><span>期末资金</span><b>{{ formatNumber(result.final_equity) }}</b></div>
             <div class="bt-metric"><span>交易次数</span><b>{{ result.num_trades }}</b></div>
+          </div>
+          <div class="bt-repro-meta">
+            <span>策略 {{ result.strategy_version || '-' }}</span>
+            <span>截止 {{ result.as_of || result.range?.end || '-' }}</span>
+            <span :title="result.data_fingerprint || ''">数据指纹 {{ result.data_fingerprint ? result.data_fingerprint.slice(0, 22) + '…' : '-' }}</span>
           </div>
 
           <div class="panel bt-chart-panel">
@@ -194,6 +205,8 @@ watch(() => props.active, async active => {
 .bt-run { width: 100%; min-height: 36px; margin-top: 12px; }
 .bt-note { margin-top: 9px; color: var(--subtle); font-size: 9px; line-height: 1.5; }
 .bt-main { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.bt-repro-meta { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; color: var(--subtle); font-size: 9px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.bt-repro-meta span { padding: 4px 6px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); }
 .bt-metrics { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 7px; }
 .bt-metric { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 10px 11px; min-width: 0; }
 .bt-metric span { display: block; color: var(--subtle); font-size: 9px; white-space: nowrap; }

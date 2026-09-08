@@ -1,5 +1,6 @@
 <script setup>
 import { defineAsyncComponent, onMounted } from 'vue'
+import { api } from './api/client'
 import LoginView from './components/LoginView.vue'
 import AppHeader from './components/common/AppHeader.vue'
 import AppTabs from './components/common/AppTabs.vue'
@@ -29,12 +30,17 @@ async function logout() {
   workspace.reset()
 }
 
+async function updateProfile(displayName) {
+  const response = await api.updateProfile(displayName)
+  if (response.code === 200 && response.data) session.acceptLogin(response.data)
+}
+
 onMounted(session.restore)
 </script>
 
 <template>
   <div class="container">
-    <AppHeader :user="user" @logout="logout" />
+    <AppHeader :user="user" @logout="logout" @update-profile="updateProfile" />
 
     <LoginView v-if="!isLoggedIn" @logged-in="handleLoggedIn" />
 

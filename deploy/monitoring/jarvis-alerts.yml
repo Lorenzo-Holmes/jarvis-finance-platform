@@ -1,0 +1,112 @@
+groups:
+  - name: jarvis-market
+    interval: 30s
+    rules:
+      - alert: JarvisMarketQuoteFetchFailures
+        expr: sum by (market) (increase(jarvis_market_quote_fetch_total{result="failure"}[5m])) >= 10
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "JARVIS core market quote fetch failures"
+          description: "{{ $labels.market }} has at least 10 quote fetch failures in the last 5 minutes."
+
+      - alert: JarvisMarketSourceStaleWhilePolling
+        expr: |
+          (jarvis_market_quote_stale == 1)
+          and on (market)
+          (increase(jarvis_market_quote_fetch_total{result="success"}[5m]) > 0)
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "JARVIS is receiving stale market ticks"
+          description: "{{ $labels.market }} is still being fetched successfully, but the source timestamp remains stale."
+
+      - alert: JarvisMarketSourceLagHigh
+        expr: |
+          (jarvis_market_quote_source_lag_seconds > 15)
+          and on (market)
+          (increase(jarvis_market_quote_fetch_total{result="success"}[5m]) > 0)
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "JARVIS market source lag is high"
+          description: "{{ $labels.market }} source quote timestamp is more than 15 seconds behind server time."
+
+      - alert: JarvisMarketStalePersistSkips
+        expr: sum by (market) (increase(jarvis_market_quote_persist_skipped_total{reason="stale"}[10m])) >= 3
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "JARVIS is refusing stale ticks for persistence"
+          description: "{{ $labels.market }} had at least 3 stale snapshot persistence skips in 10 minutes."
+
+      - alert: JarvisMarketCollectorHeartbeatStalled
+        expr: jarvis_market_poll_last_run_age_seconds > 15
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "JARVIS market collector scheduler stalled"
+          description: "{{ $labels.collector }} collector has not completed a scheduling heartbeat for more than 15 seconds."
+
+      - alert: JarvisMarketSseBroadcastStalled
+        expr: |
+          (jarvis_market_stream_subscribers > 0)
+          and on ()
+          (jarvis_market_stream_last_broadcast_age_seconds > 10)
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "JARVIS SSE broadcasting stalled"
+          description: "Market SSE clients are connected, but no broadcast has been recorded for more than 10 seconds."
+
+      - alert: JarvisMarketSseSendFailures
+        expr: increase(jarvis_market_stream_send_failures_total[5m]) >= 20
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "JARVIS SSE send failures are elevated"
+          description: "Market SSE send failures exceeded 20 in the last 5 minutes."
+
+      - alert: JarvisMarketSseCapacityRejected
+        expr: increase(jarvis_market_stream_rejected_total[5m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "JARVIS SSE subscriber cap was reached"
+          description: "At least one market SSE subscription was rejected by the global connection cap."
+
+      - alert: JarvisPublicMarketRateLimitElevated
+        expr: sum by (endpoint) (increase(jarvis_market_public_rate_limited_total[5m])) >= 50
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "JARVIS public market endpoint rate limiting is elevated"
+          description: "{{ $labels.endpoint }} rejected at least 50 requests in the last 5 minutes."
+
+  - name: jarvis-sim-trading
+    interval: 30s
+    rules:
+      - alert: JarvisSimRiskSkippedForStaleQuotes
+        expr: increase(jarvis_sim_risk_stale_skips_total[10m]) >= 3
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "JARVIS risk checks are being skipped"
+          description: "At least 3 simulated-account risk checks were skipped because quotes were missing or stale."
+
+      - alert: JarvisSimLiquidationOccurred
+        expr: increase(jarvis_sim_liquidations_total[5m]) > 0
+        labels:
+          severity: info
+        annotations:
+          summary: "JARVIS simulated account liquidation occurred"
+          description: "At least one paper-trading account was force-liquidated in the last 5 minutes."

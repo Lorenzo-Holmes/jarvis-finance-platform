@@ -50,16 +50,14 @@ public class SecurityConfig {
         http
             .csrf(csrf -> csrf
                     .csrfTokenRepository(csrfRepository)
-                    .csrfTokenRequestHandler(csrfHandler)
-                    // 验证码发送/确认本身是匿名认证接口；频控与验证码尝试次数负责防滥用。
-                    // 豁免 CSRF 可避免跨子域前端未能保存 XSRF-TOKEN 时被误判为未登录。
-                    .ignoringRequestMatchers("/api/auth/verification/**"))
+                    .csrfTokenRequestHandler(csrfHandler))
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                 // 公开接口
                 .requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/logout", "/api/auth/csrf",
-                        "/api/auth/verification/**", "/api/auth/github/**").permitAll()
+                        "/api/auth/verification/**", "/api/auth/github/**",
+                        "/api/auth/password/reset", "/api/auth/password/reset/request").permitAll()
                 .requestMatchers("/api/health", "/api/health/live", "/api/health/ready").permitAll()
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")
                 // management port 仅监听 127.0.0.1:8201；允许本机 Prometheus/health 探针抓取。
@@ -85,7 +83,7 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration cfg = new CorsConfiguration();
         cfg.setAllowedOrigins(jarvisProperties.getCors().getAllowedOrigins());
-        cfg.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        cfg.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         cfg.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-XSRF-TOKEN"));
         cfg.setAllowCredentials(true);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

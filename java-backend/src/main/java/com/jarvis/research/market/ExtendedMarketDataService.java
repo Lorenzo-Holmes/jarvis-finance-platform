@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jarvis.research.common.ExternalWebClients;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -23,6 +24,9 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -31,14 +35,16 @@ import java.util.regex.Pattern;
  *
  * <p>默认提供常用标的，并允许用户输入经过市场专属格式校验的自定义 symbol，
  * 避免把任意 URL 或任意外部 symbol 直接透传给行情源。
- * A 股使用腾讯公开接口，美股使用 Yahoo Finance chart 接口，加密货币使用 Binance 公共接口。
- * 后续如需生产级多源容灾，可在本服务后面增加统一行情落库和备用源。</p>
+ * A 股使用腾讯/EastMoney， 美股使用 Yahoo Finance chart，加密货币使用 Binance/Yahoo。
+ * 各源由统一熔断器控制，故障时切换到备用源并显式标注 source。</p>
  */
 @Slf4j
 @Service
 public class ExtendedMarketDataService {
 
     private static final Charset GBK = Charset.forName("GBK");
+    private static final long QUOTE_CACHE_NANOS = TimeUnit.MILLISECONDS.toNanos(800);
+    private static final int MAX_QUOTE_CACHE_ENTRIES = 2_000;
     private static final ZoneId SHANGHAI_ZONE = ZoneId.of("Asia/Shanghai");
     private static final ZoneId NEW_YORK_ZONE = ZoneId.of("America/New_York");
     private static final DateTimeFormatter INTRADAY_DATE = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
@@ -53,6 +59,12 @@ public class ExtendedMarketDataService {
 
     private final WebClient webClient;
     private final ObjectMapper objectMapper;
+    private final MarketSourceCircuitBreaker circuitBreaker;
+    /** 多用户秒级轮询时对同一标的做极短缓存，减少重复打第三方报价源。 */
+    private final Map<String, CachedQuote> quoteCache = new ConcurrentHashMap<>();
+    private final AtomicLong quoteCacheWrites = new AtomicLong();
+
+    private record CachedQuote(Map<String, Object> value, long expiresAtNanos) {}
 
     private final List<Instrument> instruments = List.of(
             new Instrument("a_share", "sh600519", "贵州茅台", "CNY", "Tencent"),
@@ -68,8 +80,19 @@ public class ExtendedMarketDataService {
     );
 
     public ExtendedMarketDataService(ObjectMapper objectMapper) {
+        this(objectMapper, null, ExternalWebClients.create(java.time.Duration.ofSeconds(12)));
+    }
+
+    @Autowired
+    public ExtendedMarketDataService(ObjectMapper objectMapper, MarketSourceCircuitBreaker circuitBreaker) {
+        this(objectMapper, circuitBreaker, ExternalWebClients.create(java.time.Duration.ofSeconds(12)));
+    }
+
+    ExtendedMarketDataService(ObjectMapper objectMapper, MarketSourceCircuitBreaker circuitBreaker,
+                              WebClient webClient) {
         this.objectMapper = objectMapper;
-        this.webClient = ExternalWebClients.create(java.time.Duration.ofSeconds(12));
+        this.circuitBreaker = circuitBreaker;
+        this.webClient = webClient;
     }
 
     public List<Map<String, Object>> listInstruments() {
@@ -84,9 +107,9 @@ public class ExtendedMarketDataService {
         Instrument instrument = parseInstrument(market, query);
         try {
             Map<String, Object> resolved = switch (instrument.market()) {
-                case "a_share" -> quoteTencent(instrument);
-                case "us_stock" -> quoteYahoo(instrument);
-                case "crypto" -> quoteBinance(instrument);
+                case "a_share" -> quoteAShareWithFallback(instrument);
+                case "us_stock" -> quoteYahooWithCircuit(instrument);
+                case "crypto" -> quoteCryptoWithFallback(instrument);
                 default -> Map.of();
             };
             Object resolvedName = resolved.get("name");
@@ -128,19 +151,42 @@ public class ExtendedMarketDataService {
 
     public Map<String, Object> quote(String market, String symbol) {
         Instrument instrument = requireInstrument(market, symbol);
+        String cacheKey = instrument.market() + ":" + instrument.symbol();
+        long now = System.nanoTime();
+        CachedQuote cached = quoteCache.get(cacheKey);
+        if (cached != null && now < cached.expiresAtNanos()) {
+            return new LinkedHashMap<>(cached.value());
+        }
         try {
-            return switch (instrument.market()) {
-                case "a_share" -> quoteTencent(instrument);
-                case "us_stock" -> quoteYahoo(instrument);
+            Map<String, Object> result = switch (instrument.market()) {
+                case "a_share" -> quoteAShareWithFallback(instrument);
+                case "us_stock" -> quoteYahooWithCircuit(instrument);
                 case "crypto" -> quoteCryptoWithFallback(instrument);
                 default -> throw invalid("不支持的市场: " + instrument.market());
             };
+            cacheQuote(cacheKey, result, now);
+            return result;
         } catch (ResponseStatusException e) {
             throw e;
         } catch (Exception e) {
             log.warn("扩展行情源调用失败 market={}, symbol={}, message={}", market, symbol, e.getMessage());
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "行情源暂不可用，请稍后重试");
         }
+    }
+
+    private void cacheQuote(String cacheKey, Map<String, Object> result, long now) {
+        long writes = quoteCacheWrites.incrementAndGet();
+        if (quoteCache.size() >= MAX_QUOTE_CACHE_ENTRIES || (writes & 255L) == 0L) {
+            quoteCache.entrySet().removeIf(entry -> now >= entry.getValue().expiresAtNanos());
+        }
+        if (quoteCache.size() >= MAX_QUOTE_CACHE_ENTRIES && !quoteCache.containsKey(cacheKey)) {
+            quoteCache.keySet().stream().findFirst().ifPresent(quoteCache::remove);
+        }
+        quoteCache.put(cacheKey, new CachedQuote(new LinkedHashMap<>(result), now + QUOTE_CACHE_NANOS));
+    }
+
+    int quoteCacheSize() {
+        return quoteCache.size();
     }
 
     public Map<String, Object> kline(String market, String symbol, String interval, int limit) {
@@ -152,7 +198,7 @@ public class ExtendedMarketDataService {
         try {
             List<Map<String, Object>> data = switch (instrument.market()) {
                 case "a_share" -> "1d".equals(normalized)
-                        ? klineTencent(instrument, limit)
+                        ? klineAShareWithFallback(instrument, limit)
                         : klineTencentIntraday(instrument, normalized, limit);
                 case "us_stock" -> klineYahoo(instrument, normalized, limit);
                 case "crypto" -> klineCryptoWithFallback(instrument, normalized, limit);
@@ -234,15 +280,168 @@ public class ExtendedMarketDataService {
         return out;
     }
 
-    private Map<String, Object> quoteCryptoWithFallback(Instrument instrument) throws Exception {
+    private Map<String, Object> quoteYahooWithCircuit(Instrument instrument) throws Exception {
+        String source = "extended.yahoo.stock";
+        if (!allowSource(source)) throw upstream("Yahoo Finance 行情源熔断中");
         try {
-            return quoteBinance(instrument);
-        } catch (Exception binanceError) {
-            log.warn("Binance 行情不可用，切换 Yahoo 备用源 symbol={}, message={}",
-                    instrument.symbol(), binanceError.getMessage());
+            Map<String, Object> result = quoteYahoo(instrument);
+            recordSourceSuccess(source);
+            return result;
+        } catch (Exception e) {
+            recordSourceFailure(source);
+            throw e;
+        }
+    }
+
+    private Map<String, Object> quoteAShareWithFallback(Instrument instrument) throws Exception {
+        String primary = "extended.tencent.stock";
+        String fallback = "extended.eastmoney.stock";
+        if (allowSource(primary)) {
+            try {
+                Map<String, Object> result = quoteTencent(instrument);
+                recordSourceSuccess(primary);
+                return result;
+            } catch (Exception e) {
+                recordSourceFailure(primary);
+                log.warn("腾讯 A股行情不可用，切换 EastMoney symbol={}, message={}",
+                        instrument.symbol(), e.getMessage());
+            }
+        }
+        if (!allowSource(fallback)) throw upstream("A股备用行情源熔断中");
+        try {
+            Map<String, Object> result = quoteEastmoney(instrument);
+            result.put("source", "EastMoney (fallback)");
+            recordSourceSuccess(fallback);
+            return result;
+        } catch (Exception e) {
+            recordSourceFailure(fallback);
+            throw e;
+        }
+    }
+
+    private Map<String, Object> quoteEastmoney(Instrument instrument) throws Exception {
+        String symbol = instrument.symbol().toLowerCase(Locale.ROOT);
+        String secid = symbol.startsWith("sh") ? "1." : "0.";
+        String code = symbol.substring(2);
+        String body = webClient.get()
+                .uri(uriBuilder -> uriBuilder.scheme("https").host("push2.eastmoney.com")
+                        .path("/api/qt/stock/get")
+                        .queryParam("secid", secid + code)
+                        .queryParam("fields", "f43,f44,f45,f46,f57,f58,f60,f169,f170")
+                        .build())
+                .retrieve().bodyToMono(String.class).block();
+        JsonNode data = objectMapper.readTree(body).path("data");
+        if (!data.isObject() || !data.path("f43").isNumber()) throw upstream("A股备用行情为空");
+        double price = data.path("f43").asDouble() / 1000.0;
+        double previous = data.path("f60").asDouble() / 1000.0;
+        if (price <= 0) throw upstream("A股备用价格为空");
+        Map<String, Object> out = quoteBase(instrument);
+        out.put("name", data.path("f58").asText(instrument.name()));
+        out.put("price", price);
+        out.put("prev_close", previous);
+        out.put("change", data.path("f169").asDouble() / 1000.0);
+        out.put("change_pct", data.path("f170").asDouble() / 100.0);
+        out.put("open", data.path("f46").asDouble() / 1000.0);
+        out.put("high", data.path("f44").asDouble() / 1000.0);
+        out.put("low", data.path("f45").asDouble() / 1000.0);
+        out.put("quote_time", LocalDateTime.now().toString());
+        return out;
+    }
+
+    private List<Map<String, Object>> klineAShareWithFallback(Instrument instrument, int limit) throws Exception {
+        String primary = "extended.tencent.kline";
+        String fallback = "extended.eastmoney.kline";
+        if (allowSource(primary)) {
+            try {
+                List<Map<String, Object>> result = klineTencent(instrument, limit);
+                recordSourceSuccess(primary);
+                return result;
+            } catch (Exception e) {
+                recordSourceFailure(primary);
+                log.warn("腾讯 A股日K不可用，切换 EastMoney symbol={}, message={}",
+                        instrument.symbol(), e.getMessage());
+            }
+        }
+        if (!allowSource(fallback)) throw upstream("A股日K备用行情源熔断中");
+        try {
+            List<Map<String, Object>> result = klineEastmoney(instrument, limit);
+            recordSourceSuccess(fallback);
+            return result;
+        } catch (Exception e) {
+            recordSourceFailure(fallback);
+            throw e;
+        }
+    }
+
+    private List<Map<String, Object>> klineEastmoney(Instrument instrument, int limit) throws Exception {
+        String symbol = instrument.symbol().toLowerCase(Locale.ROOT);
+        String secid = (symbol.startsWith("sh") ? "1." : "0.") + symbol.substring(2);
+        String body = webClient.get()
+                .uri(uriBuilder -> uriBuilder.scheme("https").host("push2his.eastmoney.com")
+                        .path("/api/qt/stock/kline/get")
+                        .queryParam("secid", secid)
+                        .queryParam("klt", 101)
+                        .queryParam("fqt", 1)
+                        .queryParam("beg", 0)
+                        .queryParam("end", 20500000)
+                        .queryParam("lmt", Math.min(1000, limit))
+                        .queryParam("fields1", "f1,f2,f3,f4,f5,f6")
+                        .queryParam("fields2", "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61")
+                        .build())
+                .retrieve().bodyToMono(String.class).block();
+        JsonNode raw = objectMapper.readTree(body).path("data").path("klines");
+        if (!raw.isArray() || raw.isEmpty()) throw upstream("A股备用日K为空");
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (JsonNode item : raw) {
+            String[] values = item.asText().split(",", -1);
+            if (values.length < 6) continue;
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("date", values[0]);
+            row.put("open", Double.parseDouble(values[1]));
+            row.put("close", Double.parseDouble(values[2]));
+            row.put("high", Double.parseDouble(values[3]));
+            row.put("low", Double.parseDouble(values[4]));
+            row.put("volume", Double.parseDouble(values[5]));
+            out.add(row);
+        }
+        return tail(out, limit);
+    }
+
+    private boolean allowSource(String source) {
+        return circuitBreaker == null || circuitBreaker.allowRequest(source);
+    }
+
+    private void recordSourceSuccess(String source) {
+        if (circuitBreaker != null) circuitBreaker.recordSuccess(source);
+    }
+
+    private void recordSourceFailure(String source) {
+        if (circuitBreaker != null) circuitBreaker.recordFailure(source);
+    }
+
+    private Map<String, Object> quoteCryptoWithFallback(Instrument instrument) throws Exception {
+        if (allowSource("extended.binance")) {
+            try {
+                Map<String, Object> primary = quoteBinance(instrument);
+                recordSourceSuccess("extended.binance");
+                return primary;
+            } catch (Exception binanceError) {
+                recordSourceFailure("extended.binance");
+                log.warn("Binance 行情不可用，切换 Yahoo 备用源 symbol={}, message={}",
+                        instrument.symbol(), binanceError.getMessage());
+            }
+        }
+        if (!allowSource("extended.yahoo.crypto")) {
+            throw upstream("加密货币备用行情源熔断中");
+        }
+        try {
             Map<String, Object> fallback = quoteYahoo(instrument, yahooCryptoSymbol(instrument.symbol()));
             fallback.put("source", "Yahoo Finance (fallback)");
+            recordSourceSuccess("extended.yahoo.crypto");
             return fallback;
+        } catch (Exception yahooError) {
+            recordSourceFailure("extended.yahoo.crypto");
+            throw yahooError;
         }
     }
 
@@ -384,19 +583,39 @@ public class ExtendedMarketDataService {
 
     private List<Map<String, Object>> klineCryptoWithFallback(Instrument instrument,
                                                                String interval, int limit) throws Exception {
+        if (allowSource("extended.binance")) {
+            try {
+                List<Map<String, Object>> result;
+                if ("10m".equals(interval)) {
+                    result = aggregateCandles(klineBinance(instrument, "5m", Math.min(1000, limit * 3)), 10, limit);
+                } else {
+                    result = klineBinance(instrument, interval, limit);
+                }
+                recordSourceSuccess("extended.binance");
+                return result;
+            } catch (Exception binanceError) {
+                recordSourceFailure("extended.binance");
+                log.warn("Binance K线不可用，切换 Yahoo 备用源 symbol={}, message={}",
+                        instrument.symbol(), binanceError.getMessage());
+            }
+        }
+        if (!allowSource("extended.yahoo.crypto")) {
+            throw upstream("加密货币 K线备用行情源熔断中");
+        }
         try {
             if ("10m".equals(interval)) {
-                return aggregateCandles(klineBinance(instrument, "5m", Math.min(1000, limit * 3)), 10, limit);
+                List<Map<String, Object>> result = aggregateCandles(
+                        klineYahoo(instrument, yahooCryptoSymbol(instrument.symbol()), "5m",
+                                Math.min(500, limit * 3)), 10, limit);
+                recordSourceSuccess("extended.yahoo.crypto");
+                return result;
             }
-            return klineBinance(instrument, interval, limit);
-        } catch (Exception binanceError) {
-            log.warn("Binance K线不可用，切换 Yahoo 备用源 symbol={}, message={}",
-                    instrument.symbol(), binanceError.getMessage());
-            if ("10m".equals(interval)) {
-                return aggregateCandles(klineYahoo(instrument, yahooCryptoSymbol(instrument.symbol()), "5m",
-                        Math.min(500, limit * 3)), 10, limit);
-            }
-            return klineYahoo(instrument, yahooCryptoSymbol(instrument.symbol()), interval, limit);
+            List<Map<String, Object>> result = klineYahoo(instrument, yahooCryptoSymbol(instrument.symbol()), interval, limit);
+            recordSourceSuccess("extended.yahoo.crypto");
+            return result;
+        } catch (Exception yahooError) {
+            recordSourceFailure("extended.yahoo.crypto");
+            throw yahooError;
         }
     }
 

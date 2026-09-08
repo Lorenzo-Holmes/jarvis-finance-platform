@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { api } from '../api/client'
 import QuoteStrip from '../components/market/QuoteStrip.vue'
 import DataState from '../components/common/DataState.vue'
@@ -14,6 +14,8 @@ const emit = defineEmits(['connection-change'])
 
 const connected = ref(false)
 const initializing = ref(true)
+const streamServerTime = ref('')
+let closePriceStream = null
 const realtimePrices = ref(null)
 const jdPrices = ref(null)
 const marketFocus = ref('gold_etf')
@@ -47,9 +49,29 @@ const marketChartRef = marketChart.elementRef
 const latestMarketKline = useLatestRequest()
 const latestJdKline = useLatestRequest()
 const freshness = useFreshness(90000)
+// SSE 是主实时链路；30s HTTP 轮询保留为兜底，避免代理层暂时不支持 SSE 时页面完全失去报价。
 const poll = usePolling(async () => {
   await Promise.all([loadJdLive(), loadRealtime()])
 }, 30000)
+
+function startPriceStream() {
+  if (closePriceStream) return
+  closePriceStream = api.marketPriceStream(payload => {
+    if (payload?.market && Object.keys(payload.market).length) realtimePrices.value = payload.market
+    if (payload?.jd && Object.keys(payload.jd).length) jdPrices.value = payload.jd
+    streamServerTime.value = payload?.server_time || ''
+    freshness.touch()
+    setConnected(true)
+  }, () => {
+    // EventSource 会自动重连；期间继续由 30s fallback poll 保留最后有效报价。
+    setConnected(false)
+  })
+}
+
+function stopPriceStream() {
+  closePriceStream?.()
+  closePriceStream = null
+}
 
 function setConnected(value) {
   connected.value = value
@@ -140,6 +162,7 @@ const focusedQuote = computed(() => {
   if (marketFocus.value === 'london_gold') return realtimePrices.value?.london_gold || null
   return jdPrices.value?.[jdKlineCfg.market] || null
 })
+const focusedQuoteStale = computed(() => Boolean(focusedQuote.value?.stale))
 const focusedIntervals = computed(() => marketFocus.value === 'jd'
   ? [{ v: '1', label: '1分' }, { v: '5', label: '5分' }, { v: '15', label: '15分' }, { v: '30', label: '30分' }, { v: '60', label: '1小时' }]
   : intervals)
@@ -219,14 +242,17 @@ async function initialize() {
 watch(() => props.active, async active => {
   if (active) {
     poll.start()
+    startPriceStream()
     await nextTick()
     requestAnimationFrame(() => marketChart.resize())
   } else {
     poll.stop()
+    stopPriceStream()
   }
 }, { immediate: true })
 
 onMounted(initialize)
+onBeforeUnmount(stopPriceStream)
 </script>
 
 <template>
@@ -236,9 +262,9 @@ onMounted(initialize)
         <h1>黄金市场工作台</h1>
         <span>核心报价、K 线与积存金数据</span>
       </div>
-      <span class="section-status" :class="{ stale: freshness.stale }">
-        <i :class="{ ok: connected && !freshness.stale, warn: freshness.stale }"></i>
-        {{ !connected ? '行情服务检查中' : freshness.stale ? '行情数据可能陈旧' : '行情服务正常' }}
+      <span class="section-status" :class="{ stale: freshness.stale || focusedQuoteStale }">
+        <i :class="{ ok: connected && !freshness.stale && !focusedQuoteStale, warn: freshness.stale || focusedQuoteStale }"></i>
+        {{ !connected ? '行情服务检查中' : focusedQuoteStale ? '源行情时间已陈旧' : freshness.stale ? '行情推送可能中断' : '行情服务正常' }}
       </span>
     </div>
 
@@ -315,9 +341,11 @@ onMounted(initialize)
 
         <div class="rail-panel data-health">
           <div class="rail-label">数据状态</div>
-          <div class="health-row"><span><i :class="{ ok: connected && !freshness.stale, warn: freshness.stale }"></i>市场数据</span><b>{{ !connected ? '检查中' : freshness.stale ? '可能陈旧' : '正常' }}</b></div>
+          <div class="health-row"><span><i :class="{ ok: connected && !freshness.stale && !focusedQuoteStale, warn: freshness.stale || focusedQuoteStale }"></i>市场数据</span><b>{{ !connected ? '检查中' : focusedQuoteStale ? '源行情陈旧' : freshness.stale ? '推送中断' : '正常' }}</b></div>
           <div class="health-row"><span>数据源</span><b>{{ focusedQuote?.source || (marketFocus === 'jd' ? '京东积存金' : '行情接口') }}</b></div>
           <div class="health-row"><span>行情时间</span><b>{{ focusedQuote?.quote_time || focusedQuote?.time || '实时刷新' }}</b></div>
+          <div class="health-row"><span>实时推送</span><b>1 秒 / SSE</b></div>
+          <div class="health-row"><span>服务端时间</span><b>{{ streamServerTime || '-' }}</b></div>
           <div class="health-row"><span>本地同步</span><b>{{ freshness.label }}</b></div>
           <p>拖动图表底部时间轴可查看历史区间；滚轮或触控可缩放 K 线。</p>
         </div>

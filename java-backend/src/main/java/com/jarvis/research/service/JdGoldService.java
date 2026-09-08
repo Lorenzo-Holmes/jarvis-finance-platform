@@ -1,18 +1,19 @@
 package com.jarvis.research.service;
 
 import com.jarvis.research.common.ExternalWebClients;
+import com.jarvis.research.market.MarketTelemetry;
 import com.jarvis.research.market.PriceSnapshot;
 import com.jarvis.research.market.PriceSnapshotRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.reactive.function.client.WebClient;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 京东积存金采集服务。
@@ -21,6 +22,9 @@ import java.util.Map;
 @Slf4j
 @Service
 public class JdGoldService {
+
+    /** 超过该年龄的内存 tick 不再落库，避免上游断流时旧价被重复写成“新鲜行情”。 */
+    private static final long MAX_LIVE_PERSIST_AGE_SECONDS = 10L;
 
     private record Source(String key, String label, String url, String productSku) {}
 
@@ -36,6 +40,10 @@ public class JdGoldService {
 
     private final PriceSnapshotRepository snapshotRepository;
     private final WebClient webClient;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private MarketTelemetry telemetry;
+    /** 秒级积存金报价缓存；数据库按较低频率落快照，避免按秒写库。 */
+    private final Map<String, Map<String, Object>> livePriceCache = new ConcurrentHashMap<>();
 
     public JdGoldService(PriceSnapshotRepository snapshotRepository) {
         this.snapshotRepository = snapshotRepository;
@@ -47,13 +55,43 @@ public class JdGoldService {
                 .build();
     }
 
-    /** 每分钟独立采集，不依赖页面访问量。 */
-    @Scheduled(initialDelay = 1000, fixedDelayString = "${jarvis.jd.poll-interval-ms:60000}")
-    public void pollAndStore() {
+    /** 秒级采集积存金报价，只刷新内存缓存。 */
+    @Scheduled(initialDelay = 1000, fixedDelayString = "${jarvis.jd.live-poll-interval-ms:1000}")
+    public void pollLive() {
+        if (telemetry != null) telemetry.recordPollCycle("jd");
         for (Source source : SOURCES) {
             try {
                 Map<String, Object> quote = fetch(source);
                 if (quote == null) continue;
+                Map<String, Object> item = new LinkedHashMap<>(quote);
+                item.put("source", source.key());
+                item.put("label", source.label());
+                LocalDateTime receivedAt = LocalDateTime.now();
+                item.put("time", receivedAt.toString());
+                item.put("stale", false);
+                livePriceCache.put(source.key(), item);
+                // 京东接口当前不提供可信源时间戳；只记录采集成功/stale 状态，不伪造 source lag。
+                if (telemetry != null) telemetry.recordQuote("jd_" + source.key(), null, false);
+            } catch (Exception e) {
+                if (telemetry != null) telemetry.recordFetchFailure("jd_" + source.key());
+                log.warn("京东积存金采集失败 {}: {}", source.key(), e.getMessage());
+            }
+        }
+    }
+
+    /** 按较低频率把最近有效秒级报价持久化，供分钟K与故障兜底使用。 */
+    @Scheduled(initialDelay = 5000, fixedDelayString = "${jarvis.jd.persist-interval-ms:30000}")
+    public void persistLive() {
+        for (Source source : SOURCES) {
+            Map<String, Object> quote = livePriceCache.get(source.key());
+            if (quote == null) continue;
+            try {
+                LocalDateTime quoteTime = parseQuoteTime(quote.get("time"));
+                if (quoteTime == null || quoteTime.isBefore(LocalDateTime.now().minusSeconds(MAX_LIVE_PERSIST_AGE_SECONDS))) {
+                    if (telemetry != null) telemetry.recordStalePersistSkip("jd_" + source.key());
+                    log.warn("跳过陈旧积存金行情落库: source={}, quoteTime={}", source.key(), quote.get("time"));
+                    continue;
+                }
                 snapshotRepository.save(new PriceSnapshot(
                         "jd_" + source.key(),
                         number(quote.get("price")),
@@ -61,18 +99,31 @@ public class JdGoldService {
                         number(quote.get("change_pct")),
                         number(quote.get("yesterday_price")),
                         null, null, null,
-                        LocalDateTime.now()));
+                        quoteTime));
             } catch (Exception e) {
-                log.warn("京东积存金采集失败 {}: {}", source.key(), e.getMessage());
+                log.warn("京东积存金持久化失败 {}: {}", source.key(), e.getMessage());
             }
         }
     }
 
-    /** 从 Java 数据库读取最近有效快照。 */
-    @Transactional(readOnly = true)
+    private LocalDateTime parseQuoteTime(Object value) {
+        if (value == null) return null;
+        try {
+            return LocalDateTime.parse(String.valueOf(value));
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** 优先读取秒级缓存；服务刚启动尚无缓存时回退数据库最近快照。 */
     public Map<String, Object> latestPrices() {
         Map<String, Object> out = new LinkedHashMap<>();
         for (Source source : SOURCES) {
+            Map<String, Object> cached = livePriceCache.get(source.key());
+            if (cached != null) {
+                out.put(source.key(), new LinkedHashMap<>(cached));
+                continue;
+            }
             snapshotRepository.findTopByMarketOrderByTsDesc("jd_" + source.key())
                     .ifPresent(snapshot -> {
                         Map<String, Object> item = new LinkedHashMap<>();
@@ -90,7 +141,6 @@ public class JdGoldService {
     }
 
     /** 模拟盘按 symbol 读取最近积存金价格。 */
-    @Transactional(readOnly = true)
     public Map<String, Object> latestQuote(String symbol) {
         String key = switch (symbol) {
             case "jd_zheshang" -> "zheshang";

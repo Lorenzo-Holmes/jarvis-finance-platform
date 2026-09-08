@@ -171,7 +171,7 @@ onMounted(() => {
       </div>
       <div class="engine-status" :title="statusError || '研究引擎状态'">
         <i :class="aiStatus?.available ? 'ok' : 'bad'"></i>
-        <span>{{ aiStatus?.provider || 'Research Engine' }} · {{ statusLoading ? '检查中' : (aiStatus?.model || '未连接') }}</span>
+        <span>{{ aiStatus?.provider || 'Research Engine' }} · {{ statusLoading ? '检查中' : (aiStatus?.display_name || aiStatus?.model || '未连接') }}</span>
         <b>{{ statusLoading ? 'CHECKING' : (aiStatus?.available ? 'ONLINE' : 'OFFLINE') }}</b>
       </div>
     </div>

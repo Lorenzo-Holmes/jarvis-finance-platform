@@ -37,11 +37,12 @@ public class AuthService {
     @Transactional
     public AuthResponse register(RegisterRequest req, String clientIp) {
         String email = req.getEmail().trim().toLowerCase();
-        if (userRepository.existsByEmail(email)) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "该邮箱已注册");
-        }
+        // 生产环境先要求持有邮箱验证码，再检查账号是否存在；避免匿名注册接口成为邮箱枚举器。
         if (propertiesRequireEmailVerification()) {
             emailVerificationService.consumeRegistrationVerification(email);
+        }
+        if (userRepository.existsByEmail(email)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "无法完成注册，请使用登录或找回密码");
         }
         User user = User.builder()
                 .email(email)
@@ -64,7 +65,7 @@ public class AuthService {
         accountRepository.save(account);
         auditService.record(user.getId(), "USER_REGISTER", "auth", clientIp, "注册成功");
 
-        String token = jwtUtil.generateToken(user.getId(), user.getEmail());
+        String token = jwtUtil.generateToken(user.getId(), user.getEmail(), user.getCredentialVersion());
         return new AuthResponse(token, jwtUtil.getExpiration(), toUserInfo(user, account));
     }
 
@@ -113,8 +114,33 @@ public class AuthService {
         SimAccount account = ensureSimAccount(user.getId());
         auditService.record(user.getId(), created ? "USER_GITHUB_REGISTER" : "USER_GITHUB_LOGIN",
                 "auth", clientIp, "GitHub OAuth 登录成功");
-        String token = jwtUtil.generateToken(user.getId(), user.getEmail());
+        String token = jwtUtil.generateToken(user.getId(), user.getEmail(), user.getCredentialVersion());
         return new AuthResponse(token, jwtUtil.getExpiration(), toUserInfo(user, account));
+    }
+
+    /** 通过一次性邮箱验证码重置密码，并递增凭证版本使历史 JWT 立即失效。 */
+    @Transactional
+    public void resetPassword(PasswordResetRequest req, String clientIp) {
+        String email = req.getEmail().trim().toLowerCase();
+        emailVerificationService.consumePasswordResetVerification(email, req.getCode());
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "密码重置请求无效"));
+        user.setPasswordHash(passwordEncoder.encode(req.getNewPassword()));
+        user.setCredentialVersion(user.getCredentialVersion() + 1);
+        userRepository.save(user);
+        auditService.record(user.getId(), "PASSWORD_RESET", "auth", clientIp, "邮箱验证码重置密码");
+    }
+
+    /** 更新当前用户昵称。 */
+    @Transactional
+    public UserInfo updateProfile(Long userId, ProfileUpdateRequest req, String clientIp) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "用户不存在"));
+        user.setDisplayName(req.getDisplayName().trim());
+        userRepository.save(user);
+        auditService.record(userId, "PROFILE_UPDATE", "auth", clientIp, "更新昵称");
+        SimAccount account = accountRepository.findByUserId(userId).orElse(null);
+        return toUserInfo(user, account);
     }
 
     private boolean propertiesRequireEmailVerification() {
@@ -135,7 +161,7 @@ public class AuthService {
         }
         SimAccount account = ensureSimAccount(user.getId());
         auditService.record(user.getId(), "USER_LOGIN", "auth", clientIp, "登录成功");
-        String token = jwtUtil.generateToken(user.getId(), user.getEmail());
+        String token = jwtUtil.generateToken(user.getId(), user.getEmail(), user.getCredentialVersion());
         return new AuthResponse(token, jwtUtil.getExpiration(), toUserInfo(user, account));
     }
 

@@ -42,6 +42,11 @@ public class User {
     @Column(nullable = false, length = 24)
     private String role = "USER";
 
+    /** 登录凭证版本；重置密码时递增，使此前签发的 JWT 立即失效。 */
+    @Builder.Default
+    @Column(name = "credential_version", nullable = false)
+    private int credentialVersion = 0;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 

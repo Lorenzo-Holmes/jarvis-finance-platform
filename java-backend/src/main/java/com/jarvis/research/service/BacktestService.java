@@ -4,9 +4,12 @@ import com.jarvis.research.market.MarketDataService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -19,10 +22,16 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class BacktestService {
 
+    private static final String STRATEGY_VERSION = "double-ma-v1";
     private final MarketDataService marketDataService;
 
     public Map<String, Object> run(String market, int shortMa, int longMa,
                                    double initialCash, int limit) {
+        return run(market, shortMa, longMa, initialCash, limit, null);
+    }
+
+    public Map<String, Object> run(String market, int shortMa, int longMa,
+                                   double initialCash, int limit, String asOf) {
         if (shortMa < 1 || longMa < 2 || shortMa >= longMa) {
             throw new IllegalArgumentException("均线参数需满足 1 <= short_ma < long_ma");
         }
@@ -33,7 +42,17 @@ public class BacktestService {
             throw new IllegalArgumentException("limit 必须在 long_ma ~ 5000 之间");
         }
 
-        Map<String, Object> kline = marketDataService.getDailyKline(market, limit);
+        if (asOf != null && !asOf.isBlank()) {
+            try {
+                LocalDate.parse(asOf.trim());
+            } catch (Exception e) {
+                throw new IllegalArgumentException("as_of 必须为 yyyy-MM-dd");
+            }
+        }
+
+        Map<String, Object> kline = asOf == null || asOf.isBlank()
+                ? marketDataService.getDailyKline(market, limit)
+                : marketDataService.getDailyKline(market, limit, asOf.trim());
         Object raw = kline.get("data");
         if (!(raw instanceof List<?> rows) || rows.size() < longMa) {
             throw new IllegalArgumentException("K线数据不足，至少需要 " + longMa + " 根");
@@ -118,13 +137,19 @@ public class BacktestService {
         range.put("bars", dates.size());
 
         Map<String, Object> params = new LinkedHashMap<>();
+        String effectiveAsOf = dates.get(dates.size() - 1);
         params.put("short_ma", shortMa);
         params.put("long_ma", longMa);
         params.put("transaction_cost", transactionCost);
+        params.put("limit", limit);
+        params.put("as_of", effectiveAsOf);
 
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("market", market);
         out.put("range", range);
+        out.put("as_of", effectiveAsOf);
+        out.put("strategy_version", STRATEGY_VERSION);
+        out.put("data_fingerprint", dataFingerprint(market, dates, closes));
         out.put("params", params);
         out.put("initial_cash", initialCash);
         out.put("final_equity", round2(finalEquity));
@@ -136,6 +161,20 @@ public class BacktestService {
         out.put("trades", trades.size() <= 20 ? trades : trades.subList(trades.size() - 20, trades.size()));
         out.put("equity_curve", equityCurve);
         return out;
+    }
+
+    private String dataFingerprint(String market, List<String> dates, List<Double> closes) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            digest.update(market.getBytes(StandardCharsets.UTF_8));
+            for (int i = 0; i < dates.size(); i++) {
+                digest.update(("|" + dates.get(i) + "=" + Double.toString(closes.get(i)))
+                        .getBytes(StandardCharsets.UTF_8));
+            }
+            return "sha256:" + HexFormat.of().formatHex(digest.digest());
+        } catch (Exception e) {
+            throw new IllegalStateException("无法生成回测数据指纹", e);
+        }
     }
 
     private List<Double> movingAverage(List<Double> values, int window) {

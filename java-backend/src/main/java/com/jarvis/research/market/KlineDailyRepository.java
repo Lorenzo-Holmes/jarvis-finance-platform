@@ -14,6 +14,8 @@ public interface KlineDailyRepository extends JpaRepository<KlineDaily, Long> {
 
     List<KlineDaily> findByMarketOrderByDateDesc(String market, Pageable pageable);
 
+    List<KlineDaily> findByMarketAndDateLessThanEqualOrderByDateDesc(String market, String date, Pageable pageable);
+
     List<KlineDaily> findTopByMarketOrderByDateDesc(String market);
 
     long countByMarket(String market);

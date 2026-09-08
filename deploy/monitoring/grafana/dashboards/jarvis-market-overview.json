@@ -1,0 +1,171 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "annotations": {
+    "list": []
+  },
+  "editable": false,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "id": 1,
+      "title": "行情源失败率",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum by (market) (rate(jarvis_market_quote_fetch_total{result=\"failure\"}[5m]))",
+          "legendFormat": "{{market}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "id": 2,
+      "title": "行情源延迟",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "jarvis_market_quote_source_lag_seconds",
+          "legendFormat": "{{market}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"min": 0, "max": 2, "decimals": 0}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 8},
+      "id": 3,
+      "title": "行情源熔断状态（0关闭/1打开/2半开）",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "jarvis_market_source_circuit_state",
+          "legendFormat": "{{source}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 8},
+      "id": 4,
+      "title": "行情源切换次数",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum by (market, source) (rate(jarvis_market_source_switch_total[5m]))",
+          "legendFormat": "{{market}} / {{source}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 8},
+      "id": 5,
+      "title": "行情 SSE 连接数",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "jarvis_market_stream_subscribers",
+          "legendFormat": "connected",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+      "id": 6,
+      "title": "SSE 广播停滞时间",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "jarvis_market_stream_last_broadcast_age_seconds",
+          "legendFormat": "broadcast age",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+      "id": 7,
+      "title": "公开行情限流率",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum by (endpoint) (rate(jarvis_market_public_rate_limited_total[5m]))",
+          "legendFormat": "{{endpoint}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24},
+      "id": 8,
+      "title": "风控跳过与强平",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(jarvis_sim_risk_stale_skips_total[10m])",
+          "legendFormat": "stale skips",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(jarvis_sim_liquidations_total[10m])",
+          "legendFormat": "liquidations",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24},
+      "id": 9,
+      "title": "采集器心跳年龄",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "jarvis_market_poll_last_run_age_seconds",
+          "legendFormat": "{{collector}}",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": ["jarvis", "market", "trading"],
+  "templating": {"list": []},
+  "time": {"from": "now-6h", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "JARVIS 行情与模拟交易概览",
+  "uid": "jarvis-market-overview",
+  "version": 1
+}

@@ -1,12 +1,16 @@
 package com.jarvis.research.service;
 
 import com.jarvis.research.audit.AuditService;
+import com.jarvis.research.market.MarketDataService;
 import com.jarvis.research.market.PriceSnapshotRepository;
 import com.jarvis.research.user.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
+import org.springframework.retry.annotation.Backoff;
+import org.springframework.retry.annotation.Retryable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
@@ -39,6 +43,14 @@ public class SimTradeService {
     private final PriceSnapshotRepository priceSnapshotRepository;
     private final AuditService auditService;
 
+    /** Spring 运行时优先使用秒级内存行情；普通单元测试不注入时自动回退数据库快照。 */
+    @Autowired(required = false)
+    private MarketDataService marketDataService;
+    @Autowired(required = false)
+    private JdGoldService jdGoldService;
+    @Autowired(required = false)
+    private SimTradingTelemetry telemetry;
+
     /** 获取或创建用户模拟账户。 */
     @Transactional
     public SimAccount getOrCreateAccount(Long userId) {
@@ -56,6 +68,16 @@ public class SimTradeService {
 
     /** 下单：BUY / SELL，杠杆 1~5x。 */
     @Transactional
+    @Retryable(
+            retryFor = RuntimeException.class,
+            exceptionExpression = "@postgresTransientFailureClassifier.isTransient(#root)",
+            maxAttemptsExpression = "${jarvis.sim-trading.retry.max-attempts:3}",
+            backoff = @Backoff(
+                    delayExpression = "${jarvis.sim-trading.retry.initial-delay-ms:100}",
+                    multiplierExpression = "${jarvis.sim-trading.retry.multiplier:2.0}",
+                    maxDelayExpression = "${jarvis.sim-trading.retry.max-delay-ms:1000}"
+            )
+    )
     public Map<String, Object> placeOrder(Long userId, String type, String symbol,
                                           BigDecimal quantity, BigDecimal leverage,
                                           String clientOrderId) {
@@ -78,6 +100,7 @@ public class SimTradeService {
                     throw new ResponseStatusException(HttpStatus.CONFLICT,
                             "clientOrderId 已被另一笔订单使用");
                 }
+                if (telemetry != null) telemetry.recordOrder(typeUp, true);
                 return tradeResult(existing, true);
             }
         }
@@ -128,6 +151,7 @@ public class SimTradeService {
                 .createdAt(LocalDateTime.now())
                 .build();
         tradeRepository.save(trade);
+        if (telemetry != null) telemetry.recordOrder(typeUp, false);
         auditService.record(userId, "SIM_ORDER", symbol, null,
                 typeUp + " qty=" + qty + " price=" + price + " clientOrderId=" + orderKey);
 
@@ -244,6 +268,7 @@ public class SimTradeService {
             detail.put("marketValue", mv);
             detail.put("leverage", pos.getLeverage() == null ? BigDecimal.ONE : pos.getLeverage());
             detail.put("loan", posLoan);
+            detail.put("marginUsed", posMargin);
             detail.put("profit", pnl);
             detail.put("profitPct", percent(pnl, invested));
             detail.put("returnOnEquity", percent(pnl, posMargin));
@@ -329,6 +354,15 @@ public class SimTradeService {
                     "无法获取 " + symbol + " 的有效行情");
         }
 
+        QuoteValue liveQuote = liveQuote(symbol, market);
+        if (liveQuote != null) {
+            if (requireFresh && liveQuote.stale()) {
+                throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                        "行情已过期，暂停成交: " + symbol);
+            }
+            return liveQuote;
+        }
+
         var snapshot = priceSnapshotRepository.findTopByMarketOrderByTsDesc(market)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.SERVICE_UNAVAILABLE,
@@ -348,6 +382,29 @@ public class SimTradeService {
                     "行情已过期，暂停成交: " + symbol);
         }
         return new QuoteValue(value(price), snapshot.getTs(), stale);
+    }
+
+    private QuoteValue liveQuote(String symbol, String market) {
+        try {
+            Object raw = null;
+            if (market.startsWith("jd_") && jdGoldService != null) {
+                Map<String, Object> quote = jdGoldService.latestQuote(symbol);
+                if (!quote.containsKey("error")) raw = quote;
+            } else if (marketDataService != null) {
+                raw = marketDataService.getLatestPrices().get(market);
+            }
+            if (!(raw instanceof Map<?, ?> quote)) return null;
+            BigDecimal price = asDecimal(quote.get("price"));
+            if (price == null || price.signum() <= 0) return null;
+            Object rawTime = quote.get("quote_time") != null ? quote.get("quote_time") : quote.get("time");
+            LocalDateTime ts = rawTime == null ? null : LocalDateTime.parse(String.valueOf(rawTime));
+            long maxAgeSeconds = market.startsWith("jd_") ? 180L : 120L;
+            boolean stale = ts == null || ts.isBefore(LocalDateTime.now().minusSeconds(maxAgeSeconds));
+            return new QuoteValue(value(price), ts, stale);
+        } catch (Exception e) {
+            log.debug("秒级行情不可用，回退数据库快照: symbol={}, message={}", symbol, e.getMessage());
+            return null;
+        }
     }
 
     private record QuoteValue(BigDecimal price, LocalDateTime ts, boolean stale) {}
