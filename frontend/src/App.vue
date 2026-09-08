@@ -12,6 +12,7 @@ const BacktestPage = defineAsyncComponent(() => import('./pages/BacktestPage.vue
 const CrossMarketView = defineAsyncComponent(() => import('./components/CrossMarketView.vue'))
 const SimTradeView = defineAsyncComponent(() => import('./components/SimTradeView.vue'))
 const AiCenter = defineAsyncComponent(() => import('./components/AiCenter.vue'))
+const SentimentPage = defineAsyncComponent(() => import('./pages/SentimentPage.vue'))
 const OpsView = defineAsyncComponent(() => import('./components/OpsView.vue'))
 const AdminView = defineAsyncComponent(() => import('./components/AdminView.vue'))
 
@@ -62,6 +63,8 @@ onMounted(session.restore)
       <section v-if="activeTab === '研究助手'" class="panel-wrap">
         <AiCenter />
       </section>
+
+      <SentimentPage v-if="visitedTabs.has('多空研报')" v-show="activeTab === '多空研报'" />
 
       <section v-if="activeTab === '运维'" class="panel-wrap">
         <OpsView />
