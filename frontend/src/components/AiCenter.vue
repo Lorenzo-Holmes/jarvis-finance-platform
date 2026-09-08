@@ -75,6 +75,7 @@ async function sendChat() {
   push('assistant', '')
   const assistantIndex = messages.value.length - 1
   sending.value = true
+  let streamFinished = false
   currentChatAbort = new AbortController()
   await scrollChatToBottom()
   try {
@@ -82,6 +83,11 @@ async function sendChat() {
       if (event === 'delta' && data?.content) {
         messages.value[assistantIndex].content += data.content
         scrollChatToBottom()
+      } else if (event === 'done') {
+        // 部分代理在 SSE 已发送 done 后关闭 chunked 连接时，浏览器仍会
+        // 抛出一次 network error。done 已确认模型输出完整，不能再把它
+        // 呈现为失败。
+        streamFinished = true
       } else if (event === 'error') {
         throw new Error(data?.message || 'AI 流式响应中断')
       }
@@ -92,6 +98,9 @@ async function sendChat() {
   } catch (e) {
     if (e?.name === 'AbortError') {
       if (!messages.value[assistantIndex].content) messages.value[assistantIndex].content = '（已停止）'
+    } else if (streamFinished) {
+      // 兼容 Cloudflare/Nginx 在 SSE 正常结束后的连接收尾异常。
+      if (!messages.value[assistantIndex].content) messages.value[assistantIndex].content = '（无回复）'
     } else {
       const prefix = messages.value[assistantIndex].content ? '\n\n' : ''
       messages.value[assistantIndex].content += `${prefix}⚠️ ${e?.message || e}`
