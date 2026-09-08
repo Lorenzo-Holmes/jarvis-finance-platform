@@ -8,13 +8,15 @@ import DataState from '../components/common/DataState.vue'
 const MAX_REPORTS = 20
 const MAX_TOTAL_CHARS = 100_000
 
-const reports = ref([''])
+let nextReportId = 1
+const createReport = () => ({ id: nextReportId++, text: '' })
+const reports = ref([createReport()])
 const analyzing = ref(false)
 const result = ref('')
 const error = ref('')
 
-const totalChars = computed(() => reports.value.reduce((sum, text) => sum + text.length, 0))
-const filledReports = computed(() => reports.value.map(t => t.trim()).filter(Boolean))
+const totalChars = computed(() => reports.value.reduce((sum, report) => sum + report.text.length, 0))
+const filledReports = computed(() => reports.value.map(report => report.text.trim()).filter(Boolean))
 const validation = computed(() => {
   if (!filledReports.value.length) return '请至少填写一篇研报内容'
   if (totalChars.value > MAX_TOTAL_CHARS) return `研报文本总长度不能超过 ${MAX_TOTAL_CHARS.toLocaleString()} 字符`
@@ -22,7 +24,7 @@ const validation = computed(() => {
 })
 
 function addReport() {
-  if (reports.value.length < MAX_REPORTS) reports.value.push('')
+  if (reports.value.length < MAX_REPORTS) reports.value.push(createReport())
 }
 
 function removeReport(index) {
@@ -30,12 +32,12 @@ function removeReport(index) {
 }
 
 function clearAll() {
-  reports.value = ['']
+  reports.value = [createReport()]
   result.value = ''
   error.value = ''
 }
 
-// ---- 多空统计: 从 AI 返回文本中自动识别倾向关键词, 仅供参考 ----
+// ---- 关键词提及统计：不把自由文本中的词频伪装成结构化信号 ----
 const sentimentStats = computed(() => {
   const text = result.value
   if (!text) return null
@@ -74,13 +76,13 @@ async function analyze() {
       <aside class="panel st-input-panel">
         <div class="st-panel-title">研报文本</div>
 
-        <div v-for="(report, index) in reports" :key="index" class="st-report-item">
+        <div v-for="(report, index) in reports" :key="report.id" class="st-report-item">
           <div class="st-report-head">
             <b>研报 {{ index + 1 }}</b>
-            <span>{{ report.length }} 字</span>
+            <span>{{ report.text.length }} 字</span>
             <button v-if="reports.length > 1" type="button" class="text-action" aria-label="删除该研报" @click="removeReport(index)">移除</button>
           </div>
-          <textarea v-model="reports[index]" rows="4" aria-label="研报内容" placeholder="粘贴研报摘要、观点段落或关键结论…" />
+          <textarea v-model="report.text" rows="4" :aria-label="`研报 ${index + 1} 内容`" placeholder="粘贴研报摘要、观点段落或关键结论…" />
         </div>
 
         <div class="st-input-actions">
@@ -103,9 +105,9 @@ async function analyze() {
         <template v-if="result">
           <div v-if="sentimentStats" class="st-metrics">
             <div class="st-metric"><span>研报篇数</span><b>{{ filledReports.length }}</b></div>
-            <div class="st-metric"><span>看多信号</span><b class="bull">{{ sentimentStats.bullish }}</b></div>
-            <div class="st-metric"><span>看空信号</span><b class="bear">{{ sentimentStats.bearish }}</b></div>
-            <div class="st-metric"><span>中性信号</span><b>{{ sentimentStats.neutral }}</b></div>
+            <div class="st-metric"><span>看多提及</span><b class="bull">{{ sentimentStats.bullish }}</b></div>
+            <div class="st-metric"><span>看空提及</span><b class="bear">{{ sentimentStats.bearish }}</b></div>
+            <div class="st-metric"><span>中性提及</span><b>{{ sentimentStats.neutral }}</b></div>
           </div>
 
           <div class="panel st-result-panel">
