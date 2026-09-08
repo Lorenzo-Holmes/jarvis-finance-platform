@@ -11,10 +11,21 @@ import { usePolling } from '../composables/usePolling'
 import { useLatestRequest } from '../composables/useLatestRequest'
 import { useFreshness } from '../composables/useFreshness'
 import { formatNumber, formatPercent } from '../utils/formatters'
+import {
+  marketPreferencesKey,
+  readMarketPreferences,
+  writeMarketPreferences,
+} from '../utils/marketPreferences'
+
+const props = defineProps({
+  user: { type: Object, default: null },
+})
 
 const market = ref('a_share')
 const selectedSymbol = ref('')
 const instruments = ref([])
+const watchlist = ref([])
+const hiddenDefaultKeys = ref([])
 const session = ref(null)
 const quote = ref(null)
 const kline = ref([])
@@ -66,7 +77,14 @@ const marketIntervals = computed(() => [
 ])
 
 const currentInstruments = computed(() => instruments.value.filter(i => i.market === market.value))
-const currentInstrument = computed(() => currentInstruments.value.find(i => i.symbol === selectedSymbol.value))
+const currentWatchlist = computed(() => watchlist.value.filter(i => i.market === market.value))
+const watchlistKeys = computed(() => new Set(currentWatchlist.value.map(instrumentKey)))
+const currentDefaults = computed(() => currentInstruments.value.filter(item =>
+  !hiddenDefaultKeys.value.includes(instrumentKey(item)) && !watchlistKeys.value.has(instrumentKey(item))))
+const displayedInstruments = computed(() => [...currentWatchlist.value, ...currentDefaults.value])
+const hiddenDefaultCount = computed(() => currentInstruments.value
+  .filter(item => hiddenDefaultKeys.value.includes(instrumentKey(item))).length)
+const currentInstrument = computed(() => displayedInstruments.value.find(i => i.symbol === selectedSymbol.value))
 const currentMarketLabel = computed(() => marketOptions.find(item => item.value === market.value)?.label || '市场')
 const currentIntervalLabel = computed(() => marketIntervals.value.find(item => item.value === interval.value)?.label || interval.value)
 const chartState = computed(() => {
@@ -78,6 +96,25 @@ const chartState = computed(() => {
 
 const fmt = value => formatNumber(value, 2, 4)
 const fmtPct = value => formatPercent(value)
+
+function instrumentKey(item) {
+  return `${item.market}:${item.symbol}`
+}
+
+function loadPreferences() {
+  if (typeof window === 'undefined') return
+  const preferences = readMarketPreferences(window.localStorage, marketPreferencesKey(props.user))
+  watchlist.value = preferences.watchlist
+  hiddenDefaultKeys.value = preferences.hiddenDefaultKeys
+}
+
+function persistPreferences() {
+  if (typeof window === 'undefined') return
+  writeMarketPreferences(window.localStorage, marketPreferencesKey(props.user), {
+    watchlist: watchlist.value,
+    hiddenDefaultKeys: hiddenDefaultKeys.value,
+  })
+}
 
 async function loadInstruments() {
   const response = await api.marketInstruments()
@@ -109,11 +146,10 @@ async function resolveCustomInstrument() {
       throw new Error(response.message || '标的解析失败')
     }
     const item = response.data
-    const existingIndex = instruments.value.findIndex(
-      candidate => candidate.market === item.market && candidate.symbol === item.symbol,
-    )
-    if (existingIndex >= 0) instruments.value.splice(existingIndex, 1, item)
-    else instruments.value.push(item)
+    const existingIndex = watchlist.value.findIndex(candidate => instrumentKey(candidate) === instrumentKey(item))
+    if (existingIndex >= 0) watchlist.value.splice(existingIndex, 1, item)
+    else watchlist.value.push(item)
+    persistPreferences()
     selectedSymbol.value = item.symbol
     customQuery.value = ''
   } catch (e) {
@@ -123,8 +159,39 @@ async function resolveCustomInstrument() {
   }
 }
 
+function addToWatchlist(item) {
+  if (!item) return
+  const existingIndex = watchlist.value.findIndex(candidate => instrumentKey(candidate) === instrumentKey(item))
+  if (existingIndex >= 0) watchlist.value.splice(existingIndex, 1, item)
+  else watchlist.value.push(item)
+  persistPreferences()
+  selectedSymbol.value = item.symbol
+}
+
+function removeFromWatchlist(item) {
+  if (!item) return
+  watchlist.value = watchlist.value.filter(candidate => instrumentKey(candidate) !== instrumentKey(item))
+  persistPreferences()
+  chooseDefaultSymbol()
+}
+
+function removeDefault(item) {
+  if (!item) return
+  const key = instrumentKey(item)
+  if (!hiddenDefaultKeys.value.includes(key)) hiddenDefaultKeys.value.push(key)
+  persistPreferences()
+  chooseDefaultSymbol()
+}
+
+function restoreDefaults() {
+  const marketPrefix = `${market.value}:`
+  hiddenDefaultKeys.value = hiddenDefaultKeys.value.filter(key => !key.startsWith(marketPrefix))
+  persistPreferences()
+  chooseDefaultSymbol()
+}
+
 function chooseDefaultSymbol() {
-  const available = currentInstruments.value
+  const available = displayedInstruments.value
   if (!available.some(i => i.symbol === selectedSymbol.value)) {
     selectedSymbol.value = available[0]?.symbol || ''
   }
@@ -241,6 +308,7 @@ watch([selectedSymbol, interval], () => {
 })
 
 onMounted(async () => {
+  loadPreferences()
   await refresh()
   quotePolling.start()
   maintenancePolling.start()
@@ -290,9 +358,15 @@ onMounted(async () => {
     <div class="cross-layout">
       <InstrumentList
         :market-label="currentMarketLabel"
-        :instruments="currentInstruments"
+        :default-instruments="currentDefaults"
+        :watchlist-instruments="currentWatchlist"
+        :hidden-default-count="hiddenDefaultCount"
         :selected-symbol="selectedSymbol"
         @select="selectedSymbol = $event"
+        @add-to-watchlist="addToWatchlist"
+        @remove-watchlist="removeFromWatchlist"
+        @remove-default="removeDefault"
+        @restore-defaults="restoreDefaults"
       />
 
       <main class="panel chart-panel">
