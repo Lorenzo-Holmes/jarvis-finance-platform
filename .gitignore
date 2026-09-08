@@ -111,3 +111,6 @@ doc/Skills/
 doc/.srs-render*/
 doc/.srs-work/
 doc/.srs-a11y-audit*.json
+
+# Environment variables
+.env.local
