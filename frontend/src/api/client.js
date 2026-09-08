@@ -153,6 +153,7 @@ export const api = {
   marketKline: (params) => get(API_BASE, '/api/market/kline', params),
   marketInstruments: () => get(API_BASE, '/api/market/instruments'),
   resolveMarketInstrument: (market, query) => get(API_BASE, '/api/market/instruments/resolve', { market, query }),
+  marketSession: (market) => get(API_BASE, '/api/market/session', { market }),
   marketAssetQuote: (market, symbol) => get(API_BASE, '/api/market/extended/quote', { market, symbol }),
   marketAssetKline: (market, symbol, interval, limit) => get(
     API_BASE, '/api/market/extended/kline', { market, symbol, interval, limit },

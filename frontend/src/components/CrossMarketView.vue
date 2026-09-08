@@ -15,6 +15,7 @@ import { formatNumber, formatPercent } from '../utils/formatters'
 const market = ref('a_share')
 const selectedSymbol = ref('')
 const instruments = ref([])
+const session = ref(null)
 const quote = ref(null)
 const kline = ref([])
 const range = ref(null)
@@ -31,9 +32,18 @@ const latestDataRequest = useLatestRequest()
 const freshness = useFreshness(90000)
 const marketChart = useMarketChart()
 const chartRef = marketChart.elementRef
+let lastDailyRefreshAt = 0
 const polling = usePolling(async () => {
-  if (!loading.value) await loadData()
-}, 30000)
+  await loadSession()
+  if (interval.value === '1d') {
+    if (Date.now() - lastDailyRefreshAt < 30000) return
+    lastDailyRefreshAt = Date.now()
+    if (!loading.value) await loadData()
+    return
+  }
+  const shouldWatch = market.value === 'crypto' || session.value?.is_open
+  if (!loading.value && shouldWatch) await loadData()
+}, 15000)
 
 const marketOptions = [
   { value: 'a_share', label: 'A股' },
@@ -41,9 +51,14 @@ const marketOptions = [
   { value: 'crypto', label: '加密货币' },
 ]
 
-const marketIntervals = computed(() => market.value === 'a_share'
-  ? [{ value: '1d', label: '日K' }]
-  : [{ value: '1d', label: '日K' }, { value: '1h', label: '1小时' }, { value: '15m', label: '15分钟' }])
+const marketIntervals = computed(() => [
+  { value: '1d', label: '日K' },
+  { value: '5m', label: '5分钟' },
+  { value: '10m', label: '10分钟' },
+  { value: '15m', label: '15分钟' },
+  { value: '30m', label: '30分钟' },
+  { value: '1h', label: '1小时' },
+])
 
 const currentInstruments = computed(() => instruments.value.filter(i => i.market === market.value))
 const currentInstrument = computed(() => currentInstruments.value.find(i => i.symbol === selectedSymbol.value))
@@ -66,6 +81,16 @@ async function loadInstruments() {
   }
   instruments.value = response.data
   chooseDefaultSymbol()
+}
+
+async function loadSession() {
+  try {
+    const response = await api.marketSession(market.value)
+    if (response.code !== 200 || !response.data) throw new Error(response.message || '交易状态加载失败')
+    session.value = response.data
+  } catch (e) {
+    session.value = null
+  }
 }
 
 async function resolveCustomInstrument() {
@@ -122,6 +147,7 @@ async function loadData() {
     quote.value = quoteResponse.data
     kline.value = klineResponse.data?.data || []
     freshness.touch()
+    if (requestInterval === '1d') lastDailyRefreshAt = Date.now()
     range.value = klineResponse.data?.range || null
     technicalAnalysis.value = klineResponse.data?.analysis || null
     await nextTick()
@@ -175,16 +201,18 @@ async function runAnalysis() {
 async function refresh() {
   try {
     if (!instruments.value.length) await loadInstruments()
+    await loadSession()
     await loadData()
   } catch (e) {
     error.value = e?.message || String(e)
   }
 }
 
-watch(market, () => {
+watch(market, async () => {
   chooseDefaultSymbol()
   analysis.value = ''
   technicalAnalysis.value = null
+  await loadSession()
   loadData()
 })
 watch([selectedSymbol, interval], () => {
@@ -216,7 +244,12 @@ onMounted(async () => {
             {{ item.label }}
           </button>
         </div>
-        <span class="refresh-note" :class="{ stale: freshness.stale }">{{ freshness.stale ? '数据可能陈旧' : `30s 自动刷新 · ${freshness.label}` }}</span>
+        <span class="market-status" :class="{ open: session?.is_open }">
+          <i></i>{{ session?.label || '交易状态加载中' }}
+        </span>
+        <span class="refresh-note" :class="{ stale: freshness.stale }">
+          {{ freshness.stale ? '数据可能陈旧' : interval === '1d' ? `30s 自动刷新 · ${freshness.label}` : session?.is_open || market === 'crypto' ? `盯盘中 · 15s刷新 · ${freshness.label}` : '非交易时段 · 手动刷新' }}
+        </span>
         <button type="button" class="btn" @click="refresh" :disabled="loading">{{ loading ? '加载中…' : '刷新' }}</button>
       </div>
     </div>
@@ -286,6 +319,10 @@ onMounted(async () => {
 .period-btn.active { background: var(--accent); color: #17140e; font-weight: 700; }
 .refresh-note { color: var(--subtle); font-size: 9px; white-space: nowrap; }
 .refresh-note.stale { color: var(--warn); }
+.market-status { display: inline-flex; align-items: center; gap: 5px; color: var(--subtle); font-size: 9px; white-space: nowrap; }
+.market-status i { width: 5px; height: 5px; border-radius: 50%; background: #686d72; }
+.market-status.open { color: #27c46b; }
+.market-status.open i { background: #27c46b; box-shadow: 0 0 0 3px rgba(39,196,107,.1); }
 .btn { min-height: 30px; background: #1c1f22; border: 1px solid var(--line-strong); color: var(--text); border-radius: var(--radius-sm); padding: 5px 11px; cursor: pointer; font-size: 11px; }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
 .error { color: #ef5350; padding: 9px 10px; background: rgba(239,83,80,.08); border: 1px solid rgba(239,83,80,.18); border-radius: var(--radius-sm); font-size: 11px; }

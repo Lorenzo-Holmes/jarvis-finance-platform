@@ -11,9 +11,12 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -36,8 +39,11 @@ import java.util.regex.Pattern;
 public class ExtendedMarketDataService {
 
     private static final Charset GBK = Charset.forName("GBK");
-    private static final Set<String> YAHOO_INTERVALS = Set.of("1d", "1h", "15m");
-    private static final Set<String> BINANCE_INTERVALS = Set.of("1d", "1h", "15m", "5m");
+    private static final ZoneId SHANGHAI_ZONE = ZoneId.of("Asia/Shanghai");
+    private static final ZoneId NEW_YORK_ZONE = ZoneId.of("America/New_York");
+    private static final DateTimeFormatter INTRADAY_DATE = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+    private static final Set<String> YAHOO_INTERVALS = Set.of("1d", "5m", "15m", "30m", "1h");
+    private static final Set<String> BINANCE_INTERVALS = Set.of("1d", "1h", "30m", "15m", "5m");
     private static final Pattern A_SHARE_PATTERN = Pattern.compile(
             "^(?:(SH|SZ|BJ))?(\\d{6})(?:(SH|SZ|BJ))?$", Pattern.CASE_INSENSITIVE);
     private static final Pattern US_STOCK_PATTERN = Pattern.compile(
@@ -75,7 +81,49 @@ public class ExtendedMarketDataService {
      * 后续报价与 K 线接口仍会复用同一套校验，避免将任意输入拼接到外部 URL。
      */
     public Map<String, Object> resolveInstrument(String market, String query) {
-        return instrumentView(parseInstrument(market, query));
+        Instrument instrument = parseInstrument(market, query);
+        try {
+            Map<String, Object> resolved = switch (instrument.market()) {
+                case "a_share" -> quoteTencent(instrument);
+                case "us_stock" -> quoteYahoo(instrument);
+                case "crypto" -> quoteBinance(instrument);
+                default -> Map.of();
+            };
+            Object resolvedName = resolved.get("name");
+            if (resolvedName instanceof String name && !name.isBlank()) {
+                instrument = instrument.withName(name.trim());
+            }
+        } catch (Exception e) {
+            // 解析本身仍可返回标准化代码；行情源暂时不可用时由后续报价接口给出明确错误。
+            log.info("自定义标的名称解析暂不可用 market={}, symbol={}, message={}",
+                    instrument.market(), instrument.symbol(), e.getMessage());
+        }
+        return instrumentView(instrument);
+    }
+
+    /** 返回交易时段状态；节假日历未接入，因此只按工作日和交易时段判断。 */
+    public Map<String, Object> session(String market) {
+        String normalizedMarket = normalizeMarket(market);
+        LocalDateTime now = LocalDateTime.now(zoneFor(normalizedMarket));
+        boolean weekday = now.getDayOfWeek() != DayOfWeek.SATURDAY && now.getDayOfWeek() != DayOfWeek.SUNDAY;
+        boolean open = switch (normalizedMarket) {
+            case "crypto" -> true;
+            case "a_share" -> weekday && inAnySession(now.toLocalTime(),
+                    LocalTime.of(9, 30), LocalTime.of(11, 30),
+                    LocalTime.of(13, 0), LocalTime.of(15, 0));
+            case "us_stock" -> weekday && inAnySession(now.toLocalTime(),
+                    LocalTime.of(9, 30), LocalTime.of(16, 0));
+            default -> false;
+        };
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("market", normalizedMarket);
+        out.put("is_open", open);
+        out.put("status", open ? "open" : "closed");
+        out.put("label", open ? "交易中" : "非交易时段");
+        out.put("timezone", zoneFor(normalizedMarket).getId());
+        out.put("checked_at", now.toString());
+        out.put("disclaimer", "交易状态按工作日和常规时段估算，未接入交易所节假日历");
+        return out;
     }
 
     public Map<String, Object> quote(String market, String symbol) {
@@ -103,20 +151,17 @@ public class ExtendedMarketDataService {
         String normalized = normalizeInterval(interval);
         try {
             List<Map<String, Object>> data = switch (instrument.market()) {
-                case "a_share" -> {
-                    if (!"1d".equals(normalized)) {
-                        throw invalid("A股当前仅支持日K");
-                    }
-                    yield klineTencent(instrument, limit);
-                }
+                case "a_share" -> "1d".equals(normalized)
+                        ? klineTencent(instrument, limit)
+                        : klineTencentIntraday(instrument, normalized, limit);
                 case "us_stock" -> klineYahoo(instrument, normalized, limit);
                 case "crypto" -> klineCryptoWithFallback(instrument, normalized, limit);
-                    default -> throw invalid("不支持的市场: " + instrument.market());
+                default -> throw invalid("不支持的市场: " + instrument.market());
             };
             Map<String, Object> technicalAnalysis = enrichTechnicalIndicators(data);
             Map<String, Object> out = new LinkedHashMap<>();
-            out.put("market", market);
-            out.put("symbol", symbol);
+            out.put("market", instrument.market());
+            out.put("symbol", instrument.symbol());
             out.put("interval", normalized);
             out.put("count", data.size());
             out.put("data", data);
@@ -166,7 +211,7 @@ public class ExtendedMarketDataService {
     }
 
     private Map<String, Object> quoteYahoo(Instrument instrument) throws Exception {
-        return quoteYahoo(instrument, instrument.symbol());
+        return quoteYahoo(instrument, yahooStockSymbol(instrument.symbol()));
     }
 
     private Map<String, Object> quoteYahoo(Instrument instrument, String providerSymbol) throws Exception {
@@ -250,13 +295,67 @@ public class ExtendedMarketDataService {
         return tail(out, limit);
     }
 
+    private List<Map<String, Object>> klineTencentIntraday(Instrument instrument,
+                                                            String interval,
+                                                            int limit) throws Exception {
+        int minutes = switch (interval) {
+            case "5m", "10m", "15m", "30m" -> Integer.parseInt(interval.substring(0, interval.length() - 1));
+            case "1h" -> 60;
+            default -> throw invalid("A股不支持该周期: " + interval);
+        };
+        int sourceMinutes = minutes == 10 ? 5 : minutes;
+        int sourceLimit = Math.min(1000, minutes == 10 ? limit * 3 : limit);
+        String body = webClient.get()
+                .uri(uriBuilder -> uriBuilder.scheme("https").host("push2his.eastmoney.com")
+                        .path("/api/qt/stock/kline/get")
+                        .queryParam("secid", eastmoneySecId(instrument))
+                        .queryParam("klt", sourceMinutes)
+                        .queryParam("fqt", 1)
+                        .queryParam("beg", 0)
+                        .queryParam("end", 20500000)
+                        .queryParam("lmt", sourceLimit)
+                        .queryParam("fields1", "f1,f2,f3,f4,f5,f6")
+                        .queryParam("fields2", "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61")
+                        .build())
+                .retrieve().bodyToMono(String.class).block();
+        JsonNode raw = objectMapper.readTree(body).path("data").path("klines");
+        if (!raw.isArray() || raw.isEmpty()) throw upstream("A股分钟K线为空");
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (JsonNode item : raw) {
+            String[] values = item.asText().split(",", -1);
+            if (values.length < 6) continue;
+            Double open = parseDouble(values[1]);
+            Double close = parseDouble(values[2]);
+            Double high = parseDouble(values[3]);
+            Double low = parseDouble(values[4]);
+            if (open == null || close == null || high == null || low == null) continue;
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("date", values[0]);
+            row.put("open", open);
+            row.put("close", close);
+            row.put("high", high);
+            row.put("low", low);
+            row.put("volume", parseDouble(values[5]) == null ? 0.0 : parseDouble(values[5]));
+            out.add(row);
+        }
+        return minutes == sourceMinutes ? tail(out, limit) : aggregateCandles(out, minutes, limit);
+    }
+
+    private String eastmoneySecId(Instrument instrument) {
+        String symbol = instrument.symbol().toLowerCase(Locale.ROOT);
+        return (symbol.startsWith("sh") ? "1." : "0.") + symbol.substring(2);
+    }
+
     private List<Map<String, Object>> klineYahoo(Instrument instrument, String interval, int limit) throws Exception {
-        return klineYahoo(instrument, instrument.symbol(), interval, limit);
+        return klineYahoo(instrument, yahooStockSymbol(instrument.symbol()), interval, limit);
     }
 
     private List<Map<String, Object>> klineYahoo(Instrument instrument, String providerSymbol,
                                                  String interval, int limit) throws Exception {
-        JsonNode result = yahooResult(providerSymbol, "1y", interval);
+        if ("10m".equals(interval)) {
+            return aggregateCandles(klineYahoo(instrument, providerSymbol, "5m", Math.min(500, limit * 3)), 10, limit);
+        }
+        JsonNode result = yahooResult(providerSymbol, yahooRange(interval), interval);
         JsonNode timestamps = result.path("timestamp");
         JsonNode quote = result.path("indicators").path("quote").path(0);
         List<Map<String, Object>> out = new ArrayList<>();
@@ -275,13 +374,28 @@ public class ExtendedMarketDataService {
         return tail(out, limit);
     }
 
+    private String yahooStockSymbol(String symbol) {
+        return symbol.replace('.', '-');
+    }
+
+    private String yahooRange(String interval) {
+        return "1d".equals(interval) ? "1y" : "5d";
+    }
+
     private List<Map<String, Object>> klineCryptoWithFallback(Instrument instrument,
                                                                String interval, int limit) throws Exception {
         try {
+            if ("10m".equals(interval)) {
+                return aggregateCandles(klineBinance(instrument, "5m", Math.min(1000, limit * 3)), 10, limit);
+            }
             return klineBinance(instrument, interval, limit);
         } catch (Exception binanceError) {
             log.warn("Binance K线不可用，切换 Yahoo 备用源 symbol={}, message={}",
                     instrument.symbol(), binanceError.getMessage());
+            if ("10m".equals(interval)) {
+                return aggregateCandles(klineYahoo(instrument, yahooCryptoSymbol(instrument.symbol()), "5m",
+                        Math.min(500, limit * 3)), 10, limit);
+            }
             return klineYahoo(instrument, yahooCryptoSymbol(instrument.symbol()), interval, limit);
         }
     }
@@ -316,6 +430,40 @@ public class ExtendedMarketDataService {
         JsonNode result = objectMapper.readTree(body).path("chart").path("result").path(0);
         if (result.isMissingNode() || result.isNull()) throw upstream("美股行情为空");
         return result;
+    }
+
+    private List<Map<String, Object>> aggregateCandles(List<Map<String, Object>> rows, int minutes, int limit) {
+        long bucketSize = minutes * 60L;
+        Map<Long, Map<String, Object>> buckets = new LinkedHashMap<>();
+        for (Map<String, Object> row : rows) {
+            long epoch = epochSeconds(row.get("date"));
+            long bucket = Math.floorDiv(epoch, bucketSize) * bucketSize;
+            Map<String, Object> target = buckets.computeIfAbsent(bucket, ignored -> {
+                Map<String, Object> initial = new LinkedHashMap<>();
+                initial.put("date", row.get("date"));
+                initial.put("open", row.get("open"));
+                initial.put("close", row.get("close"));
+                initial.put("high", row.get("high"));
+                initial.put("low", row.get("low"));
+                initial.put("volume", row.getOrDefault("volume", 0.0));
+                return initial;
+            });
+            target.put("close", row.get("close"));
+            target.put("high", Math.max(((Number) target.get("high")).doubleValue(), ((Number) row.get("high")).doubleValue()));
+            target.put("low", Math.min(((Number) target.get("low")).doubleValue(), ((Number) row.get("low")).doubleValue()));
+            target.put("volume", ((Number) target.get("volume")).doubleValue()
+                    + ((Number) row.getOrDefault("volume", 0.0)).doubleValue());
+        }
+        return tail(new ArrayList<>(buckets.values()), limit);
+    }
+
+    private long epochSeconds(Object value) {
+        String date = String.valueOf(value);
+        try {
+            return Instant.parse(date).getEpochSecond();
+        } catch (Exception ignored) {
+            return LocalDateTime.parse(date, INTRADAY_DATE).atZone(SHANGHAI_ZONE).toEpochSecond();
+        }
     }
 
     private String normalizeInterval(String interval) {
@@ -833,6 +981,17 @@ public class ExtendedMarketDataService {
         return index < values.length ? parseDouble(values[index]) : null;
     }
 
+    private ZoneId zoneFor(String market) {
+        return "us_stock".equals(market) ? NEW_YORK_ZONE : SHANGHAI_ZONE;
+    }
+
+    private boolean inAnySession(LocalTime current, LocalTime... boundaries) {
+        for (int i = 0; i + 1 < boundaries.length; i += 2) {
+            if (!current.isBefore(boundaries[i]) && current.isBefore(boundaries[i + 1])) return true;
+        }
+        return false;
+    }
+
     private ResponseStatusException invalid(String message) {
         return new ResponseStatusException(HttpStatus.BAD_REQUEST, message);
     }
@@ -841,5 +1000,9 @@ public class ExtendedMarketDataService {
         return new ResponseStatusException(HttpStatus.BAD_GATEWAY, message);
     }
 
-    private record Instrument(String market, String symbol, String name, String currency, String source) {}
+    private record Instrument(String market, String symbol, String name, String currency, String source) {
+        private Instrument withName(String resolvedName) {
+            return new Instrument(market, symbol, resolvedName, currency, source);
+        }
+    }
 }

@@ -109,6 +109,12 @@ public class MarketController {
         return ApiResponse.ok(extendedMarketDataService.resolveInstrument(market, query));
     }
 
+    /** 查询 A 股、美股和加密货币的当前交易时段状态。 */
+    @GetMapping("/session")
+    public ApiResponse<Object> session(@RequestParam String market) {
+        return ApiResponse.ok(extendedMarketDataService.session(market));
+    }
+
     /** 查询标准化标的的最新报价。 */
     @GetMapping("/extended/quote")
     public ApiResponse<Object> extendedQuote(@RequestParam String market,

@@ -33,10 +33,18 @@ class ExtendedMarketDataServiceTest {
     }
 
     @Test
-    void resolvesUserEnteredSymbolsWithMarketSpecificNormalization() {
-        assertEquals("sh600519", service.resolveInstrument("a_share", "600519").get("symbol"));
-        assertEquals("BRK.B", service.resolveInstrument("us_stock", "brk.b").get("symbol"));
-        assertEquals("BTCUSDT", service.resolveInstrument("crypto", "BTC").get("symbol"));
+    void rejectsMalformedUserEnteredSymbols() {
+        assertEquals(400, assertThrows(ResponseStatusException.class,
+                () -> service.resolveInstrument("a_share", "贵州茅台")).getStatusCode().value());
+        assertEquals(400, assertThrows(ResponseStatusException.class,
+                () -> service.resolveInstrument("us_stock", "AAPL/1")).getStatusCode().value());
+    }
+
+    @Test
+    void reportsCryptoAsAlwaysOpen() {
+        var status = service.session("crypto");
+        assertEquals("open", status.get("status"));
+        assertEquals(true, status.get("is_open"));
     }
 
     @Test
