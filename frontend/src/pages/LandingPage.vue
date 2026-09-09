@@ -5,7 +5,7 @@ const emit = defineEmits(['enter'])
 const root = ref(null)
 let revealObserver
 let demoStopped = false
-const timers = []
+const timers = new Set()
 
 const demoStates = {
   XAUUSD: { name: 'Gold Spot · USD', price: '3,635.20', change: '+24.63 · +0.68%', tone: 'pos', signal: 'Moderately Bullish', line: 'M0 280 C55 270 75 286 118 247 C163 207 197 226 238 210 C280 193 303 232 344 187 C383 148 405 170 447 126 C487 87 520 116 563 96 C606 78 620 122 667 87 C718 49 757 71 800 32' },
@@ -44,8 +44,12 @@ onMounted(() => {
   const ranges = [...terminal.querySelectorAll('[data-range]')]
 
   const sleep = (ms) => new Promise((resolve) => {
-    const id = window.setTimeout(resolve, ms)
-    timers.push(id)
+    let id
+    id = window.setTimeout(() => {
+      timers.delete(id)
+      resolve()
+    }, ms)
+    timers.add(id)
   })
 
   const moveTo = async (el) => {
@@ -58,8 +62,12 @@ onMounted(() => {
     cursor.style.translate = `${x}px ${y}px`
     await sleep(680)
     el.classList.add('demo-click')
-    const t = window.setTimeout(() => el.classList.remove('demo-click'), 520)
-    timers.push(t)
+    let timerId
+    timerId = window.setTimeout(() => {
+      timers.delete(timerId)
+      el.classList.remove('demo-click')
+    }, 520)
+    timers.add(timerId)
     await sleep(160)
   }
 
@@ -108,6 +116,7 @@ onBeforeUnmount(() => {
   demoStopped = true
   revealObserver?.disconnect()
   timers.forEach((id) => window.clearTimeout(id))
+  timers.clear()
 })
 </script>
 

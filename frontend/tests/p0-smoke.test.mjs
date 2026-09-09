@@ -36,6 +36,7 @@ class FakeEventSource {
 globalThis.EventSource = FakeEventSource
 
 const { API_BASE, api } = await import('../src/api/client.js')
+const { useAuthSession } = await import('../src/composables/useAuthSession.js')
 const {
   hasMarketPreferences,
   marketPreferencesKey,
@@ -108,6 +109,24 @@ test('authenticated writes refresh CSRF after a 401/403 and retry once', async (
   assert.equal(calls[2].token, 'csrf-1')
   assert.equal(calls[3].url, '/api/auth/csrf')
   assert.equal(calls[4].token, 'csrf-4')
+})
+
+test('late session restore cannot overwrite a successful login', async () => {
+  const previousMe = api.me
+  let resolveMe
+  api.me = () => new Promise((resolve) => { resolveMe = resolve })
+
+  try {
+    const session = useAuthSession()
+    const restorePromise = session.restore()
+    const loggedInUser = { id: 7, email: 'user@example.com' }
+    session.acceptLogin(loggedInUser)
+    resolveMe({ code: 401, data: null })
+    await restorePromise
+    assert.deepEqual(session.user.value, loggedInUser)
+  } finally {
+    api.me = previousMe
+  }
 })
 
 test('market preferences persist per user and discard malformed entries', () => {
@@ -188,12 +207,17 @@ test('frontend source cannot bypass the Java security boundary', async () => {
   assert.deepEqual(violations, [])
 })
 
-test('public homepage keeps OAuth callbacks one-shot and animation has fallbacks', async () => {
+test('public homepage keeps auth callbacks and animation lifecycle safe', async () => {
   const appSource = await readFile(join(frontendRoot, 'src/App.vue'), 'utf8')
   const landingSource = await readFile(join(frontendRoot, 'src/pages/LandingPage.vue'), 'utf8')
+  const sessionSource = await readFile(join(frontendRoot, 'src/composables/useAuthSession.js'), 'utf8')
 
   assert.match(appSource, /params\.has\('oauth'\)/)
   assert.match(appSource, /history\.replaceState\(/)
   assert.match(landingSource, /typeof window\.IntersectionObserver === 'function'/)
   assert.match(landingSource, /window\.matchMedia\?\./)
+  assert.match(landingSource, /const timers = new Set\(\)/)
+  assert.match(landingSource, /timers\.delete\(/)
+  assert.match(sessionSource, /restoreRequestId/)
+  assert.match(sessionSource, /requestId !== restoreRequestId/)
 })
