@@ -13,6 +13,9 @@ const CrossMarketView = defineAsyncComponent(() => import('./components/CrossMar
 const SimTradeView = defineAsyncComponent(() => import('./components/SimTradeView.vue'))
 const AiCenter = defineAsyncComponent(() => import('./components/AiCenter.vue'))
 const SentimentPage = defineAsyncComponent(() => import('./pages/SentimentPage.vue'))
+const FinancialReportPage = defineAsyncComponent(() => import('./pages/FinancialReportPage.vue'))
+const ChainPage = defineAsyncComponent(() => import('./pages/ChainPage.vue'))
+const RiskPage = defineAsyncComponent(() => import('./pages/RiskPage.vue'))
 const OpsView = defineAsyncComponent(() => import('./components/OpsView.vue'))
 const AdminView = defineAsyncComponent(() => import('./components/AdminView.vue'))
 
@@ -65,6 +68,12 @@ onMounted(session.restore)
       </section>
 
       <SentimentPage v-if="visitedTabs.has('多空研报')" v-show="activeTab === '多空研报'" />
+
+      <FinancialReportPage v-if="visitedTabs.has('财报解析')" v-show="activeTab === '财报解析'" />
+
+      <ChainPage v-if="visitedTabs.has('产业链图谱')" v-show="activeTab === '产业链图谱'" />
+
+      <RiskPage v-if="visitedTabs.has('风险预警')" v-show="activeTab === '风险预警'" />
 
       <section v-if="activeTab === '运维'" class="panel-wrap">
         <OpsView />

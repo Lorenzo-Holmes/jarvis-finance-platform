@@ -64,6 +64,18 @@ class QuoteReq(BaseModel):
     price_data: Dict[str, Any] = Field(default_factory=dict)
 
 
+class RiskReq(BaseModel):
+    """风险预警（FR-10）：closes 为历史收盘价序列。
+
+    样本量是否足够由确定性计算层判断，以便统一返回 available=False，
+    而不是在接口校验阶段直接返回 422。
+    """
+    closes: List[float] = Field(max_length=2000)
+    confidence: float = Field(default=0.95, ge=0.5, le=0.99)
+    portfolio_value: Optional[float] = Field(default=None, gt=0)
+    symbol: Optional[str] = Field(default=None, max_length=32)
+
+
 def _guard(fn, **kw):
     """执行并统一把 RuntimeError 转 502"""
     try:
@@ -131,6 +143,16 @@ def analyze_sentiment(req: SentimentReq):
 @router.post("/analyze/chain")
 def analyze_chain(req: ChainReq):
     return {"code": 200, "message": "ok", "data": _guard(ai_service.analyze_chain, node=req.node, context=req.context or "")}
+
+
+@router.post("/analyze/risk")
+def analyze_risk(req: RiskReq):
+    return {"code": 200, "message": "ok",
+            "data": _guard(ai_service.analyze_risk,
+                           closes=req.closes,
+                           confidence=req.confidence,
+                           portfolio_value=req.portfolio_value,
+                           symbol=req.symbol)}
 
 
 @router.post("/quote")

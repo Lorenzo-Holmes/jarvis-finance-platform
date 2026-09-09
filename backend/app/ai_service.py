@@ -12,7 +12,7 @@ from typing import Iterator, List, Dict, Optional, Any
 
 import requests
 
-from .research_tools import deterministic_context, quote_metrics
+from .research_tools import deterministic_context, quote_metrics, risk_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -219,6 +219,7 @@ def capabilities() -> Dict[str, Any]:
             "产业链挖掘",
             "研报情感分析",
             "智能报价",
+            "风险预警（VaR/ES）",
             "模拟盘持仓与杠杆风险分析",
         ],
     }
@@ -265,3 +266,51 @@ def smart_quote(price_data: Dict[str, Any]) -> Dict[str, Any]:
         "要求: 3-5 条要点, 含趋势判断/风险提示, 200字内。"
     )
     return _chat_request([{"role": "user", "content": prompt}], temperature=0.5, max_tokens=600)
+
+
+def analyze_risk(closes: List[Any], confidence: float = 0.95,
+                 portfolio_value: Optional[float] = None,
+                 symbol: Optional[str] = None) -> Dict[str, Any]:
+    """风险预警（FR-10）：数值（VaR/ES/波动率/最大回撤）由确定性层计算，LLM 只写风险报告。
+
+    返回 {available, metrics, alerts, content}；样本不足时 available=False。
+    """
+    metrics = risk_metrics(closes, confidence=str(confidence),
+                           portfolio_value=portfolio_value, symbol=symbol)
+    if not metrics.get("available"):
+        return {"available": False, "reason": metrics.get("reason"), "bars": metrics.get("bars")}
+
+    alerts = metrics.pop("alerts", [])
+    confidence_value = metrics.get("confidence")
+    try:
+        confidence_pct = format(float(confidence_value) * 100, ".2f").rstrip("0").rstrip(".")
+        confidence_label = f"{confidence_pct}%"
+    except (TypeError, ValueError):
+        confidence_label = "当前置信度"
+    readable = {
+        "symbol": metrics.get("symbol"),
+        "样本根数": metrics.get("bars"),
+        "最新收盘价": metrics.get("last_close"),
+        "置信度": metrics.get("confidence"),
+        f"单日VaR({confidence_label})": metrics.get("var_pct"),
+        "尾部风险ES": metrics.get("es_pct"),
+        "年化波动率": metrics.get("vol_annual_pct"),
+        "历史最大回撤": metrics.get("max_drawdown_pct"),
+        "账户单日潜在亏损": metrics.get("var_amount"),
+    }
+    prompt = (
+        "你是金融风控分析师。以下【确定性计算结果】由程序基于历史收盘价计算，禁止自行修改或重算其中数值，"
+        "数值缺失时如实说明数据不足。\n"
+        f"确定性计算结果: {json.dumps(readable, ensure_ascii=False, default=str)}\n"
+        f"命中预警: {json.dumps(alerts, ensure_ascii=False, default=str)}\n"
+        "请输出结构化风险报告：1) 风险来源与指标解读 2) 影响范围（对单标的/账户的含义）"
+        "3) 应对建议（仓位、止损、分散化等，可执行）4) 一句总体风险评级（低/中/高）。"
+        "要求简洁专业，正文不超过 300 字，数值一律引用上面的口径。"
+    )
+    content = _chat_request([{"role": "user", "content": prompt}], temperature=0.3, max_tokens=900)
+    return {
+        "available": True,
+        "metrics": {key: value for key, value in metrics.items() if key != "alerts"},
+        "alerts": alerts,
+        "content": content,
+    }

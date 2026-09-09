@@ -201,6 +201,9 @@ export const api = {
   aiFinancialReport: (content) => post(API_BASE, '/api/ai/financial/report', { content }),
   aiChain: (node, context = '') => post(API_BASE, '/api/ai/analyze/chain', { node, context }),
   aiSentiment: (reports) => post(API_BASE, '/api/ai/analyze/sentiment', { reports }),
+  aiRisk: (market, confidence = 0.95, portfolioValue = null, days = 60) => post(API_BASE, '/api/ai/analyze/risk', {
+    market, confidence, portfolio_value: portfolioValue, days,
+  }),
 
   // 管理员账户、配额和功能权限
   adminUsers: (query = '', limit = 50) => get(API_BASE, '/api/admin/users', { query, limit }),

@@ -98,4 +98,44 @@ class AiControllerTest {
         verify(rateLimit).consume(42L);
         verify(proxy).stream(eq("/api/ai/chat/stream"), any());
     }
+
+    @Test
+    void riskUsesServerOwnedKlineClosesAndIgnoresClientForgery() {
+        AiProxyService proxy = mock(AiProxyService.class);
+        AiRateLimitService rateLimit = mock(AiRateLimitService.class);
+        FeaturePermissionService permissions = mock(FeaturePermissionService.class);
+        MarketDataService marketDataService = mock(MarketDataService.class);
+        SimTradeService simTradeService = mock(SimTradeService.class);
+
+        when(marketDataService.getDailyKline("gold_etf", 60)).thenReturn(Map.of(
+                "data", java.util.List.of(
+                        Map.of("date", "2026-08-01", "close", 100.0),
+                        Map.of("date", "2026-08-02", "close", 101.0),
+                        Map.of("date", "2026-08-03", "close", 102.0))));
+        when(proxy.post(eq("/api/ai/analyze/risk"), any())).thenReturn(Map.of("code", 200));
+
+        SecurityContextHolder.getContext().setAuthentication(
+                new TestingAuthenticationToken(42L, null));
+
+        AiController controller = new AiController(
+                proxy, rateLimit, permissions, marketDataService, simTradeService);
+        controller.risk(Map.of(
+                "market", "gold_etf",
+                "confidence", 0.95,
+                "portfolio_value", 100000,
+                // 客户端伪造的历史收盘价应被服务端数据覆盖
+                "closes", java.util.List.of(1.0, 2.0, 3.0)));
+
+        ArgumentCaptor<Object> bodyCaptor = ArgumentCaptor.forClass(Object.class);
+        verify(proxy).post(eq("/api/ai/analyze/risk"), bodyCaptor.capture());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> body = (Map<String, Object>) bodyCaptor.getValue();
+        assertEquals("gold_etf", body.get("symbol"));
+        assertEquals(0.95, body.get("confidence"));
+        assertEquals(100000, body.get("portfolio_value"));
+        assertEquals(java.util.List.of(100.0, 101.0, 102.0), body.get("closes"));
+        assertFalse(body.containsKey("market"));
+        assertFalse(body.containsKey("days"));
+        verify(rateLimit).consume(42L);
+    }
 }
