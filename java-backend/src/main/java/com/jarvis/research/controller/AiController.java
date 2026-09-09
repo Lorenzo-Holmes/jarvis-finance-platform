@@ -15,7 +15,9 @@ import reactor.core.Disposable;
 
 import java.io.IOException;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -121,6 +123,12 @@ public class AiController {
         return postAndRecord("/api/ai/analyze/chain", body);
     }
 
+    @PostMapping("/analyze/risk")
+    public Map<String, Object> risk(@RequestBody Map<String, Object> body) {
+        consumeAiQuota("AI_RISK");
+        return postAndRecord("/api/ai/analyze/risk", enrichRiskBody(body));
+    }
+
     @PostMapping("/quote")
     public Map<String, Object> quote(@RequestBody Map<String, Object> body) {
         consumeAiQuota("AI_QUOTE");
@@ -157,6 +165,50 @@ public class AiController {
         // 强制覆盖客户端同名字段，防止浏览器伪造“系统确定性计算上下文”。
         enriched.put("research_context", context);
         return enriched;
+    }
+
+    private Map<String, Object> enrichRiskBody(Map<String, Object> body) {
+        Map<String, Object> riskPayload = new LinkedHashMap<>();
+        if (marketDataService == null || body == null) return body;
+
+        String market = body.get("market") == null ? "gold_etf" : String.valueOf(body.get("market"));
+        int days = 60;
+        if (body.get("days") instanceof Number) {
+            days = Math.max(10, Math.min(((Number) body.get("days")).intValue(), 500));
+        }
+        riskPayload.put("symbol", market);
+        riskPayload.put("confidence", body.get("confidence") instanceof Number
+                ? body.get("confidence") : 0.95);
+        if (body.get("portfolio_value") instanceof Number) {
+            riskPayload.put("portfolio_value", body.get("portfolio_value"));
+        }
+        // 服务端从自营行情库取日 K 收盘价，强制覆盖客户端可能伪造的 closes/history 字段。
+        try {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> kline = (Map<String, Object>) marketDataService.getDailyKline(market, days);
+            Object rawRows = kline == null ? null : kline.get("data");
+            List<Double> closes = new ArrayList<>();
+            if (rawRows instanceof List<?> rows) {
+                for (Object rowObj : rows) {
+                    if (!(rowObj instanceof Map<?, ?> row)) continue;
+                    Object close = row.get("close");
+                    if (close instanceof Number number) {
+                        closes.add(number.doubleValue());
+                    } else if (close != null) {
+                        try {
+                            closes.add(Double.parseDouble(String.valueOf(close)));
+                        } catch (NumberFormatException ignored) {
+                            // 忽略单行坏数据，Python 侧会对样本量做最终校验。
+                        }
+                    }
+                }
+            }
+            riskPayload.put("closes", closes);
+        } catch (Exception ignored) {
+            // 行情暂不可用时仍透传，Python 返回样本不足；不允许客户端伪造 closes。
+            riskPayload.put("closes", java.util.List.of());
+        }
+        return riskPayload;
     }
 
     private void consumeAiQuota(String featureKey) {

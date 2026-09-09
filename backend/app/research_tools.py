@@ -265,3 +265,157 @@ def deterministic_context(raw_context: Optional[Dict[str, Any]]) -> Dict[str, An
         },
         "portfolio": portfolio_metrics(portfolio) if portfolio is not None else {"available": False, "reason": "no_portfolio_data"},
     }
+
+
+# ---- 风险预警：历史模拟法 VaR / ES / 年化波动率 / 最大回撤（FR-10）----
+# 输入为历史收盘价序列（由 Java 主后端或前端经现有行情接口提供），全部数值由本层确定性计算，
+# LLM 只负责解释生成的指标与预警，不得改写数值口径。
+_RISK_MIN_BARS = 10          # 最少样本根数（不足则判定不可用）
+_RISK_MIN_RETURNS = 10       # 收益率最少个数
+_ANNUALIZATION = Decimal("252")
+_TRADING_DAYS_PER_YEAR = Decimal("252")
+
+# 预警阈值（百分比口径，绝对值比较；MVP 固定规则，后续可配置化）
+_VAR_HIGH_PCT = Decimal("4")
+_VAR_MEDIUM_PCT = Decimal("2")
+_ES_HIGH_PCT = Decimal("5")
+_MDD_MEDIUM_PCT = Decimal("20")
+
+
+def _std_dev(values: List[Decimal]) -> Optional[Decimal]:
+    """样本标准差（分母 n-1）。"""
+    n = len(values)
+    if n < 2:
+        return None
+    mean = sum(values, Decimal("0")) / Decimal(n)
+    variance = sum((v - mean) ** 2 for v in values) / Decimal(n - 1)
+    if variance <= 0:
+        return Decimal("0")
+    return variance.sqrt()
+
+
+def risk_metrics(closes_raw: Any, confidence: Any = "0.95",
+                 portfolio_value: Any = None, symbol: Any = None) -> Dict[str, Any]:
+    """基于历史收盘价序列计算单日风险指标（历史模拟法）。
+
+    返回（available=False 时仅含 available/bars/reason）：
+      - bars / start / end / last_close：样本信息
+      - var_pct / es_pct：95% 置信度单日最大预期亏损与尾部平均（负百分比，如 "-2.1400"）
+      - vol_annual_pct：年化波动率（正百分比）
+      - max_drawdown_pct：区间最大回撤（负百分比）
+      - confidence：使用的置信度
+      - alerts：命中阈值规则的预警列表 [{level, metric, rule, message}]
+      - var_amount（可选）：提供 portfolio_value 时换算的账户单日潜在亏损金额（字符串，负值）
+    """
+    closes = [_decimal(value) for value in (closes_raw or [])]
+    closes = [value for value in closes if value is not None and value > 0]
+    bars = len(closes)
+    if bars < _RISK_MIN_BARS:
+        return {"available": False, "reason": "insufficient_closes", "bars": bars}
+
+    conf = _decimal(confidence) if _decimal(confidence) is not None else Decimal("0.95")
+    # 约束到 (0.5, 0.99]
+    conf = min(max(conf, Decimal("0.5")), Decimal("0.99"))
+
+    returns: List[Decimal] = []
+    for previous, current in zip(closes, closes[1:]):
+        returns.append(current / previous - Decimal("1"))
+    if len(returns) < _RISK_MIN_RETURNS:
+        return {"available": False, "reason": "insufficient_closes", "bars": bars}
+
+    alpha = Decimal("1") - conf
+    sorted_returns = sorted(returns)
+    n = len(sorted_returns)
+    k = max(1, int((Decimal(n) * alpha).to_integral_value(rounding=ROUND_HALF_UP)))
+    var_loss = sorted_returns[k - 1]                      # 最差 alpha 分位的收益率（负值）
+    es_loss = sum(sorted_returns[:k], Decimal("0")) / Decimal(k)
+
+    std = _std_dev(returns)
+    vol_annual = std * _ANNUALIZATION.sqrt() if std is not None else None
+
+    peak = closes[0]
+    max_drawdown = Decimal("0")
+    for price in closes[1:]:
+        if price > peak:
+            peak = price
+        drawdown = price / peak - Decimal("1")
+        if drawdown < max_drawdown:
+            max_drawdown = drawdown
+
+    alerts: List[Dict[str, str]] = []
+    var_abs = abs(var_loss * Decimal("100"))
+    es_abs = abs(es_loss * Decimal("100"))
+    mdd_abs = abs(max_drawdown * Decimal("100"))
+
+    if var_abs >= _VAR_HIGH_PCT:
+        alerts.append({
+            "level": "high",
+            "metric": "var",
+            "rule": f"单日VaR绝对值 >= {_VAR_HIGH_PCT}%",
+            "message": f"单日最大预期亏损约 {_fmt(var_abs, Q4)}%，风险敞口偏高。",
+        })
+    elif var_abs >= _VAR_MEDIUM_PCT:
+        alerts.append({
+            "level": "medium",
+            "metric": "var",
+            "rule": f"单日VaR绝对值 >= {_VAR_MEDIUM_PCT}%",
+            "message": f"单日最大预期亏损约 {_fmt(var_abs, Q4)}%，需留意波动放大。",
+        })
+    if es_abs >= _ES_HIGH_PCT:
+        alerts.append({
+            "level": "high",
+            "metric": "es",
+            "rule": f"尾部风险ES绝对值 >= {_ES_HIGH_PCT}%",
+            "message": f"极端情形平均亏损约 {_fmt(es_abs, Q4)}%，尾部风险显著。",
+        })
+    if mdd_abs >= _MDD_MEDIUM_PCT:
+        alerts.append({
+            "level": "medium",
+            "metric": "max_drawdown",
+            "rule": f"历史最大回撤 >= {_MDD_MEDIUM_PCT}%",
+            "message": f"样本区间最大回撤约 {_fmt(mdd_abs, Q4)}%，注意仓位控制。",
+        })
+
+    result: Dict[str, Any] = {
+        "available": True,
+        "symbol": str(symbol) if symbol is not None else None,
+        "confidence": _fmt(conf),
+        "bars": bars,
+        "last_close": _fmt(closes[-1]) if closes else None,
+        "var_pct": _fmt(var_loss * Decimal("100"), Q4),
+        "es_pct": _fmt(es_loss * Decimal("100"), Q4),
+        "vol_annual_pct": _fmt(vol_annual * Decimal("100"), Q4) if vol_annual is not None else None,
+        "max_drawdown_pct": _fmt(max_drawdown * Decimal("100"), Q4),
+        "alerts": alerts,
+    }
+    portfolio = _decimal(portfolio_value)
+    if portfolio is not None and portfolio > 0:
+        var_amount = var_loss * portfolio
+        amount_abs = abs(var_amount)
+        result["var_amount"] = _fmt(var_amount)
+        if var_abs >= _VAR_MEDIUM_PCT:
+            alerts.append({
+                "level": "medium",
+                "metric": "portfolio_var",
+                "rule": "账户单日潜在亏损占比较高",
+                "message": f"按资金规模估算，单日潜在亏损约 {_fmt(amount_abs)} 元，建议评估仓位。",
+            })
+
+    if not alerts:
+        if portfolio is not None and portfolio > 0:
+            var_amount = var_loss * portfolio
+            amount_abs = abs(var_amount)
+            alerts.append({
+                "level": "low",
+                "metric": "overall",
+                "rule": "无阈值命中",
+                "message": f"当前样本未命中高风险阈值；按资金规模估算单日潜在亏损约 {_fmt(amount_abs)} 元。",
+            })
+        else:
+            alerts.append({
+                "level": "low",
+                "metric": "overall",
+                "rule": "无阈值命中",
+                "message": "当前样本未命中高风险阈值，维持常规监控。",
+            })
+    return result
