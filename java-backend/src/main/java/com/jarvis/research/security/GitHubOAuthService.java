@@ -11,6 +11,8 @@ import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.time.Duration;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.List;
 import java.util.Map;
 
@@ -29,12 +31,26 @@ public class GitHubOAuthService {
 
     public String authorizationUrl() {
         JarvisProperties.OAuth oauth = requireEnabled();
-        String state = stateStore.create();
+        return authorizationUrl(oauth, stateStore.create());
+    }
+
+    /** 只有已登录用户才能发起绑定流程。 */
+    public String bindingAuthorizationUrl(Long userId) {
+        JarvisProperties.OAuth oauth = requireEnabled();
+        if (userId == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "未登录，无法绑定 GitHub");
+        }
+        return authorizationUrl(oauth, stateStore.create(userId));
+    }
+
+    private String authorizationUrl(JarvisProperties.OAuth oauth, OAuthStateStore.Authorization authorization) {
         return UriComponentsBuilder.fromUriString(oauth.getAuthorizeUrl())
                 .queryParam("client_id", oauth.getClientId())
                 .queryParam("redirect_uri", oauth.getRedirectUri())
                 .queryParam("scope", "read:user user:email")
-                .queryParam("state", state)
+                .queryParam("state", authorization.state())
+                .queryParam("code_challenge", codeChallenge(authorization.codeVerifier()))
+                .queryParam("code_challenge_method", "S256")
                 .build()
                 .encode()
                 .toUriString();
@@ -42,7 +58,8 @@ public class GitHubOAuthService {
 
     public AuthResponse complete(String code, String state, String clientIp) {
         JarvisProperties.OAuth oauth = requireEnabled();
-        if (!stateStore.consume(state)) {
+        OAuthStateStore.Entry stateEntry = stateStore.consume(state);
+        if (stateEntry == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "GitHub 登录状态已失效，请重试");
         }
         if (code == null || code.isBlank()) {
@@ -57,7 +74,8 @@ public class GitHubOAuthService {
                         "client_id", oauth.getClientId(),
                         "client_secret", oauth.getClientSecret(),
                         "code", code,
-                        "redirect_uri", oauth.getRedirectUri()))
+                        "redirect_uri", oauth.getRedirectUri(),
+                        "code_verifier", stateEntry.codeVerifier()))
                 .retrieve()
                 .bodyToMono(new ParameterizedTypeReference<Map<String, Object>>() {})
                 .block();
@@ -81,7 +99,21 @@ public class GitHubOAuthService {
         String login = text(profile.get("login"));
         String displayName = firstNonBlank(text(profile.get("name")), login, "GitHub 用户");
         String email = verifiedEmail(client, oauth, accessToken, profile);
+        if (stateEntry.userId() != null) {
+            return authService.bindOAuth(stateEntry.userId(), PROVIDER, providerUserId,
+                    login, email, displayName, clientIp);
+        }
         return authService.loginWithOAuth(PROVIDER, providerUserId, login, email, displayName, clientIp);
+    }
+
+    private String codeChallenge(String verifier) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(verifier.getBytes(StandardCharsets.US_ASCII));
+            return java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(digest);
+        } catch (Exception e) {
+            throw new IllegalStateException("无法生成 OAuth PKCE 挑战值", e);
+        }
     }
 
     private String verifiedEmail(WebClient client, JarvisProperties.OAuth oauth,

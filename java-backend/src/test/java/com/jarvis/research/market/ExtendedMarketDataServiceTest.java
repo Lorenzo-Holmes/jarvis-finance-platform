@@ -17,11 +17,15 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.time.Clock;
 import java.time.Duration;
+import java.time.LocalDateTime;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class ExtendedMarketDataServiceTest {
 
@@ -128,5 +132,68 @@ class ExtendedMarketDataServiceTest {
         assertEquals("EastMoney (fallback)", second.get("source"));
         assertEquals(1, tencentCalls.get(), "Tencent 熔断后不应再次被调用");
         assertEquals("OPEN", breaker.state("extended.tencent.stock"));
+    }
+
+    @Test
+    void returnsPersistedQuoteWhenAllUpstreamSourcesFail() throws Exception {
+        MarketDataCacheRepository cacheRepository = mock(MarketDataCacheRepository.class);
+        MarketDataCache cached = MarketDataCache.builder()
+                .cacheKey("quote:us_stock:AAPL")
+                .kind("quote")
+                .market("us_stock")
+                .symbol("AAPL")
+                .payload(new ObjectMapper().writeValueAsString(Map.of(
+                        "market", "us_stock", "symbol", "AAPL", "price", 180.0)))
+                .source("Yahoo Finance")
+                .updatedAt(LocalDateTime.now().minusMinutes(2))
+                .build();
+        when(cacheRepository.findByCacheKey("quote:us_stock:AAPL")).thenReturn(Optional.of(cached));
+        WebClient failingClient = WebClient.builder()
+                .exchangeFunction(request -> Mono.error(new IllegalStateException("injected upstream failure")))
+                .build();
+
+        ExtendedMarketDataService isolated = new ExtendedMarketDataService(
+                new ObjectMapper(), null, cacheRepository, failingClient);
+
+        Map<String, Object> result = isolated.quote("us_stock", "AAPL");
+
+        assertEquals(180.0, result.get("price"));
+        assertEquals(true, result.get("stale"));
+        assertEquals("Yahoo Finance (local-cache)", result.get("source"));
+    }
+
+    @Test
+    void returnsPersistedKlineWhenUpstreamFails() throws Exception {
+        MarketDataCacheRepository cacheRepository = mock(MarketDataCacheRepository.class);
+        List<Map<String, Object>> rows = List.of(new LinkedHashMap<>(Map.of(
+                "date", "2026-09-08T10:00:00Z",
+                "open", 179.0,
+                "close", 180.0,
+                "high", 181.0,
+                "low", 178.0,
+                "volume", 1000.0)));
+        MarketDataCache cached = MarketDataCache.builder()
+                .cacheKey("kline:us_stock:AAPL:1d")
+                .kind("kline")
+                .market("us_stock")
+                .symbol("AAPL")
+                .interval("1d")
+                .payload(new ObjectMapper().writeValueAsString(rows))
+                .source("Yahoo Finance")
+                .updatedAt(LocalDateTime.now().minusMinutes(2))
+                .build();
+        when(cacheRepository.findByCacheKey("kline:us_stock:AAPL:1d")).thenReturn(Optional.of(cached));
+        WebClient failingClient = WebClient.builder()
+                .exchangeFunction(request -> Mono.error(new IllegalStateException("injected upstream failure")))
+                .build();
+
+        ExtendedMarketDataService isolated = new ExtendedMarketDataService(
+                new ObjectMapper(), null, cacheRepository, failingClient);
+
+        Map<String, Object> result = isolated.kline("us_stock", "AAPL", "1d", 20);
+
+        assertEquals(true, result.get("stale"));
+        assertEquals("local-cache", result.get("source"));
+        assertEquals(1, result.get("count"));
     }
 }

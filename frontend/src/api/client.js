@@ -157,6 +157,7 @@ export const api = {
   }),
   me: () => get(API_BASE, '/api/auth/me'),
   logout: () => post(API_BASE, '/api/auth/logout', {}),
+  githubBindAuthorize: () => { window.location.href = `${API_BASE}/api/auth/github/bind/authorize` },
   health: () => get(API_BASE, '/api/health'),
   healthReady: () => get(API_BASE, '/api/health/ready'),
   databaseHealth: () => get(API_BASE, '/api/health/db'),

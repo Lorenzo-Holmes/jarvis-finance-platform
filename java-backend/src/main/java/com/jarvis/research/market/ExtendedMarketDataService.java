@@ -60,6 +60,7 @@ public class ExtendedMarketDataService {
     private final WebClient webClient;
     private final ObjectMapper objectMapper;
     private final MarketSourceCircuitBreaker circuitBreaker;
+    private final MarketDataCacheRepository cacheRepository;
     /** 多用户秒级轮询时对同一标的做极短缓存，减少重复打第三方报价源。 */
     private final Map<String, CachedQuote> quoteCache = new ConcurrentHashMap<>();
     private final AtomicLong quoteCacheWrites = new AtomicLong();
@@ -80,19 +81,29 @@ public class ExtendedMarketDataService {
     );
 
     public ExtendedMarketDataService(ObjectMapper objectMapper) {
-        this(objectMapper, null, ExternalWebClients.create(java.time.Duration.ofSeconds(12)));
+        this(objectMapper, null, null, ExternalWebClients.create(java.time.Duration.ofSeconds(12)));
     }
 
     @Autowired
-    public ExtendedMarketDataService(ObjectMapper objectMapper, MarketSourceCircuitBreaker circuitBreaker) {
-        this(objectMapper, circuitBreaker, ExternalWebClients.create(java.time.Duration.ofSeconds(12)));
+    public ExtendedMarketDataService(ObjectMapper objectMapper, MarketSourceCircuitBreaker circuitBreaker,
+                                     MarketDataCacheRepository cacheRepository) {
+        this(objectMapper, circuitBreaker, cacheRepository,
+                ExternalWebClients.create(java.time.Duration.ofSeconds(12)));
     }
 
     ExtendedMarketDataService(ObjectMapper objectMapper, MarketSourceCircuitBreaker circuitBreaker,
+                              MarketDataCacheRepository cacheRepository,
                               WebClient webClient) {
         this.objectMapper = objectMapper;
         this.circuitBreaker = circuitBreaker;
+        this.cacheRepository = cacheRepository;
         this.webClient = webClient;
+    }
+
+    /** 兼容不加载 Spring 容器的旧单元测试。 */
+    ExtendedMarketDataService(ObjectMapper objectMapper, MarketSourceCircuitBreaker circuitBreaker,
+                              WebClient webClient) {
+        this(objectMapper, circuitBreaker, null, webClient);
     }
 
     public List<Map<String, Object>> listInstruments() {
@@ -151,7 +162,7 @@ public class ExtendedMarketDataService {
 
     public Map<String, Object> quote(String market, String symbol) {
         Instrument instrument = requireInstrument(market, symbol);
-        String cacheKey = instrument.market() + ":" + instrument.symbol();
+        String cacheKey = quoteCacheKey(instrument.market(), instrument.symbol());
         long now = System.nanoTime();
         CachedQuote cached = quoteCache.get(cacheKey);
         if (cached != null && now < cached.expiresAtNanos()) {
@@ -167,9 +178,13 @@ public class ExtendedMarketDataService {
             cacheQuote(cacheKey, result, now);
             return result;
         } catch (ResponseStatusException e) {
+            Map<String, Object> cachedResult = readCachedQuote(cacheKey);
+            if (cachedResult != null) return cachedResult;
             throw e;
         } catch (Exception e) {
             log.warn("扩展行情源调用失败 market={}, symbol={}, message={}", market, symbol, e.getMessage());
+            Map<String, Object> cachedResult = readCachedQuote(cacheKey);
+            if (cachedResult != null) return cachedResult;
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "行情源暂不可用，请稍后重试");
         }
     }
@@ -183,6 +198,9 @@ public class ExtendedMarketDataService {
             quoteCache.keySet().stream().findFirst().ifPresent(quoteCache::remove);
         }
         quoteCache.put(cacheKey, new CachedQuote(new LinkedHashMap<>(result), now + QUOTE_CACHE_NANOS));
+        writeCache(cacheKey, "quote", result, result.get("source"), null,
+                String.valueOf(result.getOrDefault("symbol", "")),
+                String.valueOf(result.getOrDefault("market", "")));
     }
 
     int quoteCacheSize() {
@@ -204,26 +222,113 @@ public class ExtendedMarketDataService {
                 case "crypto" -> klineCryptoWithFallback(instrument, normalized, limit);
                 default -> throw invalid("不支持的市场: " + instrument.market());
             };
-            Map<String, Object> technicalAnalysis = enrichTechnicalIndicators(data);
-            Map<String, Object> out = new LinkedHashMap<>();
-            out.put("market", instrument.market());
-            out.put("symbol", instrument.symbol());
-            out.put("interval", normalized);
-            out.put("count", data.size());
-            out.put("data", data);
-            out.put("analysis", technicalAnalysis);
-            if (!data.isEmpty()) {
-                out.put("range", Map.of(
-                        "start", data.get(0).get("date"),
-                        "end", data.get(data.size() - 1).get("date"),
-                        "count", data.size()));
-            }
-            return out;
+            writeCache(klineCacheKey(instrument, normalized), "kline", data,
+                    dataSource(data), normalized, instrument.symbol(), instrument.market());
+            return klineResponse(instrument, normalized, data, false);
         } catch (ResponseStatusException e) {
+            List<Map<String, Object>> cached = readCachedKline(instrument, normalized);
+            if (cached != null && !cached.isEmpty()) return klineResponse(instrument, normalized, cached, true);
             throw e;
         } catch (Exception e) {
             log.warn("扩展K线源调用失败 market={}, symbol={}, message={}", market, symbol, e.getMessage());
+            List<Map<String, Object>> cached = readCachedKline(instrument, normalized);
+            if (cached != null && !cached.isEmpty()) return klineResponse(instrument, normalized, cached, true);
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "K线源暂不可用，请稍后重试");
+        }
+    }
+
+    private Map<String, Object> klineResponse(Instrument instrument, String interval,
+                                               List<Map<String, Object>> data, boolean stale) {
+        Map<String, Object> technicalAnalysis = enrichTechnicalIndicators(data);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("market", instrument.market());
+        out.put("symbol", instrument.symbol());
+        out.put("interval", interval);
+        out.put("count", data.size());
+        out.put("data", data);
+        out.put("analysis", technicalAnalysis);
+        out.put("stale", stale);
+        out.put("source", stale ? "local-cache" : dataSource(data));
+        if (!data.isEmpty()) {
+            out.put("range", Map.of(
+                    "start", data.get(0).get("date"),
+                    "end", data.get(data.size() - 1).get("date"),
+                    "count", data.size()));
+        }
+        return out;
+    }
+
+    private String quoteCacheKey(String market, String symbol) {
+        return "quote:" + market + ":" + symbol;
+    }
+
+    private String klineCacheKey(Instrument instrument, String interval) {
+        return "kline:" + instrument.market() + ":" + instrument.symbol() + ":" + interval;
+    }
+
+    private String dataSource(List<Map<String, Object>> data) {
+        if (data == null || data.isEmpty()) return null;
+        Object source = data.get(0).get("source");
+        return source == null ? null : String.valueOf(source);
+    }
+
+    private void writeCache(String cacheKey, String kind, Object payload, Object source,
+                            String interval, String symbol, String market) {
+        if (cacheRepository == null) return;
+        try {
+            MarketDataCache cache = cacheRepository.findByCacheKey(cacheKey).orElseGet(MarketDataCache::new);
+            cache.setCacheKey(cacheKey);
+            cache.setKind(kind);
+            cache.setMarket(market == null ? "" : market);
+            cache.setSymbol(symbol == null ? "" : symbol);
+            cache.setInterval(interval);
+            cache.setPayload(objectMapper.writeValueAsString(payload));
+            cache.setSource(source == null ? null : String.valueOf(source));
+            cache.setUpdatedAt(LocalDateTime.now());
+            cacheRepository.save(cache);
+        } catch (Exception e) {
+            log.warn("扩展行情缓存写入失败 cacheKey={}, message={}", cacheKey, e.getMessage());
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> readCachedQuote(String cacheKey) {
+        if (cacheRepository == null) return null;
+        try {
+            MarketDataCache cache = cacheRepository.findByCacheKey(cacheKey).orElse(null);
+            if (cache == null || !"quote".equals(cache.getKind())) return null;
+            Map<String, Object> result = objectMapper.readValue(cache.getPayload(), Map.class);
+            result = new LinkedHashMap<>(result);
+            result.put("stale", true);
+            result.put("cached_at", cache.getUpdatedAt() == null ? null : cache.getUpdatedAt().toString());
+            result.put("source", (cache.getSource() == null ? "unknown" : cache.getSource()) + " (local-cache)");
+            return result;
+        } catch (Exception e) {
+            log.warn("扩展行情缓存读取失败 cacheKey={}, message={}", cacheKey, e.getMessage());
+            return null;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> readCachedKline(Instrument instrument, String interval) {
+        if (cacheRepository == null) return null;
+        try {
+            MarketDataCache cache = cacheRepository.findByCacheKey(klineCacheKey(instrument, interval)).orElse(null);
+            if (cache == null || !"kline".equals(cache.getKind())) return null;
+            List<?> rows = objectMapper.readValue(cache.getPayload(), List.class);
+            List<Map<String, Object>> result = new ArrayList<>();
+            for (Object row : rows) {
+                if (row instanceof Map<?, ?> map) {
+                    Map<String, Object> normalized = new LinkedHashMap<>();
+                    map.forEach((key, value) -> normalized.put(String.valueOf(key), value));
+                    result.add(normalized);
+                }
+            }
+            return result;
+        } catch (Exception e) {
+            log.warn("扩展K线缓存读取失败 market={}, symbol={}, interval={}, message={}",
+                    instrument.market(), instrument.symbol(), interval, e.getMessage());
+            return null;
         }
     }
 

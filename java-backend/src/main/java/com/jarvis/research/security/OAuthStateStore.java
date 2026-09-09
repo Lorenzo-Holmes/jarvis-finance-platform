@@ -21,20 +21,32 @@ public class OAuthStateStore {
         this.properties = properties;
     }
 
-    public String create() {
+    public Authorization create() {
+        return create(null);
+    }
+
+    /**
+     * 创建一次性 OAuth 状态。绑定流程会把当前用户 ID 固定在服务端状态中，
+     * 回调时不会信任浏览器传入的用户标识。
+     */
+    public Authorization create(Long userId) {
         cleanup();
         byte[] bytes = new byte[32];
         random.nextBytes(bytes);
         String state = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-        states.put(state, new Entry(Instant.now()));
-        return state;
+        byte[] verifierBytes = new byte[32];
+        random.nextBytes(verifierBytes);
+        String verifier = Base64.getUrlEncoder().withoutPadding().encodeToString(verifierBytes);
+        states.put(state, new Entry(Instant.now(), userId, verifier));
+        return new Authorization(state, verifier);
     }
 
-    public boolean consume(String state) {
-        if (state == null || state.isBlank()) return false;
+    public Entry consume(String state) {
+        if (state == null || state.isBlank()) return null;
         Entry entry = states.remove(state);
         return entry != null && Instant.now().isBefore(entry.createdAt()
-                .plusSeconds(Math.max(60, properties.getOauth().getStateTtlSeconds())));
+                .plusSeconds(Math.max(60, properties.getOauth().getStateTtlSeconds())))
+                ? entry : null;
     }
 
     private void cleanup() {
@@ -42,5 +54,7 @@ public class OAuthStateStore {
         states.entrySet().removeIf(entry -> entry.getValue().createdAt().isBefore(threshold));
     }
 
-    private record Entry(Instant createdAt) {}
+    public record Authorization(String state, String codeVerifier) {}
+
+    public record Entry(Instant createdAt, Long userId, String codeVerifier) {}
 }

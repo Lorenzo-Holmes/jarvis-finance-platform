@@ -106,6 +106,11 @@ public class AuthController {
         response.sendRedirect(gitHubOAuthService.authorizationUrl());
     }
 
+    @GetMapping("/github/bind/authorize")
+    public void githubBindAuthorize(HttpServletResponse response) throws IOException {
+        response.sendRedirect(gitHubOAuthService.bindingAuthorizationUrl(CurrentUser.id()));
+    }
+
     @GetMapping("/github/callback")
     public void githubCallback(@RequestParam(required = false) String code,
                                @RequestParam(required = false) String state,
@@ -115,6 +120,12 @@ public class AuthController {
             AuthResponse auth = gitHubOAuthService.complete(code, state, clientIp(request));
             writeAuthCookie(response, auth.getToken(), auth.getExpiresIn());
             redirectFrontend(response, "oauth=success");
+        } catch (org.springframework.web.server.ResponseStatusException e) {
+            // 已有邮箱账号必须先登录再发起绑定，不把邮箱或 OAuth 细节带回浏览器。
+            log.warn("GitHub OAuth callback rejected: status={}, reason={}", e.getStatusCode(), e.getReason());
+            String query = e.getStatusCode().value() == 409
+                    ? "oauth=bind-required" : "oauth=error";
+            redirectFrontend(response, query);
         } catch (Exception e) {
             // 回调页只显示通用失败状态，详细错误留在服务端日志，避免泄露 OAuth 信息。
             log.warn("GitHub OAuth callback failed", e);

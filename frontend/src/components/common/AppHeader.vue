@@ -1,5 +1,6 @@
 <script setup>
 import { ref, watch } from 'vue'
+import { api } from '../../api/client'
 
 const props = defineProps({
   user: { type: Object, default: null },
@@ -38,6 +39,7 @@ function saveProfile() {
         </button>
         <span class="email">{{ props.user.email || '已登录' }}</span>
         <span v-if="props.user.role === 'ADMIN'" class="role-tag">ADMIN</span>
+        <button class="btn small" type="button" @click="api.githubBindAuthorize()">绑定 GitHub</button>
         <button class="btn small" type="button" @click="emit('logout')">退出</button>
       </div>
       <div v-else class="guest-state">研究终端</div>

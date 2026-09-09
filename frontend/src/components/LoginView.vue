@@ -116,6 +116,9 @@ function switchMode() {
 onMounted(() => {
   const params = new URLSearchParams(window.location.search)
   if (params.get('oauth') === 'error') error.value = 'GitHub 登录失败，请重试或使用邮箱登录'
+  if (params.get('oauth') === 'bind-required') {
+    error.value = '该 GitHub 邮箱已注册，请先使用邮箱登录，再点击顶部“绑定 GitHub”'
+  }
 })
 </script>
 

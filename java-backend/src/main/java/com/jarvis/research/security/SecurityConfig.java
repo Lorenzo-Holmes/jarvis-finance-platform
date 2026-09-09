@@ -56,7 +56,7 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 // 公开接口
                 .requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/logout", "/api/auth/csrf",
-                        "/api/auth/verification/**", "/api/auth/github/**",
+                        "/api/auth/verification/**", "/api/auth/github/authorize", "/api/auth/github/callback",
                         "/api/auth/password/reset", "/api/auth/password/reset/request").permitAll()
                 .requestMatchers("/api/health", "/api/health/live", "/api/health/ready").permitAll()
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")

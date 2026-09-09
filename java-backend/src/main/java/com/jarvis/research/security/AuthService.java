@@ -69,7 +69,7 @@ public class AuthService {
         return new AuthResponse(token, jwtUtil.getExpiration(), toUserInfo(user, account));
     }
 
-    /** OAuth 登录：已绑定账号直接登录；同邮箱且来自 GitHub 的已验证邮箱可自动绑定。 */
+    /** OAuth 登录：已绑定账号直接登录；新邮箱首次登录自动建户。 */
     @Transactional
     public AuthResponse loginWithOAuth(String provider, String providerUserId, String providerLogin,
                                        String email, String displayName, String clientIp) {
@@ -97,6 +97,9 @@ public class AuthService {
                         .build();
                 user = userRepository.save(user);
                 created = true;
+            } else {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "该邮箱已注册，请先使用邮箱登录后再绑定 GitHub");
             }
             oauthAccountRepository.save(OAuthAccount.builder()
                     .userId(user.getId())
@@ -114,6 +117,50 @@ public class AuthService {
         SimAccount account = ensureSimAccount(user.getId());
         auditService.record(user.getId(), created ? "USER_GITHUB_REGISTER" : "USER_GITHUB_LOGIN",
                 "auth", clientIp, "GitHub OAuth 登录成功");
+        String token = jwtUtil.generateToken(user.getId(), user.getEmail(), user.getCredentialVersion());
+        return new AuthResponse(token, jwtUtil.getExpiration(), toUserInfo(user, account));
+    }
+
+    /**
+     * 绑定 GitHub 必须由当前已登录用户发起，并且 GitHub 已验证邮箱必须与当前账号一致。
+     */
+    @Transactional
+    public AuthResponse bindOAuth(Long userId, String provider, String providerUserId,
+                                  String providerLogin, String email, String displayName,
+                                  String clientIp) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "登录账号不存在"));
+        if (!user.isEnabled()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "账号已被禁用");
+        }
+        String normalizedEmail = email == null ? "" : email.trim().toLowerCase();
+        if (!user.getEmail().equalsIgnoreCase(normalizedEmail)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "GitHub 验证邮箱与当前账号不一致，无法绑定");
+        }
+        OAuthAccount existing = oauthAccountRepository
+                .findByProviderAndProviderUserId(provider, providerUserId)
+                .orElse(null);
+        if (existing != null && !userId.equals(existing.getUserId())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "该 GitHub 账号已绑定其他用户");
+        }
+        if (existing == null) {
+            oauthAccountRepository.save(OAuthAccount.builder()
+                    .userId(userId)
+                    .provider(provider)
+                    .providerUserId(providerUserId)
+                    .providerLogin(providerLogin)
+                    .email(normalizedEmail)
+                    .createdAt(LocalDateTime.now())
+                    .updatedAt(LocalDateTime.now())
+                    .build());
+        } else {
+            existing.setProviderLogin(providerLogin);
+            existing.setEmail(normalizedEmail);
+            oauthAccountRepository.save(existing);
+        }
+        SimAccount account = ensureSimAccount(userId);
+        auditService.record(userId, "USER_GITHUB_BIND", "auth", clientIp, "绑定 GitHub 登录");
         String token = jwtUtil.generateToken(user.getId(), user.getEmail(), user.getCredentialVersion());
         return new AuthResponse(token, jwtUtil.getExpiration(), toUserInfo(user, account));
     }
