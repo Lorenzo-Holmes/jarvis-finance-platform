@@ -76,6 +76,40 @@ test('market price stream parses JSON events and closes cleanly', () => {
   assert.equal(source.closed, true)
 })
 
+test('authenticated writes refresh CSRF after a 401/403 and retry once', async () => {
+  const calls = []
+  let preferenceWrites = 0
+  const previousFetch = globalThis.fetch
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url: String(url), method: options.method || 'GET', token: options.headers?.['X-XSRF-TOKEN'] || '' })
+    if (String(url).endsWith('/api/auth/csrf')) {
+      return { ok: true, status: 200, json: async () => ({ code: 200, data: { token: `csrf-${calls.length}` } }) }
+    }
+    if (String(url).endsWith('/api/market/preferences')) {
+      preferenceWrites += 1
+      if (preferenceWrites === 2) {
+        return { ok: false, status: 401, json: async () => ({ code: 401, message: '未登录或登录已过期' }) }
+      }
+      return { ok: true, status: 200, json: async () => ({ code: 200, data: { persisted: true } }) }
+    }
+    throw new Error(`unexpected request: ${url}`)
+  }
+
+  try {
+    const body = { watchlist: [], hiddenDefaultKeys: [] }
+    await api.saveMarketPreferences(body)
+    await api.saveMarketPreferences(body)
+  } finally {
+    globalThis.fetch = previousFetch
+  }
+
+  assert.deepEqual(calls.map(call => call.method), ['GET', 'PUT', 'PUT', 'GET', 'PUT'])
+  assert.equal(calls[1].token, 'csrf-1')
+  assert.equal(calls[2].token, 'csrf-1')
+  assert.equal(calls[3].url, '/api/auth/csrf')
+  assert.equal(calls[4].token, 'csrf-4')
+})
+
 test('market preferences persist per user and discard malformed entries', () => {
   let value = null
   const storage = {

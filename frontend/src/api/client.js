@@ -65,8 +65,10 @@ async function request(base, path, options = {}, params = {}) {
       credentials: 'include',
     })
     const data = await res.json().catch(() => ({}))
-    // 浏览器可能保留了旧的 XSRF cookie；刷新一次 token，避免把 CSRF 失败呈现成登录失败。
-    if (attempt === 0 && csrfRequired && path.startsWith('/api/auth/') && (res.status === 401 || res.status === 403)) {
+    // 安全 Cookie 可能在后续 GET 响应中被浏览器清理；认证请求和幂等的市场偏好替换
+    // 失败时刷新一次 CSRF token，避免把 CSRF 失败误呈现成“未登录”。
+    const csrfRetryable = path.startsWith('/api/auth/') || path === '/api/market/preferences'
+    if (attempt === 0 && csrfRequired && csrfRetryable && (res.status === 401 || res.status === 403)) {
       continue
     }
     return data
