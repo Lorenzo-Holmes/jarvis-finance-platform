@@ -40,7 +40,6 @@ public class MarketDataCache {
     @Column(name = "bar_interval", length = 8)
     private String interval;
 
-    @Lob
     @Column(nullable = false)
     private String payload;
 
