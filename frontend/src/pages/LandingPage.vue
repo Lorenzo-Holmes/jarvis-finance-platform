@@ -14,14 +14,20 @@ const demoStates = {
 }
 
 onMounted(() => {
-  revealObserver = new IntersectionObserver((entries) => {
-    entries.forEach((entry) => {
-      if (entry.isIntersecting) entry.target.classList.add('visible')
-    })
-  }, { threshold: .12 })
-  root.value?.querySelectorAll('.reveal').forEach((el) => revealObserver.observe(el))
+  const revealElements = root.value?.querySelectorAll('.reveal') || []
+  if (typeof window.IntersectionObserver === 'function') {
+    revealObserver = new window.IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) entry.target.classList.add('visible')
+      })
+    }, { threshold: .12 })
+    revealElements.forEach((el) => revealObserver.observe(el))
+  } else {
+    // 旧版浏览器没有 IntersectionObserver 时仍显示全部内容。
+    revealElements.forEach((el) => el.classList.add('visible'))
+  }
 
-  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return
 
   const terminal = root.value?.querySelector('[data-terminal]')
   if (!terminal) return
@@ -33,6 +39,7 @@ onMounted(() => {
   const priceEl = terminal.querySelector('[data-price]')
   const changeEl = terminal.querySelector('[data-change]')
   const signalEl = terminal.querySelector('[data-signal]')
+  if (!cursor || !path || !area || !symbolEl || !nameEl || !priceEl || !changeEl || !signalEl) return
   const assets = [...terminal.querySelectorAll('[data-asset]')]
   const ranges = [...terminal.querySelectorAll('[data-range]')]
 

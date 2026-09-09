@@ -1,5 +1,5 @@
 <script setup>
-import { defineAsyncComponent, onMounted, ref } from 'vue'
+import { defineAsyncComponent, nextTick, onMounted, ref } from 'vue'
 import { api } from './api/client'
 import LoginView from './components/LoginView.vue'
 import AppHeader from './components/common/AppHeader.vue'
@@ -36,6 +36,14 @@ function showLanding() {
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
+function clearOAuthQuery() {
+  const url = new URL(window.location.href)
+  if (!url.searchParams.has('oauth')) return
+  url.searchParams.delete('oauth')
+  const query = url.searchParams.toString()
+  window.history.replaceState(window.history.state, document.title, `${url.pathname}${query ? `?${query}` : ''}${url.hash}`)
+}
+
 function handleLoggedIn(value) {
   session.acceptLogin(value)
   workspace.reset()
@@ -54,8 +62,11 @@ async function updateProfile(displayName) {
 
 onMounted(() => {
   const params = new URLSearchParams(window.location.search)
-  if (params.has('oauth')) publicView.value = 'login'
+  const hasOAuthResult = params.has('oauth')
+  if (hasOAuthResult) publicView.value = 'login'
   session.restore()
+  // 等 LoginView 读取完 OAuth 结果后再清理地址栏，避免返回官网后重复显示旧错误。
+  if (hasOAuthResult) nextTick(clearOAuthQuery)
 })
 </script>
 
