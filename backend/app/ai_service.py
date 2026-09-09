@@ -281,12 +281,18 @@ def analyze_risk(closes: List[Any], confidence: float = 0.95,
         return {"available": False, "reason": metrics.get("reason"), "bars": metrics.get("bars")}
 
     alerts = metrics.pop("alerts", [])
+    confidence_value = metrics.get("confidence")
+    try:
+        confidence_pct = format(float(confidence_value) * 100, ".2f").rstrip("0").rstrip(".")
+        confidence_label = f"{confidence_pct}%"
+    except (TypeError, ValueError):
+        confidence_label = "当前置信度"
     readable = {
         "symbol": metrics.get("symbol"),
         "样本根数": metrics.get("bars"),
         "最新收盘价": metrics.get("last_close"),
         "置信度": metrics.get("confidence"),
-        "单日VaR(95%)": metrics.get("var_pct"),
+        f"单日VaR({confidence_label})": metrics.get("var_pct"),
         "尾部风险ES": metrics.get("es_pct"),
         "年化波动率": metrics.get("vol_annual_pct"),
         "历史最大回撤": metrics.get("max_drawdown_pct"),

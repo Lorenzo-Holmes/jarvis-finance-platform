@@ -31,6 +31,12 @@ function fmtPct(value) {
   return `${value}%`
 }
 
+function confidenceLabel(value) {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return '—'
+  return `${Number((numeric * 100).toFixed(2))}%`
+}
+
 async function analyze() {
   if (validation.value || analyzing.value) return
   analyzing.value = true
@@ -132,7 +138,7 @@ function clearAll() {
             <div class="rk-metric">
               <span>单日 VaR</span>
               <b :class="Number(result.metrics.var_pct) < 0 ? 'loss' : ''">{{ fmtPct(result.metrics.var_pct) }}</b>
-              <small>95% 置信下日最大预期亏损</small>
+              <small>{{ confidenceLabel(result.metrics.confidence) }} 置信下日最大预期亏损</small>
             </div>
             <div class="rk-metric">
               <span>尾部风险 ES</span>

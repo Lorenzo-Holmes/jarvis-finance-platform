@@ -65,8 +65,12 @@ class QuoteReq(BaseModel):
 
 
 class RiskReq(BaseModel):
-    """风险预警（FR-10）：closes 为历史收盘价序列（由主后端/前端从行情数据提供）。"""
-    closes: List[float] = Field(min_length=10, max_length=2000)
+    """风险预警（FR-10）：closes 为历史收盘价序列。
+
+    样本量是否足够由确定性计算层判断，以便统一返回 available=False，
+    而不是在接口校验阶段直接返回 422。
+    """
+    closes: List[float] = Field(max_length=2000)
     confidence: float = Field(default=0.95, ge=0.5, le=0.99)
     portfolio_value: Optional[float] = Field(default=None, gt=0)
     symbol: Optional[str] = Field(default=None, max_length=32)

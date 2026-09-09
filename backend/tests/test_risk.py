@@ -5,6 +5,7 @@
 import pytest
 
 from backend.app.ai_service import analyze_risk
+from backend.app.ai_routes import RiskReq
 from backend.app.research_tools import risk_metrics
 
 
@@ -53,6 +54,17 @@ def test_risk_metrics_rejects_invalid_closes():
     assert result["available"] is False
 
 
+def test_risk_request_allows_short_samples_for_business_layer_message():
+    request = RiskReq(closes=[100, 101, 102])
+    assert request.closes == [100, 101, 102]
+
+
+def test_risk_metrics_ignores_non_finite_closes():
+    result = risk_metrics([100 + i for i in range(11)] + [float("nan"), float("inf")])
+    assert result["available"] is True
+    assert result["bars"] == 11
+
+
 def test_analyze_risk_reports_data_insufficiency_without_llm():
     """样本不足时返回 available=False，不触发 LLM 调用。"""
     result = analyze_risk([100, 101, 102])
@@ -81,3 +93,18 @@ def test_analyze_risk_calls_llm_with_metrics(monkeypatch):
     user_prompt = calls["messages"][0]["content"]
     assert "确定性计算结果" in user_prompt
     assert "单日VaR" in user_prompt  # 数值已注入 prompt
+
+
+def test_analyze_risk_prompt_uses_selected_confidence(monkeypatch):
+    calls = {}
+
+    def fake_chat_request(messages, temperature=0.7, max_tokens=None):
+        calls["prompt"] = messages[0]["content"]
+        return {"content": "风险报告占位", "role": "assistant", "model": "test", "usage": None}
+
+    monkeypatch.setattr("backend.app.ai_service._chat_request", fake_chat_request)
+    result = analyze_risk([100 + i * 0.5 for i in range(60)], confidence=0.9)
+
+    assert result["available"] is True
+    assert "单日VaR(90%)" in calls["prompt"]
+    assert "单日VaR(95%)" not in calls["prompt"]
