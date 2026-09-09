@@ -3,10 +3,14 @@
 当前生产目标架构：
 
 ```text
-Cloudflare
-   ↓
-Nginx :443
-   ↓ /api/*
+浏览器
+   ├─ https://f.shengxia.me ───────> GitHub Pages（Vue 前端）
+   └─ https://agent.shengxia.me/api/*
+                  ↓
+              Cloudflare
+                  ↓
+              Nginx :443
+                  ↓
 Java 127.0.0.1:8200
    ├─ PostgreSQL 127.0.0.1:5432
    └─ Python AI 127.0.0.1:8100
@@ -23,6 +27,16 @@ Java 127.0.0.1:8200
 - Python 只负责 AI Provider 交互。
 - 生产数据库使用 PostgreSQL + Flyway。
 - 发布采用 `/opt/jarvis/releases/<release-id>` + `/opt/jarvis/current` 原子 symlink。
+
+## 0. GitHub Pages 前端发布
+
+`f.shengxia.me` 是正式前端入口，唯一发布源为 GitHub Actions 的 `Deploy Frontend to GitHub Pages`。工作流会构建 `frontend/`、写入 `version.json`，并将 `frontend/public/CNAME` 发布到 Pages。
+
+域名控制台需要将 `f.shengxia.me` 指向 GitHub Pages 配置页显示的目标；启用 HTTPS 后，访问 `https://f.shengxia.me/version.json?check=<时间戳>` 可核对当前发布 SHA。Ubuntu/Nginx 不应再配置或覆盖 `f.shengxia.me` 的静态站点，只保留 `agent.shengxia.me` 的 `/api/*` 反向代理。
+
+后端不变：浏览器仍通过 `https://agent.shengxia.me/api/**` 访问 Java，生产 CORS 继续允许 `https://f.shengxia.me`；GitHub OAuth 回调仍在 `agent.shengxia.me`，成功后的前端跳转仍回到 `f.shengxia.me`。
+
+旧的 Ubuntu 一次性迁移脚本默认不会构建或复制 Nginx 前端；只有明确设置 `DEPLOY_NGINX_FRONTEND=1` 才会启用旧的静态站点复制逻辑。
 
 ## 1. 服务器只读预检
 

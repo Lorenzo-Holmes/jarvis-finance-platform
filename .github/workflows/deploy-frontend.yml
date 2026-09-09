@@ -44,11 +44,18 @@ jobs:
         working-directory: frontend
         run: npm run build
 
+      - name: Stamp deployment version
+        working-directory: frontend
+        env:
+          BUILD_SHA: ${{ github.sha }}
+        run: |
+          printf '{"git_sha":"%s","built_at":"%s","source":"github-pages"}\n' \
+            "$BUILD_SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > dist/version.json
+
       - name: Prepare Pages artifact
-        # 前端构建产物 + 原始静态入口(web/) 合并到发布目录
+        # Vue 构建产物发布到 GitHub Pages 根路径；CNAME 来自 frontend/public/CNAME。
         run: |
           mkdir -p _site
-          # Vue 构建产物 (已在 /gold-trading/ base 下)
           cp -r frontend/dist/* _site/
           # 附带仓库说明页
           cp README.md _site/README_PROJECT.md 2>/dev/null || true

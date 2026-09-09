@@ -4,10 +4,12 @@ set -Eeuo pipefail
 # Ubuntu 24.04 单机生产迁移：旧 H2 -> PostgreSQL + 固定 commit 发布。
 # 设计目标：准备阶段不停止现网；切换阶段停止 Nginx 阻断外部写入；失败自动恢复旧 unit/env/H2 服务。
 # 必须显式：MIGRATION_CONFIRM=MIGRATE_JARVIS_PRODUCTION
+# 当前正式前端由 GitHub Pages 提供；如需兼容旧 Nginx 静态站点，必须显式设置 DEPLOY_NGINX_FRONTEND=1。
 
 APP_COMMIT="${APP_COMMIT:-2a942ea41e8bbcd1977e44e965224d3986bb54b6}"
 REPO_URL="${REPO_URL:-https://github.com/panda-lsy/jarvis-finance-platform.git}"
 CONFIRM="${MIGRATION_CONFIRM:-}"
+DEPLOY_NGINX_FRONTEND="${DEPLOY_NGINX_FRONTEND:-0}"
 JARVIS_ROOT="${JARVIS_ROOT:-/opt/jarvis}"
 BACKUP_ROOT="${BACKUP_ROOT:-/var/backups/jarvis}"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -24,6 +26,7 @@ die() { echo "ERROR: $*" >&2; exit 1; }
 
 [ "${EUID:-$(id -u)}" -eq 0 ] || die "必须使用 root 执行"
 [ "$CONFIRM" = "MIGRATE_JARVIS_PRODUCTION" ] || die "必须设置 MIGRATION_CONFIRM=MIGRATE_JARVIS_PRODUCTION"
+[ "$DEPLOY_NGINX_FRONTEND" = "0" ] || [ "$DEPLOY_NGINX_FRONTEND" = "1" ] || die "DEPLOY_NGINX_FRONTEND 只能是 0 或 1"
 
 command -v systemctl >/dev/null || die "systemctl 不可用"
 systemctl is-active --quiet jarvis-java.service || die "旧 jarvis-java.service 当前不是 active，拒绝猜测生产状态"
@@ -75,6 +78,8 @@ AI_TIMEOUT="$(proc_env AI_TIMEOUT || true)"
 [ -n "$AI_TIMEOUT" ] || AI_TIMEOUT="60"
 [[ "$AI_TIMEOUT" =~ ^[1-9][0-9]*$ ]] || die "当前 AI_TIMEOUT 不是正整数，拒绝迁移"
 
+FRONTEND_ROOT=""
+if [ "$DEPLOY_NGINX_FRONTEND" = "1" ]; then
 FRONTEND_ROOT="$(nginx -T 2>&1 | python3 -c '
 import re, sys
 text=sys.stdin.read()
@@ -101,6 +106,7 @@ if len(roots)==1: print(roots[0])
 [ -n "$FRONTEND_ROOT" ] || die "无法从 Nginx 唯一识别 f.shengxia.me 的静态 root；为避免覆盖错误目录，拒绝自动切换"
 [[ "$FRONTEND_ROOT" != *'$'* ]] || die "前端 Nginx root 含变量，无法安全自动部署"
 [ -d "$FRONTEND_ROOT" ] || die "前端静态目录不存在: $FRONTEND_ROOT"
+fi
 
 log "Detected current production"
 echo "Java PID: $OLD_JAVA_PID"
@@ -108,7 +114,11 @@ echo "Java cwd: $OLD_JAVA_CWD"
 echo "H2 file: $H2_FILE ($(du -h "$H2_FILE" | awk '{print $1}'))"
 echo "Python PID: $OLD_AI_PID"
 echo "AI provider/model: $AI_PROVIDER / $AI_MODEL"
-echo "Frontend root: $FRONTEND_ROOT"
+if [ "$DEPLOY_NGINX_FRONTEND" = "1" ]; then
+  echo "Frontend root: $FRONTEND_ROOT"
+else
+  echo "Frontend root: GitHub Pages (Nginx frontend deployment disabled)"
+fi
 echo "App commit to deploy: $APP_COMMIT"
 
 auto_restore_file() {
@@ -138,7 +148,7 @@ rollback() {
     auto_restore_file "$STATE_DIR/jarvis-java.service" /etc/systemd/system/jarvis-java.service "$JAVA_UNIT_EXISTED"
     auto_restore_file "$STATE_DIR/jarvis-ai.service" /etc/systemd/system/jarvis-ai.service "$AI_UNIT_EXISTED"
     systemctl daemon-reload || true
-    if [ -f "$STATE_DIR/frontend-root.tgz" ] && [ -d "$FRONTEND_ROOT" ]; then
+    if [ "$DEPLOY_NGINX_FRONTEND" = "1" ] && [ -f "$STATE_DIR/frontend-root.tgz" ] && [ -d "$FRONTEND_ROOT" ]; then
       tar -C "$FRONTEND_ROOT" -xzf "$STATE_DIR/frontend-root.tgz" || true
     fi
     [ "$OLD_AI_ACTIVE" -eq 1 ] && systemctl restart jarvis-ai.service || true
@@ -160,7 +170,9 @@ mkdir -p "$STATE_DIR"
 tar -C /etc -czf "$STATE_DIR/nginx.tgz" nginx
 systemctl status jarvis-java.service jarvis-ai.service --no-pager > "$STATE_DIR/systemd-status.txt" 2>&1 || true
 ss -lntp > "$STATE_DIR/listeners.txt" 2>&1 || true
-tar -C "$FRONTEND_ROOT" -czf "$STATE_DIR/frontend-root.tgz" .
+if [ "$DEPLOY_NGINX_FRONTEND" = "1" ]; then
+  tar -C "$FRONTEND_ROOT" -czf "$STATE_DIR/frontend-root.tgz" .
+fi
 
 log "Installing required packages while old service stays online"
 export DEBIAN_FRONTEND=noninteractive
@@ -215,13 +227,17 @@ printf 'release_id=%s\ngit_sha=%s\nbuilt_at=%s\n' "$APP_COMMIT" "$APP_COMMIT" "$
 )
 chown -R jarvis:jarvis "$RELEASE_DIR"
 
-log "Building compatible Vue frontend before downtime"
-(
-  cd "$BUILD_DIR/frontend"
-  npm ci
-  npm run build
-)
-[ -f "$BUILD_DIR/frontend/dist/index.html" ] || die "frontend build failed"
+if [ "$DEPLOY_NGINX_FRONTEND" = "1" ]; then
+  log "Building compatible Vue frontend before downtime"
+  (
+    cd "$BUILD_DIR/frontend"
+    npm ci
+    npm run build
+  )
+  [ -f "$BUILD_DIR/frontend/dist/index.html" ] || die "frontend build failed"
+else
+  log "Skipping Nginx frontend build; production frontend is GitHub Pages"
+fi
 
 log "Preparing Python runtime before downtime"
 rm -rf "$JARVIS_ROOT/venv"
@@ -340,16 +356,22 @@ curl -fsS http://127.0.0.1:8201/actuator/health >/dev/null
 log "Creating first verified PostgreSQL backup before reopening traffic"
 runuser -u jarvis -- /usr/local/sbin/jarvis-postgres-backup
 
-log "Deploying compatible Vue frontend while Nginx is stopped"
-cp -a "$BUILD_DIR/frontend/dist/." "$FRONTEND_ROOT/"
+if [ "$DEPLOY_NGINX_FRONTEND" = "1" ]; then
+  log "Deploying compatible Vue frontend while Nginx is stopped"
+  cp -a "$BUILD_DIR/frontend/dist/." "$FRONTEND_ROOT/"
+else
+  log "Skipping Nginx frontend copy; production frontend is GitHub Pages"
+fi
 
 log "Reopening Nginx and checking public readiness"
 nginx -t
 systemctl start nginx
 curl -fsS https://agent.shengxia.me/api/health/ready >/dev/null
 curl -fsS https://agent.shengxia.me/api/market/prices >/dev/null
-curl -kfsS --resolve f.shengxia.me:443:127.0.0.1 https://f.shengxia.me/ > "$STATE_DIR/frontend-served.html"
-grep -q '<div id="app"></div>' "$STATE_DIR/frontend-served.html" || die "新版前端本机 HTTPS 校验失败"
+if [ "$DEPLOY_NGINX_FRONTEND" = "1" ]; then
+  curl -kfsS --resolve f.shengxia.me:443:127.0.0.1 https://f.shengxia.me/ > "$STATE_DIR/frontend-served.html"
+  grep -q '<div id="app"></div>' "$STATE_DIR/frontend-served.html" || die "新版前端本机 HTTPS 校验失败"
+fi
 
 log "Enabling backup and monitor timers"
 systemctl start jarvis-postgres-backup.timer
