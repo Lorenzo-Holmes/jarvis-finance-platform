@@ -36,7 +36,13 @@ class FakeEventSource {
 globalThis.EventSource = FakeEventSource
 
 const { API_BASE, api } = await import('../src/api/client.js')
-const { marketPreferencesKey, readMarketPreferences, writeMarketPreferences } = await import('../src/utils/marketPreferences.js')
+const {
+  hasMarketPreferences,
+  marketPreferencesKey,
+  normalizeMarketPreferences,
+  readMarketPreferences,
+  writeMarketPreferences,
+} = await import('../src/utils/marketPreferences.js')
 
 test('local development keeps browser on the Java/Vite same-origin API', () => {
   assert.equal(API_BASE, '')
@@ -89,6 +95,33 @@ test('market preferences persist per user and discard malformed entries', () => 
     watchlist: [{ market: 'us_stock', symbol: 'AAPL', name: 'Apple', currency: 'USD', source: 'Yahoo Finance' }],
     hiddenDefaultKeys: ['a_share:sh600519'],
   })
+})
+
+test('server market preferences normalize and distinguish an empty saved state', () => {
+  const normalized = normalizeMarketPreferences({
+    watchlist: [{ market: 'crypto', symbol: 'BTCUSDT', name: 'Bitcoin' }],
+    hiddenDefaultKeys: ['crypto:BTCUSDT'],
+    persisted: true,
+  })
+  assert.equal(hasMarketPreferences(normalized), true)
+  assert.deepEqual(normalized.watchlist[0], {
+    market: 'crypto', symbol: 'BTCUSDT', name: 'Bitcoin', currency: '', source: '',
+  })
+  assert.deepEqual(normalizeMarketPreferences({ watchlist: [], hiddenDefaultKeys: [] }), {
+    watchlist: [], hiddenDefaultKeys: [],
+  })
+  assert.equal(hasMarketPreferences({ watchlist: [], hiddenDefaultKeys: [] }), false)
+})
+
+test('cross-market view persists through the authenticated backend and exposes edit/delete actions', async () => {
+  const source = await readFile(join(frontendRoot, 'src/components/CrossMarketView.vue'), 'utf8')
+  const listSource = await readFile(join(frontendRoot, 'src/components/market/InstrumentList.vue'), 'utf8')
+  assert.match(source, /api\.marketPreferences\(\)/)
+  assert.match(source, /api\.saveMarketPreferences\(/)
+  assert.match(source, /function saveEditedInstrument\(/)
+  assert.match(source, /resetSelectedData\(\)/)
+  assert.match(listSource, /edit-watchlist/)
+  assert.match(listSource, /修改自选标的/)
 })
 
 async function sourceFiles(dir) {

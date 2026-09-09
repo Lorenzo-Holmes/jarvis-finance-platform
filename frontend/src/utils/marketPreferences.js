@@ -25,42 +25,44 @@ export function normalizeSavedInstrument(value) {
   }
 }
 
+export function normalizeMarketPreferences(raw) {
+  const seen = new Set()
+  const watchlist = (Array.isArray(raw?.watchlist) ? raw.watchlist : [])
+    .map(normalizeSavedInstrument)
+    .filter(item => {
+      if (!item) return false
+      const itemKey = `${item.market}:${item.symbol}`
+      if (seen.has(itemKey)) return false
+      seen.add(itemKey)
+      return true
+    })
+    .slice(0, MAX_WATCHLIST_ITEMS)
+  const hiddenDefaultKeys = (Array.isArray(raw?.hiddenDefaultKeys) ? raw.hiddenDefaultKeys : [])
+    .map(item => String(item).trim())
+    .filter(item => INSTRUMENT_KEY_PATTERN.test(item))
+    .slice(0, MAX_HIDDEN_DEFAULTS)
+  return { watchlist, hiddenDefaultKeys: [...new Set(hiddenDefaultKeys)] }
+}
+
+export function hasMarketPreferences(preferences) {
+  return Boolean(preferences?.watchlist?.length || preferences?.hiddenDefaultKeys?.length)
+}
+
 export function readMarketPreferences(storage, key) {
-  const empty = { watchlist: [], hiddenDefaultKeys: [] }
-  if (!storage?.getItem) return empty
+  if (!storage?.getItem) return { watchlist: [], hiddenDefaultKeys: [] }
   try {
-    const raw = JSON.parse(storage.getItem(key) || '{}')
-    const seen = new Set()
-    const watchlist = (Array.isArray(raw.watchlist) ? raw.watchlist : [])
-      .map(normalizeSavedInstrument)
-      .filter(item => {
-        if (!item) return false
-        const itemKey = `${item.market}:${item.symbol}`
-        if (seen.has(itemKey)) return false
-        seen.add(itemKey)
-        return true
-      })
-      .slice(0, MAX_WATCHLIST_ITEMS)
-    const hiddenDefaultKeys = (Array.isArray(raw.hiddenDefaultKeys) ? raw.hiddenDefaultKeys : [])
-      .map(item => String(item).trim())
-      .filter(item => INSTRUMENT_KEY_PATTERN.test(item))
-      .slice(0, MAX_HIDDEN_DEFAULTS)
-    return { watchlist, hiddenDefaultKeys: [...new Set(hiddenDefaultKeys)] }
+    return normalizeMarketPreferences(JSON.parse(storage.getItem(key) || '{}'))
   } catch (_) {
-    return empty
+    return { watchlist: [], hiddenDefaultKeys: [] }
   }
 }
 
 export function writeMarketPreferences(storage, key, preferences) {
   if (!storage?.setItem) return false
   try {
-    storage.setItem(key, JSON.stringify({
-      version: MARKET_PREFERENCES_VERSION,
-      watchlist: (preferences?.watchlist || []).map(normalizeSavedInstrument).filter(Boolean).slice(0, MAX_WATCHLIST_ITEMS),
-      hiddenDefaultKeys: [...new Set((preferences?.hiddenDefaultKeys || [])
-        .map(item => String(item).trim())
-        .filter(item => INSTRUMENT_KEY_PATTERN.test(item)))]
-        .slice(0, MAX_HIDDEN_DEFAULTS),
+    storage.setItem(key, JSON.stringify({ version: MARKET_PREFERENCES_VERSION, ...normalizeMarketPreferences({
+      ...preferences,
+    })
     }))
     return true
   } catch (_) {

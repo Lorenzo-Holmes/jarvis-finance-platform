@@ -175,6 +175,10 @@ export const api = {
   marketKline: (params) => get(API_BASE, '/api/market/kline', params),
   marketInstruments: () => get(API_BASE, '/api/market/instruments'),
   resolveMarketInstrument: (market, query) => get(API_BASE, '/api/market/instruments/resolve', { market, query }),
+  marketPreferences: () => get(API_BASE, '/api/market/preferences'),
+  saveMarketPreferences: (body) => request(API_BASE, '/api/market/preferences', {
+    method: 'PUT', body: JSON.stringify(body),
+  }),
   marketSession: (market) => get(API_BASE, '/api/market/session', { market }),
   marketAssetQuote: (market, symbol) => get(API_BASE, '/api/market/extended/quote', { market, symbol }),
   marketAssetKline: (market, symbol, interval, limit) => get(

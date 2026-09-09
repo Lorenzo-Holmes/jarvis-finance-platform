@@ -8,7 +8,7 @@ const props = defineProps({
   hiddenDefaultCount: { type: Number, default: 0 },
   selectedSymbol: { type: String, default: '' },
 })
-const emit = defineEmits(['select', 'add-to-watchlist', 'remove-watchlist', 'remove-default', 'restore-defaults'])
+const emit = defineEmits(['select', 'add-to-watchlist', 'edit-watchlist', 'remove-watchlist', 'remove-default', 'restore-defaults'])
 
 const search = ref('')
 function matches(item) {
@@ -70,6 +70,7 @@ watch(() => props.marketLabel, () => { search.value = '' })
             <span><b>{{ item.name }}</b><small>{{ item.symbol }}</small></span>
             <i></i>
           </button>
+          <button type="button" class="instrument-action" title="修改自选标的" @click.stop="emit('edit-watchlist', item)">修改</button>
           <button type="button" class="instrument-action remove" title="移除自选标的" @click.stop="emit('remove-watchlist', item)">移除</button>
         </div>
         <div v-if="!filteredWatchlist.length" class="empty-list">解析标的或点击“加自选”后显示</div>

@@ -12,7 +12,9 @@ import { useLatestRequest } from '../composables/useLatestRequest'
 import { useFreshness } from '../composables/useFreshness'
 import { formatNumber, formatPercent } from '../utils/formatters'
 import {
+  hasMarketPreferences,
   marketPreferencesKey,
+  normalizeMarketPreferences,
   readMarketPreferences,
   writeMarketPreferences,
 } from '../utils/marketPreferences'
@@ -39,11 +41,20 @@ const analysisLoading = ref(false)
 const customQuery = ref('')
 const resolveLoading = ref(false)
 const resolveError = ref('')
+const preferenceSaving = ref(false)
+const preferenceError = ref('')
+const editingInstrument = ref(null)
+const editSymbol = ref('')
+const editName = ref('')
+const editLoading = ref(false)
+const editError = ref('')
 const latestDataRequest = useLatestRequest()
 const freshness = useFreshness(90000)
 const marketChart = useMarketChart()
 const chartRef = marketChart.elementRef
 let lastDailyRefreshAt = 0
+let preferenceSaveChain = Promise.resolve()
+let preferenceSaveVersion = 0
 // 报价与 K 线解耦：报价 1 秒刷新，K 线/交易时段维持低频刷新，避免每秒请求重型历史接口。
 const quotePolling = usePolling(async () => {
   const shouldWatch = market.value === 'crypto' || session.value?.is_open
@@ -101,19 +112,62 @@ function instrumentKey(item) {
   return `${item.market}:${item.symbol}`
 }
 
-function loadPreferences() {
-  if (typeof window === 'undefined') return
-  const preferences = readMarketPreferences(window.localStorage, marketPreferencesKey(props.user))
+function applyPreferences(preferences) {
   watchlist.value = preferences.watchlist
   hiddenDefaultKeys.value = preferences.hiddenDefaultKeys
 }
 
-function persistPreferences() {
-  if (typeof window === 'undefined') return
-  writeMarketPreferences(window.localStorage, marketPreferencesKey(props.user), {
+function currentPreferences() {
+  return {
     watchlist: watchlist.value,
     hiddenDefaultKeys: hiddenDefaultKeys.value,
-  })
+  }
+}
+
+function persistLocalPreferences(preferences = currentPreferences()) {
+  if (typeof window === 'undefined') return false
+  return writeMarketPreferences(window.localStorage, marketPreferencesKey(props.user), preferences)
+}
+
+async function persistPreferences() {
+  const preferences = normalizeMarketPreferences(currentPreferences())
+  if (!persistLocalPreferences(preferences)) {
+    preferenceError.value = '浏览器本地存储不可用，无法保留偏好'
+  }
+  const version = ++preferenceSaveVersion
+  preferenceSaving.value = true
+  preferenceSaveChain = preferenceSaveChain
+    .catch(() => {})
+    .then(async () => {
+      const response = await api.saveMarketPreferences(preferences)
+      if (response.code !== 200) throw new Error(response.message || '标的偏好保存失败')
+      if (version === preferenceSaveVersion) preferenceError.value = ''
+    })
+    .catch(error => {
+      if (version === preferenceSaveVersion) preferenceError.value = error?.message || '标的偏好未同步'
+    })
+  await preferenceSaveChain
+  if (version === preferenceSaveVersion) preferenceSaving.value = false
+}
+
+async function loadPreferences() {
+  if (typeof window === 'undefined') return
+  const localPreferences = readMarketPreferences(window.localStorage, marketPreferencesKey(props.user))
+  applyPreferences(localPreferences)
+  try {
+    const response = await api.marketPreferences()
+    if (response.code !== 200 || !response.data) return
+    const serverPreferences = normalizeMarketPreferences(response.data)
+    if (response.data.persisted) {
+      applyPreferences(serverPreferences)
+      persistLocalPreferences(serverPreferences)
+      return
+    }
+    // 只把旧浏览器数据迁移到后端一次；后端已有空记录时不再用旧数据覆盖删除操作。
+    if (hasMarketPreferences(localPreferences)) await persistPreferences()
+  } catch (_) {
+    // 后端暂时不可用时保留本地数据，待用户下一次操作时继续同步。
+  }
 }
 
 async function loadInstruments() {
@@ -122,6 +176,12 @@ async function loadInstruments() {
     throw new Error(response.message || '标的列表加载失败')
   }
   instruments.value = response.data
+  const availableKeys = new Set(response.data.map(instrumentKey))
+  const cleanedHiddenKeys = hiddenDefaultKeys.value.filter(key => availableKeys.has(key))
+  if (cleanedHiddenKeys.length !== hiddenDefaultKeys.value.length) {
+    hiddenDefaultKeys.value = cleanedHiddenKeys
+    await persistPreferences()
+  }
   chooseDefaultSymbol()
 }
 
@@ -149,8 +209,8 @@ async function resolveCustomInstrument() {
     const existingIndex = watchlist.value.findIndex(candidate => instrumentKey(candidate) === instrumentKey(item))
     if (existingIndex >= 0) watchlist.value.splice(existingIndex, 1, item)
     else watchlist.value.push(item)
-    persistPreferences()
-    selectedSymbol.value = item.symbol
+    await persistPreferences()
+    selectInstrument(item.symbol)
     customQuery.value = ''
   } catch (e) {
     resolveError.value = e?.message || String(e)
@@ -159,44 +219,110 @@ async function resolveCustomInstrument() {
   }
 }
 
-function addToWatchlist(item) {
+async function addToWatchlist(item) {
   if (!item) return
   const existingIndex = watchlist.value.findIndex(candidate => instrumentKey(candidate) === instrumentKey(item))
   if (existingIndex >= 0) watchlist.value.splice(existingIndex, 1, item)
   else watchlist.value.push(item)
-  persistPreferences()
-  selectedSymbol.value = item.symbol
+  await persistPreferences()
+  selectInstrument(item.symbol)
 }
 
-function removeFromWatchlist(item) {
+async function removeFromWatchlist(item) {
   if (!item) return
   watchlist.value = watchlist.value.filter(candidate => instrumentKey(candidate) !== instrumentKey(item))
-  persistPreferences()
+  await persistPreferences()
   chooseDefaultSymbol()
 }
 
-function removeDefault(item) {
+async function removeDefault(item) {
   if (!item) return
   const key = instrumentKey(item)
   if (!hiddenDefaultKeys.value.includes(key)) hiddenDefaultKeys.value.push(key)
-  persistPreferences()
+  await persistPreferences()
   chooseDefaultSymbol()
 }
 
-function restoreDefaults() {
+async function restoreDefaults() {
   const marketPrefix = `${market.value}:`
   hiddenDefaultKeys.value = hiddenDefaultKeys.value.filter(key => !key.startsWith(marketPrefix))
-  persistPreferences()
+  await persistPreferences()
   chooseDefaultSymbol()
+}
+
+function resetSelectedData() {
+  quote.value = null
+  kline.value = []
+  range.value = null
+  technicalAnalysis.value = null
+  error.value = ''
+}
+
+function selectInstrument(symbol) {
+  if (selectedSymbol.value === symbol) return
+  selectedSymbol.value = symbol
+  resetSelectedData()
 }
 
 function chooseDefaultSymbol() {
   const available = displayedInstruments.value
-  if (!available.some(i => i.symbol === selectedSymbol.value)) {
-    selectedSymbol.value = available[0]?.symbol || ''
+  const nextSymbol = available.some(i => i.symbol === selectedSymbol.value)
+    ? selectedSymbol.value
+    : available[0]?.symbol || ''
+  if (nextSymbol !== selectedSymbol.value) {
+    selectedSymbol.value = nextSymbol
+    resetSelectedData()
   }
   if (!marketIntervals.value.some(i => i.value === interval.value)) {
     interval.value = marketIntervals.value[0].value
+  }
+}
+
+function startEditInstrument(item) {
+  editingInstrument.value = item
+  editSymbol.value = item?.symbol || ''
+  editName.value = item?.name || ''
+  editError.value = ''
+}
+
+function cancelEditInstrument() {
+  editingInstrument.value = null
+  editSymbol.value = ''
+  editName.value = ''
+  editError.value = ''
+}
+
+async function saveEditedInstrument() {
+  const current = editingInstrument.value
+  const query = editSymbol.value.trim()
+  if (!current || !query || editLoading.value) return
+  editLoading.value = true
+  editError.value = ''
+  try {
+    const response = await api.resolveMarketInstrument(current.market, query)
+    if (response.code !== 200 || !response.data?.symbol) {
+      throw new Error(response.message || '标的解析失败')
+    }
+    const resolved = response.data
+    const next = {
+      ...resolved,
+      name: editName.value.trim() || resolved.name,
+    }
+    const previousKey = instrumentKey(current)
+    const nextKey = instrumentKey(next)
+    if (watchlist.value.some(item => instrumentKey(item) === nextKey && instrumentKey(item) !== previousKey)) {
+      throw new Error('该标的已在自选列表中')
+    }
+    const index = watchlist.value.findIndex(item => instrumentKey(item) === previousKey)
+    if (index < 0) throw new Error('自选标的已不存在，请刷新列表')
+    watchlist.value.splice(index, 1, next)
+    await persistPreferences()
+    cancelEditInstrument()
+    selectInstrument(next.symbol)
+  } catch (e) {
+    editError.value = e?.message || String(e)
+  } finally {
+    editLoading.value = false
   }
 }
 
@@ -296,6 +422,7 @@ async function refresh() {
 }
 
 watch(market, async () => {
+  resetSelectedData()
   chooseDefaultSymbol()
   analysis.value = ''
   technicalAnalysis.value = null
@@ -304,11 +431,12 @@ watch(market, async () => {
 })
 watch([selectedSymbol, interval], () => {
   analysis.value = ''
+  resetSelectedData()
   loadData()
 })
 
 onMounted(async () => {
-  loadPreferences()
+  await loadPreferences()
   await refresh()
   quotePolling.start()
   maintenancePolling.start()
@@ -353,7 +481,25 @@ onMounted(async () => {
       </button>
       <span class="parser-hint">仅校验代码格式，不会保存密钥或任意外部地址</span>
     </div>
+    <div class="preference-status" aria-live="polite">
+      <span v-if="preferenceSaving">标的偏好保存中…</span>
+      <span v-else-if="preferenceError" class="parser-error">{{ preferenceError }}</span>
+    </div>
     <div v-if="resolveError" class="parser-error">{{ resolveError }}</div>
+
+    <div v-if="editingInstrument" class="instrument-editor" role="dialog" aria-label="修改自选标的">
+      <div class="editor-title">
+        <b>修改自选标的</b>
+        <span>{{ currentMarketLabel }} · 重新解析代码后保存</span>
+      </div>
+      <input v-model="editSymbol" class="parser-input" aria-label="修改标的代码" placeholder="标的代码" @keyup.enter="saveEditedInstrument" />
+      <input v-model="editName" class="parser-input" aria-label="修改标的名称" placeholder="显示名称（可选）" @keyup.enter="saveEditedInstrument" />
+      <button type="button" class="btn parser-btn" :disabled="editLoading || !editSymbol.trim()" @click="saveEditedInstrument">
+        {{ editLoading ? '校验中…' : '保存修改' }}
+      </button>
+      <button type="button" class="text-action editor-cancel" :disabled="editLoading" @click="cancelEditInstrument">取消</button>
+      <span v-if="editError" class="parser-error">{{ editError }}</span>
+    </div>
 
     <div class="cross-layout">
       <InstrumentList
@@ -362,8 +508,9 @@ onMounted(async () => {
         :watchlist-instruments="currentWatchlist"
         :hidden-default-count="hiddenDefaultCount"
         :selected-symbol="selectedSymbol"
-        @select="selectedSymbol = $event"
+        @select="selectInstrument"
         @add-to-watchlist="addToWatchlist"
+        @edit-watchlist="startEditInstrument"
         @remove-watchlist="removeFromWatchlist"
         @remove-default="removeDefault"
         @restore-defaults="restoreDefaults"
@@ -428,6 +575,13 @@ onMounted(async () => {
 .parser-btn { white-space: nowrap; }
 .parser-hint { color: var(--subtle); font-size: 9px; }
 .parser-error { color: #ef5350; font-size: 10px; padding: 0 2px; }
+.preference-status { min-height: 12px; color: var(--subtle); font-size: 9px; }
+.instrument-editor { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 10px; background: rgba(215,181,109,.055); border: 1px solid #5f523a; border-radius: var(--radius-sm); }
+.editor-title { display: flex; align-items: baseline; gap: 8px; margin-right: 4px; }
+.editor-title b { color: var(--text); font-size: 10px; }
+.editor-title span { color: var(--subtle); font-size: 9px; }
+.instrument-editor .parser-input { flex: 0 1 190px; }
+.editor-cancel { font-size: 10px; }
 .cross-layout { display: grid; grid-template-columns: 220px minmax(0, 1fr) 300px; gap: 10px; align-items: stretch; min-width: 0; }
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
 .chart-panel { padding: 13px; min-width: 0; }
