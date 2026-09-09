@@ -26,7 +26,8 @@ function saveProfile() {
   <header class="navbar">
     <div class="brand">
       <img src="/favicon.svg" class="brand-icon" alt="Jarvis Finance" />
-      <span class="brand-name">贾维斯 · 金融投研</span>
+      <span class="brand-name">JARVIS</span>
+      <span class="brand-context">RESEARCH</span>
     </div>
     <div class="nav-right">
       <div v-if="props.user" class="user-chip">
@@ -39,7 +40,7 @@ function saveProfile() {
         </button>
         <span class="email">{{ props.user.email || '已登录' }}</span>
         <span v-if="props.user.role === 'ADMIN'" class="role-tag">ADMIN</span>
-        <button class="btn small" type="button" @click="api.githubBindAuthorize()">绑定 GitHub</button>
+        <button class="btn small" type="button" title="绑定 GitHub 账号" @click="api.githubBindAuthorize()">GitHub</button>
         <button class="btn small" type="button" @click="emit('logout')">退出</button>
       </div>
       <div v-else class="guest-state">研究终端</div>
@@ -48,9 +49,11 @@ function saveProfile() {
 </template>
 
 <style scoped>
-.navbar { display: flex; align-items: center; justify-content: space-between; min-height: 64px; padding: 10px 0; border-bottom: 1px solid var(--line); }
-.brand { display: flex; align-items: center; gap: 10px; font-size: 18px; font-weight: 650; letter-spacing: .01em; }
-.brand-icon { width: 30px; height: 30px; display: inline-block; object-fit: contain; vertical-align: middle; }
+.navbar { display: flex; align-items: center; justify-content: space-between; min-height: 62px; padding: 9px 0; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+.brand { display: flex; align-items: center; gap: 9px; font-weight: 650; letter-spacing: .04em; }
+.brand-icon { width: 27px; height: 27px; display: inline-block; object-fit: contain; vertical-align: middle; }
+.brand-name { font-size: 15px; }
+.brand-context { color: var(--subtle); font-size: 9px; font-weight: 650; letter-spacing: .16em; border-left: 1px solid var(--line-strong); padding-left: 9px; }
 .nav-right { display: flex; align-items: center; gap: 12px; }
 .user-chip { display: flex; align-items: center; gap: 10px; }
 .email { color: var(--muted); font-size: 12px; }
@@ -60,7 +63,9 @@ function saveProfile() {
 .profile-input:focus { border-color: #695b40; }
 .role-tag { color: var(--accent-strong); border: 1px solid #5f5138; background: rgba(201,166,95,.08); border-radius: 3px; padding: 2px 5px; font-size: 9px; font-weight: 700; letter-spacing: .05em; }
 .guest-state { color: var(--subtle); font-size: 11px; letter-spacing: .04em; }
-.btn { background: #1c1f22; border: 1px solid var(--line-strong); color: var(--text); border-radius: var(--radius-sm); cursor: pointer; font-weight: 550; }
-.btn.small { padding: 5px 12px; font-size: 12px; }
-@media (max-width: 620px) { .email { display: none; } .brand { font-size: 15px; } }
+.btn { background: #171a1c; border: 1px solid var(--line); color: var(--muted); border-radius: var(--radius-sm); cursor: pointer; font-weight: 550; }
+.btn:hover { color: var(--text); border-color: var(--line-strong); }
+.btn.small { padding: 5px 10px; font-size: 11px; }
+@media (max-width: 820px) { .email { display: none; } }
+@media (max-width: 620px) { .brand-context { display: none; } .user-chip { gap: 6px; } }
 </style>

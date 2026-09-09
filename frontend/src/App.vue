@@ -40,50 +40,55 @@ onMounted(session.restore)
 </script>
 
 <template>
-  <div class="container">
+  <LoginView v-if="!isLoggedIn" @logged-in="handleLoggedIn" />
+
+  <div v-else class="container">
     <AppHeader :user="user" @logout="logout" @update-profile="updateProfile" />
 
-    <LoginView v-if="!isLoggedIn" @logged-in="handleLoggedIn" />
-
-    <template v-else>
+    <div class="workspace-shell">
       <AppTabs :tabs="tabs" :active="activeTab" @change="switchTab" />
 
-      <MarketPage v-if="visitedTabs.has('行情')" v-show="activeTab === '行情'" :active="activeTab === '行情'" />
+      <div class="workspace-main">
+        <MarketPage v-if="visitedTabs.has('行情')" v-show="activeTab === '行情'" :active="activeTab === '行情'" />
 
-      <section v-if="activeTab === '多市场'" class="panel-wrap">
-        <CrossMarketView :user="user" />
-      </section>
+        <section v-if="activeTab === '多市场'" class="panel-wrap">
+          <CrossMarketView :user="user" />
+        </section>
 
-      <BacktestPage v-if="visitedTabs.has('回测')" v-show="activeTab === '回测'" :active="activeTab === '回测'" />
+        <BacktestPage v-if="visitedTabs.has('回测')" v-show="activeTab === '回测'" :active="activeTab === '回测'" />
 
-      <section v-if="activeTab === '模拟盘'">
-        <SimTradeView />
-      </section>
+        <section v-if="activeTab === '模拟盘'">
+          <SimTradeView />
+        </section>
 
-      <section v-if="activeTab === '研究助手'" class="panel-wrap">
-        <AiCenter />
-      </section>
+        <section v-if="activeTab === '研究助手'" class="panel-wrap">
+          <AiCenter />
+        </section>
 
-      <SentimentPage v-if="visitedTabs.has('多空研报')" v-show="activeTab === '多空研报'" />
+        <SentimentPage v-if="visitedTabs.has('多空研报')" v-show="activeTab === '多空研报'" />
 
-      <section v-if="activeTab === '运维'" class="panel-wrap">
-        <OpsView />
-      </section>
+        <section v-if="activeTab === '运维'" class="panel-wrap">
+          <OpsView />
+        </section>
 
-      <section v-if="user?.role === 'ADMIN' && activeTab === '管理'" class="panel-wrap">
-        <AdminView />
-      </section>
+        <section v-if="user?.role === 'ADMIN' && activeTab === '管理'" class="panel-wrap">
+          <AdminView />
+        </section>
 
-      <footer class="foot">
-        <span>贾维斯金融投研平台 · 仅供研究参考，不构成投资建议</span>
-      </footer>
-    </template>
+        <footer class="foot">
+          <span>JARVIS Research Terminal · 仅供研究参考，不构成投资建议</span>
+        </footer>
+      </div>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.container { max-width: 1580px; margin: 0 auto; padding: 0 20px 32px; }
+.container { max-width: 1680px; margin: 0 auto; padding: 0 22px 32px; }
+.workspace-shell { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 18px; align-items: start; }
+.workspace-main { min-width: 0; }
 .panel-wrap { margin-top: 4px; }
-.foot { color: var(--subtle); font-size: 11px; margin-top: 16px; }
+.foot { color: var(--subtle); font-size: 10px; margin-top: 20px; padding-top: 12px; border-top: 1px solid var(--line); letter-spacing: .02em; }
+@media (max-width: 1080px) { .workspace-shell { grid-template-columns: minmax(0, 1fr); gap: 0; } }
 @media (max-width: 620px) { .container { padding-left: 12px; padding-right: 12px; } }
 </style>
