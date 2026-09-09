@@ -187,3 +187,13 @@ test('frontend source cannot bypass the Java security boundary', async () => {
   }
   assert.deepEqual(violations, [])
 })
+
+test('public homepage keeps OAuth callbacks one-shot and animation has fallbacks', async () => {
+  const appSource = await readFile(join(frontendRoot, 'src/App.vue'), 'utf8')
+  const landingSource = await readFile(join(frontendRoot, 'src/pages/LandingPage.vue'), 'utf8')
+
+  assert.match(appSource, /params\.has\('oauth'\)/)
+  assert.match(appSource, /history\.replaceState\(/)
+  assert.match(landingSource, /typeof window\.IntersectionObserver === 'function'/)
+  assert.match(landingSource, /window\.matchMedia\?\./)
+})
