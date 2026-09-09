@@ -19,6 +19,7 @@ echo "[1/4] Java tests + production app jar"
 (
   cd java-backend
   "$MVN" clean test package
+  "$MVN" spring-boot:repackage
 )
 APP_JAR="$(find java-backend/target -maxdepth 1 -type f -name 'gold-research-backend-*.jar' ! -name '*migration*' ! -name '*.original' | head -1)"
 [ -n "$APP_JAR" ] || { echo "ERROR: app jar not found" >&2; exit 1; }
@@ -43,7 +44,16 @@ cp backend/requirements.txt "$OUT/backend/requirements.txt"
 find "$OUT/backend" -type d -name '__pycache__' -prune -exec rm -rf {} +
 find "$OUT/backend" -type f -name '*.pyc' -delete
 
-echo "[4/4] Checksums + metadata"
+echo "[4/5] Frontend production build"
+(
+  cd frontend
+  npm ci --ignore-scripts
+  npm run build
+)
+mkdir -p "$OUT/frontend-dist"
+cp -a frontend/dist/. "$OUT/frontend-dist/"
+
+echo "[5/5] Checksums + metadata"
 printf 'release_id=%s\ngit_sha=%s\nbuilt_at=%s\n' \
   "$RELEASE_ID" "$SHA" "$(date -Iseconds)" > "$OUT/RELEASE"
 (
