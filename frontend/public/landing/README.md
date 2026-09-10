@@ -1,0 +1,1 @@
+This directory contains the source-controlled JARVIS public landing page adapted from the uploaded standalone HTML. The original embedded media is represented with DOM/CSS motion and the simulated terminal demo so the production source stays reviewable and lightweight.
