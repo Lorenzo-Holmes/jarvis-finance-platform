@@ -214,6 +214,10 @@ test('public homepage keeps auth callbacks and animation lifecycle safe', async 
 
   assert.match(appSource, /params\.has\('oauth'\)/)
   assert.match(appSource, /history\.replaceState\(/)
+  assert.match(appSource, /@login="showLogin"/)
+  assert.match(landingSource, /src="\/landing\/index\.html"/)
+  assert.match(landingSource, /textContent\?\.includes\('进入 JARVIS'\)/)
+  assert.match(landingSource, /emit\('login'\)/)
   assert.match(landingSource, /typeof window\.IntersectionObserver === 'function'/)
   assert.match(landingSource, /window\.matchMedia\?\./)
   assert.match(landingSource, /const timers = new Set\(\)/)

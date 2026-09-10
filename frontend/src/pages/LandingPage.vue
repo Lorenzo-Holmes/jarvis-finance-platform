@@ -1,9 +1,32 @@
 <script setup>
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 
+const emit = defineEmits(['login'])
+
 const frame = ref(null)
 const timers = new Set()
 let visibilityObserver
+let frameDocument
+
+function handleLandingClick(event) {
+  const link = event.target?.closest?.('a')
+  if (!link || !link.textContent?.includes('进入 JARVIS')) return
+  event.preventDefault()
+  emit('login')
+}
+
+function bindLandingDocument() {
+  try {
+    const doc = frame.value?.contentDocument
+    if (!doc || doc === frameDocument) return
+    frameDocument?.removeEventListener('click', handleLandingClick)
+    frameDocument = doc
+    frameDocument.addEventListener('click', handleLandingClick)
+  } catch {
+    // /landing/index.html is expected to be same-origin. If hosting changes that,
+    // keep the iframe functional rather than breaking the public homepage.
+  }
+}
 
 onMounted(() => {
   const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
@@ -25,6 +48,8 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  frameDocument?.removeEventListener('click', handleLandingClick)
+  frameDocument = undefined
   visibilityObserver?.disconnect()
   for (const timer of timers) window.clearTimeout(timer)
   timers.clear()
@@ -39,6 +64,7 @@ onBeforeUnmount(() => {
       title="JARVIS 智能金融研究终端"
       loading="eager"
       allow="autoplay"
+      @load="bindLandingDocument"
     />
   </div>
 </template>
