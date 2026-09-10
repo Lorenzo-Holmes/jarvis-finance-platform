@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#060606" />
+  <title>JARVIS · 智能金融研究终端</title>
+  <link rel="stylesheet" href="./landing.css" />
+</head>
+<body>
+<div class="noise"></div>
+  <header class="nav">
+    <div class="nav-inner">
+      <a href="#top" class="brand"><span class="brand-mark"></span><span>JARVIS</span></a>
+      <nav class="nav-links"><a href="#markets">市场</a><a href="#research">AI 研究</a><a href="#backtest">策略回测</a><a href="#workspace">工作空间</a></nav>
+      <div class="nav-actions"><a class="btn" href="#workspace">探索平台</a><a class="btn primary" href="/?view=login" target="_top">进入 JARVIS</a></div>
+    </div>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <div class="hero-copy reveal visible">
+        <div class="eyebrow">AI-Powered Financial Research</div>
+        <div class="hero-title-lockup">
+          <h1 class="hero-title">看懂市场</h1>
+          <p class="hero-subtitle">比价格，更接近<span class="accent-word">判断</span>。</p>
+        </div>
+        <p class="lead">把实时行情、跨市场数据、AI 研究、策略回测与模拟交易，组织成一条连续的研究路径。</p>
+        <div class="hero-actions"><a href="/?view=login" target="_top" class="btn primary">进入 JARVIS</a><a href="#research" class="btn">探索平台 ↓</a></div>
+      </div>
+      <div class="hero-stage reveal visible">
+        <div class="hero-glow"></div>
+        <div class="terminal">
+<div class="terminal-top"><div class="window-dots"><i></i><i></i><i></i></div><div class="terminal-title">JARVIS RESEARCH TERMINAL</div><div class="market-status">MARKET LIVE</div></div>
+          <div class="workspace">
+            <aside class="rail"><div class="rail-badge active">⌁</div><div class="rail-badge">◈</div><div class="rail-badge">⌘</div><div class="rail-badge">↗</div><div class="rail-badge">◎</div></aside>
+            <aside class="watch"><div class="watch-head"><span>Watchlist</span><span class="tiny-label">LIVE</span></div>
+              <div class="asset active" data-symbol="XAUUSD"><span class="sym">XAUUSD</span><span class="price">3,635.20</span><span class="name">Gold Spot</span><span class="price pos">+0.68%</span></div>
+              <div class="asset" data-symbol="NVDA"><span class="sym">NVDA</span><span class="price">183.42</span><span class="name">NVIDIA</span><span class="price pos">+2.36%</span></div>
+              <div class="asset" data-symbol="BTCUSD"><span class="sym">BTCUSD</span><span class="price">112,840</span><span class="name">Bitcoin</span><span class="price neg">-0.42%</span></div>
+              <div class="asset" data-symbol="NASDAQ"><span class="sym">NASDAQ</span><span class="price">23,402</span><span class="name">US Tech</span><span class="price pos">+1.21%</span></div>
+              <div class="asset" data-symbol="510300"><span class="sym">510300</span><span class="price">4.083</span><span class="name">沪深300 ETF</span><span class="price pos">+0.31%</span></div>
+            </aside>
+            <section class="chart-pane" data-demo-pane>
+              <div class="chart-head"><div><div class="symbol-title" data-demo-symbol-title>XAUUSD</div><div class="symbol-sub" data-demo-symbol-sub>Gold Spot · USD</div></div><div><div class="price-big" data-demo-price-big>3,635.20</div><div class="price-change pos" data-demo-price-change>+24.63 · +0.68%</div></div></div>
+              <div class="range"><span class="is-active" data-range-key="1D">1D</span><span data-range-key="5D">5D</span><span data-range-key="1M">1M</span><span data-range-key="6M">6M</span><span data-range-key="YTD">YTD</span><span data-range-key="1Y">1Y</span></div>
+              <svg class="chart-svg" viewBox="0 0 800 380" preserveAspectRatio="none">
+                <defs><linearGradient id="areaFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#c9ab70" stop-opacity=".20"/><stop offset="1" stop-color="#c9ab70" stop-opacity="0"/></linearGradient></defs>
+                <g><line class="gridline" x1="0" x2="800" y1="70" y2="70"/><line class="gridline" x1="0" x2="800" y1="150" y2="150"/><line class="gridline" x1="0" x2="800" y1="230" y2="230"/><line class="gridline" x1="0" x2="800" y1="310" y2="310"/></g>
+                <path class="area" data-demo-area d="M0,280 C50,270 70,285 110,248 C160,203 190,225 230,210 C270,195 295,230 335,190 C370,155 392,173 430,130 C470,90 500,115 545,98 C590,81 605,124 650,90 C705,46 742,72 800,32 L800,360 L0,360Z"/>
+                <path class="line" data-demo-line d="M0,280 C50,270 70,285 110,248 C160,203 190,225 230,210 C270,195 295,230 335,190 C370,155 392,173 430,130 C470,90 500,115 545,98 C590,81 605,124 650,90 C705,46 742,72 800,32"/>
+                <g class="volume" data-demo-volume><rect x="8" y="338" width="7" height="15"/><rect x="34" y="329" width="7" height="24"/><rect x="60" y="334" width="7" height="19"/><rect x="86" y="323" width="7" height="30"/><rect x="112" y="330" width="7" height="23"/><rect x="138" y="315" width="7" height="38"/><rect x="164" y="326" width="7" height="27"/><rect x="190" y="320" width="7" height="33"/><rect x="216" y="310" width="7" height="43"/><rect x="242" y="328" width="7" height="25"/><rect x="268" y="317" width="7" height="36"/><rect x="294" y="305" width="7" height="48"/><rect x="320" y="326" width="7" height="27"/><rect x="346" y="313" width="7" height="40"/><rect x="372" y="320" width="7" height="33"/><rect x="398" y="299" width="7" height="54"/><rect x="424" y="307" width="7" height="46"/><rect x="450" y="319" width="7" height="34"/><rect x="476" y="304" width="7" height="49"/><rect x="502" y="295" width="7" height="58"/><rect x="528" y="309" width="7" height="44"/><rect x="554" y="298" width="7" height="55"/><rect x="580" y="316" width="7" height="37"/><rect x="606" y="301" width="7" height="52"/><rect x="632" y="290" width="7" height="63"/><rect x="658" y="313" width="7" height="40"/><rect x="684" y="296" width="7" height="57"/><rect x="710" y="285" width="7" height="68"/><rect x="736" y="304" width="7" height="49"/><rect x="762" y="278" width="7" height="75"/></g>
+              </svg>
+            </section>
+            <aside class="terminal-side"><div class="side-section"><div class="side-title">Market details</div><div class="kv"><span>Open</span><b data-demo-open>3,610.57</b></div><div class="kv"><span>Day high</span><b data-demo-high>3,641.08</b></div><div class="kv"><span>Day low</span><b data-demo-low>3,598.36</b></div><div class="kv"><span>Volatility</span><b data-demo-vol>18.4%</b></div></div><div class="side-title">Jarvis signal</div><div class="ai-signal" data-demo-ai-signal><strong data-demo-signal-title>Moderately Bullish</strong><p data-demo-signal-copy>美元走弱与实际利率回落共同支撑黄金。短期动量仍偏强，但接近局部阻力区。</p></div></aside>
+            <div class="demo-target-ring" data-demo-target-ring aria-hidden="true"></div><div class="demo-cursor" data-demo-cursor aria-hidden="true"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="kinetic-market" id="pulse" aria-label="动态金属K线视觉">
+      <div class="kinetic-sticky">
+        <div class="kinetic-video-wrap" aria-hidden="true">
+          <div class="kinetic-candles" aria-hidden="true">
+            <i style="--x:11%;--y:47%;--body:180px;--wick:145px;--delay:-1.2s"></i>
+            <i style="--x:24%;--y:38%;--body:205px;--wick:205px;--delay:-3.4s"></i>
+            <i style="--x:35%;--y:50%;--body:195px;--wick:48px;--delay:-2.1s"></i>
+            <i style="--x:46%;--y:57%;--body:255px;--wick:230px;--delay:-4.7s"></i>
+            <i style="--x:57%;--y:49%;--body:200px;--wick:195px;--delay:-.8s"></i>
+            <i style="--x:67%;--y:49%;--body:170px;--wick:32px;--delay:-5.1s"></i>
+            <i style="--x:77%;--y:37%;--body:265px;--wick:0px;--delay:-2.8s"></i>
+          </div>
+          <div class="kinetic-video-scrim"></div>
+        </div>
+        <div class="kinetic-caption">
+          <div class="kicker">Live Market Pulse</div>
+          <h3>市场，在持续变化。</h3>
+          <p>以动态金属 K 线呈现市场脉搏。视频仅作为产品叙事视觉，不干扰真实行情与研究信息。</p>
+        </div>
+      </div>
+    </section>
+
+    <div class="ticker-strip" aria-hidden="true"><div class="ticker-track">
+      <div class="ticker"><span>XAUUSD · 3,635.20</span><span class="pos">+0.68%</span></div><div class="ticker"><span>NASDAQ · 23,402.18</span><span class="pos">+1.21%</span></div><div class="ticker"><span>BTC · 112,840</span><span class="neg">-0.42%</span></div><div class="ticker"><span>NVDA · 183.42</span><span class="pos">+2.36%</span></div><div class="ticker"><span>沪深300 · 4,083.61</span><span class="pos">+0.31%</span></div>
+      <div class="ticker"><span>XAUUSD · 3,635.20</span><span class="pos">+0.68%</span></div><div class="ticker"><span>NASDAQ · 23,402.18</span><span class="pos">+1.21%</span></div><div class="ticker"><span>BTC · 112,840</span><span class="neg">-0.42%</span></div><div class="ticker"><span>NVDA · 183.42</span><span class="pos">+2.36%</span></div><div class="ticker"><span>沪深300 · 4,083.61</span><span class="pos">+0.31%</span></div>
+    </div></div>
+
+    <section class="section" id="research"><div class="section-inner"><div class="section-head reveal"><div class="kicker">JARVIS Intelligence</div><h2>研究，从问题开始。</h2><p class="section-desc">不是另一个聊天窗口。JARVIS 把行情、市场数据和研究上下文放在同一个分析工作流里，让 AI 输出更接近真正的研究结论。</p></div>
+      <div class="showcase reveal"><div class="copy-stack"><h3>AI 研究助手</h3><p>选择资产后，直接围绕价格变化、宏观驱动、风险因素与策略逻辑提问。上下文与资产联动，无需反复复制数据。</p><div class="bullets"><div class="bullet">资产上下文自动关联</div><div class="bullet">多空因素结构化呈现</div><div class="bullet">研究结论与置信度</div></div></div>
+        <div class="visual fx-ai" data-fx-panel="ai"><div class="ai-window"><div class="ai-left"><div class="tiny-label">Ask JARVIS</div><div class="ask">为什么黄金今天<br>继续上涨？</div><div class="prompt-box"><strong>XAUUSD</strong> · 结合当前行情、美元和实际利率分析</div><div class="context-chips"><span class="chip">Gold</span><span class="chip">DXY</span><span class="chip">US 10Y</span><span class="chip">Macro</span></div></div><div class="ai-right"><div class="analysis-head"><strong>JARVIS VIEW</strong><span class="confidence">Confidence <b class="confidence-value" data-count-to="82">0</b>%</span></div><div class="factor" style="--factor-index:0"><div class="factor-row"><span>美元走弱</span><span class="pos">Bullish</span></div><div class="bar"><i style="--factor-width:84%"></i></div></div><div class="factor" style="--factor-index:1"><div class="factor-row"><span>实际利率回落</span><span class="pos">Bullish</span></div><div class="bar"><i style="--factor-width:75%"></i></div></div><div class="factor" style="--factor-index:2"><div class="factor-row"><span>避险需求</span><span class="pos">Bullish</span></div><div class="bar"><i style="--factor-width:64%"></i></div></div><div class="factor" style="--factor-index:3"><div class="factor-row"><span>短线拥挤度</span><span class="neg">Risk</span></div><div class="bar"><i style="--factor-width:47%"></i></div></div><div class="thesis"><div class="tiny-label">Research thesis</div><p>金价的主要驱动仍来自美元与实际利率方向。短期趋势保持正向，但价格已接近前高密集区，追涨收益风险比下降。</p></div></div></div></div>
+      </div></div></section>
+
+    <section class="section" id="markets"><div class="section-inner"><div class="section-head reveal"><div class="kicker">Cross Market</div><h2>一个工作空间，观察多个市场。</h2><p class="section-desc">黄金、A 股、美股、Crypto 与宏观指标不需要分散在不同网页里。把关注列表、行情与研究上下文集中起来。</p></div>
+      <div class="showcase reveal"><div class="copy-stack"><h3>跨市场视角</h3><p>同一套界面组织不同资产类别，用更少的切换建立更完整的市场判断。</p><div class="bullets"><div class="bullet">黄金与贵金属</div><div class="bullet">A 股 / 美股</div><div class="bullet">Crypto 与宏观市场</div></div></div>
+        <div class="visual fx-market" data-fx-panel="market"><div class="market-grid">
+          <div class="market-card" style="--card-index:0;--spark-speed:4.6s"><div class="label">Gold · XAUUSD</div><div class="big quote-value">3,635.20</div><div class="delta pos">+0.68%</div><svg class="spark" viewBox="0 0 300 70" preserveAspectRatio="none"><path class="spark-base" pathLength="1" d="M0 55 C40 59,40 38,72 42 S115 26,150 33 S190 17,220 24 S255 7,300 10"/><path class="spark-live" pathLength="1" d="M0 55 C40 59,40 38,72 42 S115 26,150 33 S190 17,220 24 S255 7,300 10"/></svg></div>
+          <div class="market-card" style="--card-index:1;--spark-speed:4.2s"><div class="label">US · NASDAQ</div><div class="big quote-value">23,402.18</div><div class="delta pos">+1.21%</div><svg class="spark" viewBox="0 0 300 70" preserveAspectRatio="none"><path class="spark-base" pathLength="1" d="M0 58 C25 50,48 54,70 43 S112 48,140 33 S184 35,205 19 S244 27,300 8"/><path class="spark-live" pathLength="1" d="M0 58 C25 50,48 54,70 43 S112 48,140 33 S184 35,205 19 S244 27,300 8"/></svg></div>
+          <div class="market-card" style="--card-index:2;--spark-speed:3.55s"><div class="label">Crypto · BTCUSD</div><div class="big quote-value">112,840</div><div class="delta neg">-0.42%</div><svg class="spark" viewBox="0 0 300 70" preserveAspectRatio="none"><path class="spark-base" pathLength="1" d="M0 18 C30 12,48 30,74 26 S105 46,136 38 S173 56,202 42 S250 51,300 48"/><path class="spark-live" pathLength="1" d="M0 18 C30 12,48 30,74 26 S105 46,136 38 S173 56,202 42 S250 51,300 48"/></svg></div>
+          <div class="market-card" style="--card-index:3;--spark-speed:5.0s"><div class="label">China · CSI 300</div><div class="big quote-value">4,083.61</div><div class="delta pos">+0.31%</div><svg class="spark" viewBox="0 0 300 70" preserveAspectRatio="none"><path class="spark-base" pathLength="1" d="M0 49 C25 44,51 51,80 38 S118 41,143 28 S189 38,215 25 S263 30,300 17"/><path class="spark-live" pathLength="1" d="M0 49 C25 44,51 51,80 38 S118 41,143 28 S189 38,215 25 S263 30,300 17"/></svg></div>
+        </div></div>
+      </div></div></section>
+
+    <section class="section" id="backtest"><div class="section-inner"><div class="section-head reveal"><div class="kicker">Backtest</div><h2>从想法，到验证。</h2><p class="section-desc">策略不是一句判断。把假设变成可复现的回测结果，再理解收益、风险与回撤。</p></div>
+      <div class="showcase reveal"><div class="copy-stack"><h3>策略回测</h3><p>快速验证策略逻辑，集中查看权益曲线、年化收益、Sharpe、最大回撤和交易记录。</p><div class="bullets"><div class="bullet">可复现策略参数</div><div class="bullet">收益与风险统一评估</div><div class="bullet">连接真实市场数据</div></div></div>
+        <div class="visual fx-backtest" data-fx-panel="backtest"><div class="backtest-window"><div class="equity" data-equity-inspector><div class="eq-head"><b>Strategy Equity</b><span>MA 20 / 60 · XAUUSD</span></div><svg class="eq-svg" viewBox="0 0 900 340" preserveAspectRatio="none"><defs><linearGradient id="eqFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#c9ab70" stop-opacity=".15"/><stop offset="1" stop-color="#c9ab70" stop-opacity="0"/></linearGradient></defs><path class="eq-area" d="M0,280 C70,270 80,300 145,252 C205,207 240,234 290,185 C335,143 384,180 430,138 C480,94 510,124 565,82 C615,45 650,92 703,56 C760,17 820,55 900,20 L900,330 L0,330Z"/><path class="eq-line" pathLength="1" d="M0,280 C70,270 80,300 145,252 C205,207 240,234 290,185 C335,143 384,180 430,138 C480,94 510,124 565,82 C615,45 650,92 703,56 C760,17 820,55 900,20"/><line class="eq-cursor-line" x1="0" x2="0" y1="0" y2="340"/><circle class="eq-cursor-dot" cx="0" cy="0" r="5"/></svg></div><div class="stats"><div class="stat" style="--stat-index:0"><span>Annual Return</span><b>18.42%</b></div><div class="stat" style="--stat-index:1"><span>Sharpe</span><b>1.72</b></div><div class="stat" style="--stat-index:2"><span>Max Drawdown</span><b>-8.31%</b></div><div class="stat" style="--stat-index:3"><span>Win Rate</span><b>61.2%</b></div></div></div></div>
+      </div></div></section>
+
+    <section class="full-bleed" id="workspace"><div class="reveal"><div class="kicker">Connected Workspace</div><h2>行情、研究、策略，在同一条思路里联动。</h2><p class="section-desc">选择一个资产，行情、AI 分析、回测与模拟交易围绕同一个上下文切换。少一些复制粘贴，多一些连续研究。</p></div>
+      <div class="final-visual reveal fx-workspace" data-fx-panel="workspace"><div class="link-node node-market" data-node="market"><div class="node-title">Market</div><div class="node-value">XAUUSD · 3,635.20</div><div class="node-copy">实时行情 / 技术指标 / 价格结构</div></div><div class="link-node node-ai" data-node="ai"><div class="node-title">JARVIS AI</div><div class="node-value">Bullish · 82%</div><div class="node-copy">宏观驱动 / 多空因素 / 风险解释</div></div><div class="link-node node-backtest" data-node="backtest"><div class="node-title">Backtest</div><div class="node-value">Sharpe · 1.72</div><div class="node-copy">参数验证 / 回撤 / 策略收益</div></div><div class="link-node node-center" data-node="center"><div class="node-title">Selected Context</div><div class="node-value">GOLD</div><div class="node-copy">一个资产上下文，连接整个工作空间。</div></div><div class="connector connector-market" style="left:27%;top:36%;width:17.8%;--rot:12deg;--line-index:0;--pulse-delay:2.2s;--pulse-duration:5.6s"></div><div class="connector connector-ai reverse" style="left:56%;top:41%;width:20%;--rot:-10deg;--line-index:1;--pulse-delay:3.1s;--pulse-duration:6.2s"></div><div class="connector connector-backtest" style="left:44.1%;top:59%;width:13.5%;--rot:97deg;--line-index:2;--pulse-delay:4.0s;--pulse-duration:5.1s"></div></div>
+    </section>
+
+    <section class="cta" id="login"><div class="cta-inner reveal"><div class="eyebrow">JARVIS Financial Research Platform</div><h2>下一次研究，从这里开始。</h2><p class="lead">进入现有 JARVIS 账户，使用完整的行情、AI、回测与模拟交易能力。</p><div class="hero-actions"><a class="btn primary" href="/?view=login" target="_top">进入 JARVIS →</a><a class="btn" href="#top">返回顶部</a></div></div></section>
+  </main>
+
+  <footer><div class="footer-inner"><span>© 2026 JARVIS · 仅供研究参考，不构成投资建议</span><div class="footer-links"><a href="#markets">市场</a><a href="#research">AI 研究</a><a href="#backtest">回测</a><a href="https://github.com/panda-lsy/jarvis-finance-platform">GitHub</a></div></div></footer>
+  <script src="./landing.js"></script>
+</body>
+</html>
