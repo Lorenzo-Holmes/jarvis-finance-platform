@@ -736,7 +736,18 @@
   <footer><div class="footer-inner"><span>© 2026 JARVIS · 仅供研究参考，不构成投资建议</span><div class="footer-links"><a href="#markets">市场</a><a href="#research">AI 研究</a><a href="#backtest">回测</a><a href="https://github.com/panda-lsy/jarvis-finance-platform">GitHub</a></div></div></footer>
 
   <script>
-    const io = new IntersectionObserver((entries) => {
+    const createObserver = (callback, options) => {
+      if (typeof window.IntersectionObserver !== 'function') {
+        return {
+          observe: (target) => callback([{ target, isIntersecting: true, intersectionRatio: 1 }]),
+          unobserve: () => {},
+          disconnect: () => {},
+        }
+      }
+      return new window.IntersectionObserver(callback, options)
+    }
+
+    const io = createObserver((entries) => {
       entries.forEach((entry) => { if (entry.isIntersecting) entry.target.classList.add('visible') })
     }, { threshold: .13 })
     document.querySelectorAll('.reveal').forEach(el => io.observe(el))
@@ -810,7 +821,7 @@
       })
     }
 
-    const fxObserver = new IntersectionObserver((entries) => {
+    const fxObserver = createObserver((entries) => {
       entries.forEach((entry) => {
         if (!entry.isIntersecting) return
         const panel = entry.target
@@ -915,7 +926,7 @@
       ]
       let demoVisible=false, demoRunning=false, runToken=0
       const runLoop=async(token)=>{if(demoRunning)return;demoRunning=true;await sleep(700);updateState(initial);while(demoVisible&&token===runToken){for(const step of steps){if(!demoVisible||token!==runToken)break;const target=demoTerminal.querySelector(step.selector);await moveCursorTo(target,step.focus);if(step.key)updateState(step.key);await sleep(step.hold)}if(demoVisible&&token===runToken){setFocus(null);await sleep(900)}}cursor.style.opacity='0';hideRing();setFocus(null);demoRunning=false}
-      const demoObserver=new IntersectionObserver((entries)=>{entries.forEach((entry)=>{demoVisible=entry.isIntersecting&&entry.intersectionRatio>.28;if(demoVisible){runToken+=1;runLoop(runToken)}else{runToken+=1;cursor.style.opacity='0';hideRing();setFocus(null)}})},{threshold:[0,.28,.6]})
+      const demoObserver=createObserver((entries)=>{entries.forEach((entry)=>{demoVisible=entry.isIntersecting&&entry.intersectionRatio>.28;if(demoVisible){runToken+=1;runLoop(runToken)}else{runToken+=1;cursor.style.opacity='0';hideRing();setFocus(null)}})},{threshold:[0,.28,.6]})
       demoObserver.observe(demoTerminal)
     }
 
@@ -923,7 +934,14 @@
     if (heroClickVideo) {
       heroClickVideo.muted = true
       heroClickVideo.defaultMuted = true
-      const ensureHeroDemoPlayback = () => heroClickVideo.play().catch(() => {})
+      const heroTerminal = heroClickVideo.closest('.terminal')
+      const revealHeroFallback = () => heroTerminal?.classList.remove('video-demo-active')
+      const ensureHeroDemoPlayback = () => {
+        const playback = heroClickVideo.play()
+        if (playback && typeof playback.catch === 'function') return playback.catch(revealHeroFallback)
+        return Promise.resolve()
+      }
+      heroClickVideo.addEventListener('error', revealHeroFallback)
       heroClickVideo.addEventListener('loadeddata', ensureHeroDemoPlayback, {once:true})
       window.addEventListener('pageshow', ensureHeroDemoPlayback)
       document.addEventListener('visibilitychange', () => { if (!document.hidden) ensureHeroDemoPlayback() })

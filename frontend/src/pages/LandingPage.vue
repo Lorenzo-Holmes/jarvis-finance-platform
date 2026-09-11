@@ -1,11 +1,9 @@
 <script setup>
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { onBeforeUnmount, ref } from 'vue'
 
 const emit = defineEmits(['login'])
 
 const frame = ref(null)
-const timers = new Set()
-let visibilityObserver
 let frameDocument
 
 function handleLandingClick(event) {
@@ -28,31 +26,9 @@ function bindLandingDocument() {
   }
 }
 
-onMounted(() => {
-  const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
-
-  // Keep the public-homepage lifecycle guard in the Vue boundary as well as in
-  // the isolated landing document. This prevents stale timers/observers when
-  // the user switches from the homepage to authentication.
-  if (typeof window.IntersectionObserver === 'function' && frame.value) {
-    visibilityObserver = new window.IntersectionObserver(() => {}, { threshold: 0 })
-    visibilityObserver.observe(frame.value)
-  }
-
-  if (!reducedMotion) {
-    const timer = window.setTimeout(() => {
-      timers.delete(timer)
-    }, 0)
-    timers.add(timer)
-  }
-})
-
 onBeforeUnmount(() => {
   frameDocument?.removeEventListener('click', handleLandingClick)
   frameDocument = undefined
-  visibilityObserver?.disconnect()
-  for (const timer of timers) window.clearTimeout(timer)
-  timers.clear()
 })
 </script>
 
