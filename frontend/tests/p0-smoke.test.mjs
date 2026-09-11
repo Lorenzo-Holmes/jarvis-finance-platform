@@ -383,3 +383,8 @@ test('sentiment page renders dispute and section cards from backend-shaped data'
   // 模型原文仍保留，切分失败时页面不会丢信息
   assert.match(source, /class="st-output">\{\{ result \}\}/)
 })
+
+test('strategy analysis explicitly opts into the bounded CSRF retry policy', async () => {
+  const clientSource = await readFile(join(frontendRoot, 'src/api/client.js'), 'utf8')
+  assert.match(clientSource, /aiStrategy:[\s\S]*csrfRetry:\s*true/)
+})

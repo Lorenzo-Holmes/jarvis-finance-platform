@@ -7,6 +7,7 @@ import com.jarvis.research.service.AiRateLimitService;
 import com.jarvis.research.service.FeaturePermissionService;
 import com.jarvis.research.service.SimTradeService;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
@@ -133,6 +134,16 @@ public class AiController {
     public Map<String, Object> quote(@RequestBody Map<String, Object> body) {
         consumeAiQuota("AI_QUOTE");
         return postAndRecord("/api/ai/quote", body);
+    }
+
+    /**
+     * 个性化策略生成（FR-11）：问卷参数纯转发，不涉及服务端取数。
+     * 风险等级与建议配置比例由 Python 确定性计算层生成，Java 不做任何改写。
+     */
+    @PostMapping("/analyze/strategy")
+    public Map<String, Object> strategy(@Valid @RequestBody StrategyRequest request) {
+        consumeAiQuota("AI_STRATEGY");
+        return postAndRecord("/api/ai/analyze/strategy", request.toPayload());
     }
 
     private Map<String, Object> enrichChatBody(Map<String, Object> body) {
