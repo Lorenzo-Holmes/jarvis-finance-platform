@@ -39,6 +39,12 @@ function showLanding() {
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
+function showLogin() {
+  publicView.value = 'login'
+  replacePublicQuery((params) => params.set('view', 'login'))
+  window.scrollTo({ top: 0, behavior: 'auto' })
+}
+
 function clearOAuthQuery() {
   replacePublicQuery((params) => params.delete('oauth'))
 }
@@ -72,7 +78,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <LandingPage v-if="!isLoggedIn && publicView === 'landing'" />
+  <LandingPage v-if="!isLoggedIn && publicView === 'landing'" @login="showLogin" />
 
   <div v-else-if="!isLoggedIn" class="auth-shell">
     <button type="button" class="home-back" @click="showLanding">← 返回官网</button>
