@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue'
 import { API_BASE, api } from '../api/client'
 
 const emit = defineEmits(['logged-in'])
+const faviconUrl = `${import.meta.env.BASE_URL}favicon.svg`
 const mode = ref('login')           // login | register | reset
 const email = ref('')
 const password = ref('')
@@ -126,7 +127,7 @@ onMounted(() => {
   <div class="auth-page">
     <div class="auth-card">
       <div class="auth-brand">
-        <img src="/favicon.svg" class="brand-icon" alt="Jarvis Finance" />
+        <img :src="faviconUrl" class="brand-icon" alt="Jarvis Finance" />
         <h1>贾维斯 · 金融投研</h1>
         <p class="sub">行情 · 策略 · 模拟交易</p>
       </div>

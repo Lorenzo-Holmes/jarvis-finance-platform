@@ -2,6 +2,8 @@
 import { ref, watch } from 'vue'
 import { api } from '../../api/client'
 
+const faviconUrl = `${import.meta.env.BASE_URL}favicon.svg`
+
 const props = defineProps({
   user: { type: Object, default: null },
 })
@@ -25,7 +27,7 @@ function saveProfile() {
 <template>
   <header class="navbar">
     <div class="brand">
-      <img src="/favicon.svg" class="brand-icon" alt="Jarvis Finance" />
+      <img :src="faviconUrl" class="brand-icon" alt="Jarvis Finance" />
       <span class="brand-name">贾维斯 · 金融投研</span>
     </div>
     <div class="nav-right">

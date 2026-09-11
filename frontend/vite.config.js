@@ -1,9 +1,13 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
-// GitHub Pages 部署: 自定义域名 f.shengxia.me 映射到根路径, 故 base='/' (根路径部署)
+// Fork GitHub Pages uses a project-site subpath; upstream/custom-domain builds stay at the root.
+const publicBase = process.env.GITHUB_REPOSITORY === 'Lorenzo-Holmes/jarvis-finance-platform'
+  ? '/jarvis-finance-platform/'
+  : '/'
+
 export default defineConfig({
-  base: '/',
+  base: publicBase,
   plugins: [vue()],
   server: {
     port: 5173,

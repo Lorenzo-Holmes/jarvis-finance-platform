@@ -2,6 +2,7 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 
 const emit = defineEmits(['login'])
+const landingUrl = `${import.meta.env.BASE_URL}landing/index.html`
 
 const frame = ref(null)
 const timers = new Set()
@@ -60,7 +61,7 @@ onBeforeUnmount(() => {
   <div class="landing-frame">
     <iframe
       ref="frame"
-      src="/landing/index.html"
+      :src="landingUrl"
       title="JARVIS 智能金融研究终端"
       loading="eager"
       allow="autoplay"
