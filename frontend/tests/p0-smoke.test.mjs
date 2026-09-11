@@ -370,3 +370,16 @@ test('public homepage keeps auth callbacks and animation lifecycle safe', async 
   assert.match(loginSource, /const session = await api\.me\(\)/)
   assert.match(loginSource, /登录凭证未能建立/)
 })
+
+test('sentiment page renders dispute and section cards from backend-shaped data', async () => {
+  const source = await readFile(join(frontendRoot, 'src/pages/SentimentPage.vue'), 'utf8')
+  // 争议焦点卡片的数据来自后端确定性切分结果，前端只负责渲染，不做语义推断
+  assert.match(source, /response\.data\.disputes/)
+  assert.match(source, /response\.data\.sections/)
+  assert.match(source, /v-for="item in disputes" :key="item\.id"/)
+  assert.match(source, /v-for="card in sectionCards" :key="card\.id"/)
+  assert.match(source, /多方论据/)
+  assert.match(source, /空方论据/)
+  // 模型原文仍保留，切分失败时页面不会丢信息
+  assert.match(source, /class="st-output">\{\{ result \}\}/)
+})
