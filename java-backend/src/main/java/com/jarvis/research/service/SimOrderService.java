@@ -73,6 +73,7 @@ public class SimOrderService {
         }
         validateSupportedSymbol(normalizedSymbol);
         validateSellPosition(userId, normalizedSide, normalizedSymbol, qty);
+        validateStopRelation(normalizedSide, normalizedSymbol, stop);
 
         if (orderKey != null) {
             SimOrder existing = orderRepository.findByUserIdAndClientOrderId(userId, orderKey).orElse(null);
@@ -116,6 +117,14 @@ public class SimOrderService {
 
     public Map<String, Object> updateStopPrice(Long userId, Long orderId, BigDecimal stopPrice) {
         BigDecimal stop = scaleValue(positive(stopPrice, "止损价必须大于0"));
+        SimOrder existing = orderRepository.findByIdAndUserId(orderId, userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "订单不存在"));
+        if (!"OPEN".equals(existing.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "订单已触发或已撤销，无法修改");
+        }
+        validateStopRelation(existing.getSide(), existing.getSymbol(), stop);
+
         int changed = orderRepository.updateOpenStopPrice(orderId, userId, stop);
         if (changed != 1) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
@@ -222,6 +231,25 @@ public class SimOrderService {
         BigDecimal available = position.getQuantity() == null ? BigDecimal.ZERO : position.getQuantity();
         if (available.compareTo(qty) < 0) {
             throw new IllegalArgumentException("持仓不足: 持有 " + available + ", 挂单卖出 " + qty);
+        }
+    }
+
+    /**
+     * STOP_MARKET 必须位于当前价格的正确一侧，否则它会在创建后立刻触发，
+     * 这既不符合交易界面语义，也容易把误填的止损价变成市价成交。
+     * 市场休市时允许使用最后行情做方向校验；真正触发仍要求 fresh quote。
+     */
+    private void validateStopRelation(String side, String symbol, BigDecimal stopPrice) {
+        Quote quote = latestQuote(symbol);
+        if (quote == null || quote.price == null || quote.price.signum() <= 0) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "无法获取当前行情，暂不能设置止损价: " + symbol);
+        }
+        if ("SELL".equals(side) && stopPrice.compareTo(quote.price) >= 0) {
+            throw new IllegalArgumentException("卖出止损价必须低于当前价 " + quote.price.stripTrailingZeros().toPlainString());
+        }
+        if ("BUY".equals(side) && stopPrice.compareTo(quote.price) <= 0) {
+            throw new IllegalArgumentException("买入止损价必须高于当前价 " + quote.price.stripTrailingZeros().toPlainString());
         }
     }
 
