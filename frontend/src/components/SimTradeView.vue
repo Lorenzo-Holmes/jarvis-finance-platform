@@ -32,12 +32,8 @@ async function loadWorkspace() {
     api.jdPrices().catch(() => null),
   ])
 
-  if (accountResponse?.code !== 200) {
-    throw new Error(accountResponse?.message || '模拟账户加载失败')
-  }
-  if (ordersResponse?.code !== 200) {
-    throw new Error(ordersResponse?.message || '挂单加载失败')
-  }
+  if (accountResponse?.code !== 200) throw new Error(accountResponse?.message || '模拟账户加载失败')
+  if (ordersResponse?.code !== 200) throw new Error(ordersResponse?.message || '挂单加载失败')
 
   account.value = accountResponse.data
   openOrders.value = Array.isArray(ordersResponse.data) ? ordersResponse.data : []
@@ -70,9 +66,7 @@ async function submitOrder(payload) {
     timeInForce: payload.timeInForce || 'DAY',
   }
 
-  if (!sameAttempt(pendingOrderAttempt, current)) {
-    pendingOrderAttempt = { ...current, id: crypto.randomUUID() }
-  }
+  if (!sameAttempt(pendingOrderAttempt, current)) pendingOrderAttempt = { ...current, id: crypto.randomUUID() }
 
   try {
     const response = await api.simOrder(
@@ -81,11 +75,7 @@ async function submitOrder(payload) {
       current.quantity,
       current.leverage,
       pendingOrderAttempt.id,
-      {
-        orderType: current.orderType,
-        stopPrice: current.stopPrice,
-        timeInForce: current.timeInForce,
-      },
+      { orderType: current.orderType, stopPrice: current.stopPrice, timeInForce: current.timeInForce },
     )
     if (response.code !== 200) throw new Error(response.message || '订单提交失败')
     pendingOrderAttempt = null
