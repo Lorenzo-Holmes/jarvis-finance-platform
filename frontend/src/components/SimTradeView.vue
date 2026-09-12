@@ -26,10 +26,7 @@ function startPriceStream() {
 
 async function loadWorkspace() {
   const [accountResponse, ordersResponse, marketResponse, jdResponse] = await Promise.all([
-    api.simAccount(),
-    api.simOpenOrders(),
-    api.marketPrices().catch(() => null),
-    api.jdPrices().catch(() => null),
+    api.simAccount(), api.simOpenOrders(), api.marketPrices().catch(() => null), api.jdPrices().catch(() => null),
   ])
   if (accountResponse?.code !== 200) throw new Error(accountResponse?.message || '模拟账户加载失败')
   if (ordersResponse?.code !== 200) throw new Error(ordersResponse?.message || '挂单加载失败')
@@ -50,12 +47,9 @@ async function submitOrder(payload) {
   msg.value = ''
   submitting.value = true
   const current = {
-    side: payload.side,
-    symbol: payload.symbol,
-    quantity: Number(payload.quantity),
+    side: payload.side, symbol: payload.symbol, quantity: Number(payload.quantity),
     leverage: payload.side === 'SELL' ? 1 : Number(payload.leverage || 1),
-    orderType: payload.orderType || 'MARKET',
-    stopPrice: payload.stopPrice,
+    orderType: payload.orderType || 'MARKET', stopPrice: payload.stopPrice,
     timeInForce: payload.timeInForce || 'DAY',
   }
   if (!sameAttempt(pendingOrderAttempt, current)) pendingOrderAttempt = { ...current, id: crypto.randomUUID() }
@@ -72,9 +66,7 @@ async function submitOrder(payload) {
   } catch (error) {
     msg.value = error?.message || String(error)
     msgType.value = 'error'
-  } finally {
-    submitting.value = false
-  }
+  } finally { submitting.value = false }
 }
 
 async function updateOrder(payload) {
@@ -109,10 +101,7 @@ async function cancelOrder(orderId) {
   } finally { submitting.value = false }
 }
 
-const polling = usePolling(async () => {
-  try { await loadWorkspace() } catch (_) { /* 保留最后一次有效账户与行情 */ }
-}, 30000)
-
+const polling = usePolling(async () => { try { await loadWorkspace() } catch (_) { /* 保留最后一次有效账户与行情 */ } }, 30000)
 async function initialize() {
   initializing.value = true
   try { await loadWorkspace() }
