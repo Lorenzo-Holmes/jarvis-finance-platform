@@ -31,10 +31,8 @@ async function loadWorkspace() {
     api.marketPrices().catch(() => null),
     api.jdPrices().catch(() => null),
   ])
-
   if (accountResponse?.code !== 200) throw new Error(accountResponse?.message || '模拟账户加载失败')
   if (ordersResponse?.code !== 200) throw new Error(ordersResponse?.message || '挂单加载失败')
-
   account.value = accountResponse.data
   openOrders.value = Array.isArray(ordersResponse.data) ? ordersResponse.data : []
   if (marketResponse?.data) realtimePrices.value = marketResponse.data
@@ -42,14 +40,9 @@ async function loadWorkspace() {
 }
 
 function sameAttempt(a, b) {
-  return a
-    && a.side === b.side
-    && a.symbol === b.symbol
-    && a.quantity === b.quantity
-    && a.leverage === b.leverage
-    && a.orderType === b.orderType
-    && Number(a.stopPrice || 0) === Number(b.stopPrice || 0)
-    && a.timeInForce === b.timeInForce
+  return a && a.side === b.side && a.symbol === b.symbol && a.quantity === b.quantity
+    && a.leverage === b.leverage && a.orderType === b.orderType
+    && Number(a.stopPrice || 0) === Number(b.stopPrice || 0) && a.timeInForce === b.timeInForce
 }
 
 async function submitOrder(payload) {
@@ -65,16 +58,10 @@ async function submitOrder(payload) {
     stopPrice: payload.stopPrice,
     timeInForce: payload.timeInForce || 'DAY',
   }
-
   if (!sameAttempt(pendingOrderAttempt, current)) pendingOrderAttempt = { ...current, id: crypto.randomUUID() }
-
   try {
     const response = await api.simOrder(
-      current.side,
-      current.symbol,
-      current.quantity,
-      current.leverage,
-      pendingOrderAttempt.id,
+      current.side, current.symbol, current.quantity, current.leverage, pendingOrderAttempt.id,
       { orderType: current.orderType, stopPrice: current.stopPrice, timeInForce: current.timeInForce },
     )
     if (response.code !== 200) throw new Error(response.message || '订单提交失败')
@@ -83,7 +70,6 @@ async function submitOrder(payload) {
     msgType.value = 'ok'
     await loadWorkspace()
   } catch (error) {
-    // 网络异常时保留 clientOrderId；相同订单重试继续使用同一个幂等号。
     msg.value = error?.message || String(error)
     msgType.value = 'error'
   } finally {
@@ -104,9 +90,7 @@ async function updateOrder(payload) {
   } catch (error) {
     msg.value = error?.message || String(error)
     msgType.value = 'error'
-  } finally {
-    submitting.value = false
-  }
+  } finally { submitting.value = false }
 }
 
 async function cancelOrder(orderId) {
@@ -122,62 +106,31 @@ async function cancelOrder(orderId) {
   } catch (error) {
     msg.value = error?.message || String(error)
     msgType.value = 'error'
-  } finally {
-    submitting.value = false
-  }
+  } finally { submitting.value = false }
 }
 
 const polling = usePolling(async () => {
-  try {
-    await loadWorkspace()
-  } catch (_) { /* 保留最后一次有效账户与行情 */ }
+  try { await loadWorkspace() } catch (_) { /* 保留最后一次有效账户与行情 */ }
 }, 30000)
 
 async function initialize() {
   initializing.value = true
-  try {
-    await loadWorkspace()
-  } catch (error) {
-    msg.value = error?.message || String(error)
-    msgType.value = 'error'
-  } finally {
-    initializing.value = false
-  }
+  try { await loadWorkspace() }
+  catch (error) { msg.value = error?.message || String(error); msgType.value = 'error' }
+  finally { initializing.value = false }
 }
 
-onMounted(async () => {
-  await initialize()
-  startPriceStream()
-  polling.start()
-})
-
-onBeforeUnmount(() => {
-  polling.stop()
-  closePriceStream?.()
-  closePriceStream = null
-})
+onMounted(async () => { await initialize(); startPriceStream(); polling.start() })
+onBeforeUnmount(() => { polling.stop(); closePriceStream?.(); closePriceStream = null })
 </script>
 
 <template>
   <div class="sim-terminal-page">
-    <DataState v-if="initializing && !account" state="loading" title="正在加载模拟交易终端"
-               message="正在同步账户、实时行情与挂单。" />
-    <DataState v-else-if="!account" state="error" title="模拟交易终端加载失败"
-               :message="msg || '无法读取模拟账户。'" retryable @retry="initialize" />
-
-    <TradingTerminal
-      v-else
-      :account="account"
-      :realtime-prices="realtimePrices"
-      :jd-prices="jdPrices"
-      :open-orders="openOrders"
-      :submitting="submitting"
-      :message="msg"
-      :message-type="msgType"
-      @submit="submitOrder"
-      @update-order="updateOrder"
-      @cancel-order="cancelOrder"
-    />
+    <DataState v-if="initializing && !account" state="loading" title="正在加载模拟交易终端" message="正在同步账户、实时行情与挂单。" />
+    <DataState v-else-if="!account" state="error" title="模拟交易终端加载失败" :message="msg || '无法读取模拟账户。'" retryable @retry="initialize" />
+    <TradingTerminal v-else :account="account" :realtime-prices="realtimePrices" :jd-prices="jdPrices"
+      :open-orders="openOrders" :submitting="submitting" :message="msg" :message-type="msgType"
+      @submit="submitOrder" @update-order="updateOrder" @cancel-order="cancelOrder" />
   </div>
 </template>
 
