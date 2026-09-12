@@ -49,3 +49,11 @@ test('stop-line click handling uses ECharts markLine data events and validates s
   assert.match(terminal, /卖出止损价需低于当前价/)
   assert.match(terminal, /买入止损价需高于当前价/)
 })
+
+test('reference terminal keeps chart as the primary canvas and the order ticket as a centered overlay', () => {
+  assert.match(terminal, /height: clamp\(535px, calc\(100vh - 285px\), 700px\)/)
+  assert.match(terminal, /width: min\(432px, calc\(100% - 28px\)\)/)
+  assert.match(terminal, /backdrop-filter: blur\(1\.5px\)/)
+  assert.match(terminal, /right: 150px/)
+  assert.match(terminal, /right: 4px/)
+})
