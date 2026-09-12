@@ -14,6 +14,7 @@ test('simulated trading uses the chart-first terminal layout', () => {
   assert.match(terminal, /Stop market/)
   assert.match(terminal, /Estimated credit/)
   assert.match(terminal, /Good for day/)
+  assert.match(terminal, /modal-layer/)
 })
 
 test('terminal keeps server-side stop orders wired through the authenticated API client', () => {
@@ -32,4 +33,19 @@ test('market chart supports reference-style colors and volume axis layout withou
   assert.match(chart, /xLabelsOnVolume = false/)
   assert.match(terminal, /riseColor: '#b9ff22'/)
   assert.match(terminal, /fallColor: '#ff4d52'/)
+})
+
+test('reference terminal renders separate position and stop labels on the chart', () => {
+  assert.match(terminal, /position-marker/)
+  assert.match(terminal, /position-price-tag/)
+  assert.match(terminal, /stop-marker/)
+  assert.match(terminal, /stop-price-tag/)
+  assert.match(terminal, /markArea/)
+  assert.match(terminal, /convertToPixel/)
+})
+
+test('stop-line click handling uses ECharts markLine data events and validates stop direction', () => {
+  assert.match(terminal, /params\?\.dataType === 'markLine'/)
+  assert.match(terminal, /卖出止损价需低于当前价/)
+  assert.match(terminal, /买入止损价需高于当前价/)
 })
