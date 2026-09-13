@@ -51,7 +51,7 @@ test('stop-line click handling uses ECharts markLine data events and validates s
 })
 
 test('reference terminal keeps chart as the primary canvas and the order ticket as a centered overlay', () => {
-  assert.match(terminal, /height: clamp\(535px, calc\(100vh - 285px\), 700px\)/)
+  assert.match(terminal, /height: clamp\(480px, calc\(100vh - 264px\), 760px\)/)
   assert.match(terminal, /width: min\(432px, calc\(100% - 28px\)\)/)
   assert.match(terminal, /backdrop-filter: blur\(1\.5px\)/)
   assert.match(terminal, /right: 150px/)
