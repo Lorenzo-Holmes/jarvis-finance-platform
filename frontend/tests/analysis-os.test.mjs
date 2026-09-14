@@ -61,7 +61,7 @@ test('analysis OS uses module archives while retaining a truthful API status cha
 
   assert.match(page, /JARVIS_MODULES/)
   assert.match(page, /MODULE INDEX/)
-  assert.match(page, /ACCESS MODULE/)
+  assert.match(page, /ACCESS FILE/)
   assert.match(page, /api\.marketInstruments\(\)/)
   assert.match(page, /DATA CHANNEL INTERRUPTED/)
   assert.doesNotMatch(page, /marketAssetQuote/)

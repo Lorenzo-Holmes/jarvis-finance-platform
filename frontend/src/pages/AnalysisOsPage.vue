@@ -400,15 +400,17 @@ onBeforeUnmount(() => {
       aria-label="当前聚焦模块"
       :style="{ opacity: Math.max(0, .86 - extractionProgress * 1.58) }"
     >
-      <p>MODULE / {{ moduleNumber }} <i>/</i> {{ focusedModule.category }}</p>
-      <h2>{{ focusedModule.labelEn }}</h2>
-      <h3>{{ focusedModule.labelZh }}</h3>
+      <p class="file-number">FILE NUMBER: {{ focusedModule.code }}</p>
+      <div class="callout-meta">
+        <strong>{{ focusedModule.labelEn }}</strong>
+        <span>{{ focusedModule.labelZh }} / {{ focusedModule.category }}</span>
+      </div>
       <div class="callout-rule"><span></span></div>
       <p class="module-summary">{{ focusedModule.summary }}</p>
       <div class="capability-line">
         <span v-for="item in focusedModule.capabilities" :key="item">{{ item }}</span>
       </div>
-      <button type="button" @click="activateModule(focusedModule.key)">ACCESS MODULE <span>→</span></button>
+      <button type="button" @click="activateModule(focusedModule.key)">ACCESS FILE <span>→</span></button>
     </section>
 
     <section
@@ -604,13 +606,13 @@ onBeforeUnmount(() => {
 
 .data-warning { position: absolute; z-index: 11; right: 30px; top: 75px; margin: 0; max-width: 430px; color: #8b6944; font: 600 7px/1.5 ui-monospace, monospace; text-align: right; letter-spacing: .05em; }
 .archive-callout { position: absolute; z-index: 8; left: auto; right: 6.5%; top: 39%; width: min(320px, 24vw); color: #20221d; pointer-events: none; }
-.archive-callout > p:first-child { margin: 0 0 10px; color: #77736a; font: 600 7px/1 ui-monospace, monospace; letter-spacing: .11em; }
-.archive-callout > p i { margin: 0 13px; color: #aaa398; font-style: normal; }
-.archive-callout h2 { margin: 0; font-size: clamp(23px, 2.15vw, 34px); line-height: .98; font-weight: 650; letter-spacing: -.04em; }
-.archive-callout h3 { margin: 5px 0 0; color: #65645d; font-size: 13px; font-weight: 500; }
+.archive-callout .file-number { margin: 0; color: #3c3e37; font: 650 11px/1 ui-monospace, monospace; letter-spacing: .035em; }
+.callout-meta { margin-top: 11px; display: flex; align-items: baseline; gap: 11px; color: #827d74; }
+.callout-meta strong { color: #65635c; font: 650 7px/1 ui-monospace, monospace; letter-spacing: .1em; }
+.callout-meta span { font-size: 8px; }
 .callout-rule { position: relative; height: 1px; margin: 18px 0 13px 32px; background: rgba(104,101,94,.7); }
 .callout-rule::before { content: ''; position: absolute; left: -32px; top: -2px; width: 4px; height: 4px; background: #30322b; }
-.module-summary { margin: 0 0 10px 32px; color: #747068; font-size: 10px; line-height: 1.65; max-width: 310px; }
+.module-summary { margin: 0 0 10px 32px; color: #817c73; font-size: 9px; line-height: 1.6; max-width: 285px; }
 .capability-line { margin-left: 32px; display: flex; flex-wrap: wrap; gap: 6px 12px; color: #9b958b; font: 600 7px/1 ui-monospace, monospace; letter-spacing: .07em; }
 .archive-callout > button { pointer-events: auto; margin: 21px 0 0 32px; border: 0; background: transparent; color: #33352f; padding: 0; font: 650 8px/1 ui-monospace, monospace; letter-spacing: .085em; cursor: pointer; }
 .archive-callout > button span { margin-left: 34px; font-size: 14px; vertical-align: -1px; }
@@ -712,7 +714,7 @@ onBeforeUnmount(() => {
   .module-index-track button { min-width: 102px; height: 54px; padding: 7px 12px; }
   .module-index-track button::after { bottom: 0; }
   .archive-callout { left: 18px; right: 18px; top: 23%; width: auto; }
-  .archive-callout h2 { font-size: 30px; }
+  .archive-callout .file-number { font-size: 10px; }
   .module-summary { max-width: 330px; }
   .archive-counter { left: 18px; bottom: 77px; transform: scale(.72); transform-origin: bottom left; }
   .archive-hint, .column-navigation, .system-footer, .powered { display: none; }

@@ -803,3 +803,94 @@ SSA0 post-processing 管线代码已建立，但默认暂时保持 compatibility
 - [ ] 与参考视频选定 4–6 个关键帧逐项对照相机高度、档案占屏比、景深、HUD 边界和切换节奏。
 - [ ] 如最终对照仍存在明显模型差距，再决定是否制作独立 Blender/GLB 原创档案资产；当前程序化装配体不得直接替换为第三方模型。
 - [ ] 完成最终用户视觉确认后，才进入上游 PR / merge 流程。
+
+---
+
+## 21. 参考视频关键帧对照（BV1jebG6zE1E）
+
+本节使用用户指定视频的真实 `<video>` 元素精确 seek，对照以下时间点。截图只作为本地验收证据保存在 `.playwright-cli/`，不得提交到仓库或作为产品资产。
+
+### 21.1 52.0s · Archive Browse
+
+参考特征：
+
+- 主体仍是连续档案海；
+- 当前档案只做选中抬升和局部净空，没有飞向摄像机；
+- HUD 不是大标题 Hero，而是薄的 `FILE NUMBER` 信息线；
+- 品牌、编号、底部状态均低于档案实体的视觉权重。
+
+对应调整：
+
+- [x] Browse HUD 改为 `FILE NUMBER: <module code>`，大 `MARKET` 标题不再占据浏览态中央。
+- [x] 入口动作改为 `ACCESS FILE`。
+- [x] Focus preview lift 按当前原创模型比例校准为 `0.90`，Extraction 从当前高度连续接管。
+- [x] 同 lane / 相邻 row 增加局部 clearance，下沉周边档案形成净空，而不是把焦点档案向 Z 轴拉近。
+- [x] 1440×900 本地关键帧重新检查，档案海重新成为第一视觉主体。
+
+### 21.2 57.5s · Focus → Detail Transition
+
+参考特征：
+
+- 被选档案明显占据左侧视觉区域；
+- 背景档案仍存在，不在第一帧消失；
+- 右侧详情界面开始显现，但内容仍处于转场过程；
+- 相机承担靠近和重构，档案自身仍保持垂直抽取逻辑。
+
+当前对应：
+
+- [x] `VERTICAL EXTRACTION → CAMERA APPROACH → GLASS DECRYPT` 连续驱动。
+- [x] Focus 档案玻璃/双环/压条在高质量路径下保持可见。
+- [x] 背景 archive array 贯穿整个 decrypt 关键帧。
+- [x] 右侧 `DOCUMENT REVEAL` 与旧 ACCESS HUD 重叠区已减少。
+
+### 21.3 60.0s · File + Detail Surface
+
+参考特征：
+
+- 左侧仍能明确看到档案实体；
+- 右侧详情成为主要阅读区域；
+- 信息页与档案属于同一个空间过渡，而不是突然跳成传统后台页面。
+
+对应调整：
+
+- [x] 新增 `workspace-entry-bridge`，Workspace mount 后先保留 560ms File → Workspace 桥接态。
+- [x] 桥接态左侧使用原创 JARVIS File 结构和双环视觉，右侧显示真实模块标题、capabilities 与 summary。
+- [x] Bridge 结束后才把焦点交给真实 Workspace 标题。
+- [x] 430px 下取消大档案左栏，只保留右侧详情桥接，实测无横向溢出。
+
+### 21.4 63.0s · Detail Reading
+
+参考特征：
+
+- 详情区域完全可读；
+- 左侧档案仍作为来源/对象锚点；
+- 页面依然采用极轻边线和文档式层级，没有卡片墙感。
+
+JARVIS 映射原则：
+
+- [x] Workspace Shell 已采用纸面 / 细线 / 零大圆角体系。
+- [x] `workspace-entry-bridge` 负责保留来源档案；桥接后切换到真实业务工作台，不制造不存在的业务数据。
+- [x] Market / Backtest / Financial / Industry / Sim Trade 等继续保留各自真实功能，不把所有页面强制做成同一张静态详情图。
+
+### 21.5 66.0s · Return / File Index
+
+参考特征：
+
+- 从 Detail 返回时仍保留当前 file identity；
+- 页面逐步退回 Archive，而不是重置到第一个文件；
+- 回到档案场后选中对象仍然是刚才那一份档案。
+
+当前对应：
+
+- [x] Workspace `ESC / RETURN TO ARCHIVE` 仍走 `RETURN_ALIGN → RETURN_DESCEND → FOCUSED`。
+- [x] 返回后 extractionProgress = 0，focused module 不重置。
+- [x] 430px 实测返回 `FOCUSED`，canvasCount = 1。
+
+### 21.6 本轮结论
+
+本次关键帧校准已经把差异从“页面风格不像”进一步缩小到更具体的模型/摄影问题：
+
+1. Browse 的信息层级和参考已基本同构；
+2. Extract / Decrypt / Detail Bridge 已形成同一条连续时间线；
+3. 剩余最大的视觉差距主要来自原创程序化档案模型的微观工业细节、透明材质层次，以及最终相机参数，而不是产品信息架构；
+4. 若用户最终仍认为模型实体感明显低于参考，再进入 V3-G：制作 **原创 Blender/GLB Archive Asset**，并沿用现有交互/LOD/transition，不复制 RhineLabUI 的非代码模型资产。

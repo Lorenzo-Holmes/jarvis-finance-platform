@@ -214,11 +214,11 @@ function updateFocusVisuals() {
   for (const entry of entries) {
     const isFocused = entry === focused
     const isHovered = entry === hoveredEntry
-    const focusedLift = 0.62 + extraction * (4.05 - 0.62)
+    const focusedLift = 0.90 + extraction * (4.05 - 0.90)
     const laneDistance = focused ? Math.abs(entry.physicalLane - focused.physicalLane) : 99
     const rowDistance = focused ? Math.abs(entry.physicalRow - focused.physicalRow) : 99
-    const clearance = !isFocused && extraction < 0.08 && rowDistance <= 2.2
-      ? -Math.max(0, (1 - rowDistance / 2.6)) * (laneDistance < 0.6 ? 0.24 : laneDistance < 1.6 ? 0.09 : 0)
+    const clearance = !isFocused && extraction < 0.08 && rowDistance <= 3.6
+      ? -Math.max(0, (1 - rowDistance / 4.0)) * (laneDistance < 0.6 ? 0.46 : laneDistance < 1.6 ? 0.16 : 0)
       : 0
     entry.group.userData.targetY = entry.group.userData.baseY + (isFocused ? focusedLift : isHovered ? 0.28 : clearance)
     entry.group.userData.targetScale = isFocused ? 1.018 + extraction * 0.035 : 1

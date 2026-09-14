@@ -76,7 +76,7 @@ test('render fidelity V3 extraction exposes glass-decrypt stages without moving 
   assert.match(page, /DOCUMENT REVEAL/)
   assert.match(page, /WORKSPACE_REVEAL_HOLD_MS = 180/)
   assert.match(page, /documentRevealAmount \* 1\.55/)
-  assert.match(scene, /focusedLift = 0\.62 \+ extraction \* \(4\.05 - 0\.62\)/)
+  assert.match(scene, /focusedLift = 0\.90 \+ extraction \* \(4\.05 - 0\.90\)/)
   assert.match(scene, /camera\.position\.copy\(cameraBase\)\.lerp\(cameraDetailBase, detail\)/)
   assert.match(transition, /options\.enterDuration \|\| 1080/)
 })
