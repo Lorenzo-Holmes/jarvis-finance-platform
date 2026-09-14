@@ -25,14 +25,16 @@ test('terminal keeps server-side stop orders wired through the authenticated API
   assert.match(simView, /orderType: current\.orderType/)
 })
 
-test('market chart supports reference-style colors and volume axis layout without changing defaults', () => {
+test('simulation terminal reuses the multi-market chart configuration', () => {
   assert.match(chart, /riseColor = PRICE_UP/)
   assert.match(chart, /fallColor = PRICE_DOWN/)
   assert.match(chart, /showLegend = true/)
   assert.match(chart, /showSlider = true/)
   assert.match(chart, /xLabelsOnVolume = false/)
-  assert.match(terminal, /riseColor: '#b9ff22'/)
-  assert.match(terminal, /fallColor: '#ff4d52'/)
+  assert.match(chart, /getMultiMarketChartOptions/)
+  assert.match(terminal, /getMultiMarketChartOptions\(\{[\s\S]*visibleCount: activeRange\.value\.limit/)
+  assert.doesNotMatch(terminal, /riseColor: '#b9ff22'/)
+  assert.doesNotMatch(terminal, /withVolume: true/)
 })
 
 test('reference terminal renders separate position and stop labels on the chart', () => {

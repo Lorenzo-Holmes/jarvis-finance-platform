@@ -322,6 +322,7 @@ test('simulation view reuses multi-market instruments and enforces the trading w
   assert.match(source, /const marketOpen = computed/)
   assert.match(source, /模拟盘仅允许在开市时间成交/)
   assert.match(source, /<TradingTerminal/)
+  assert.match(terminalSource, /getMultiMarketChartOptions/)
   assert.match(terminalSource, /sessionOpen: \{ type: Boolean/)
   assert.match(terminalSource, /!props\.sessionOpen/)
   assert.match(ticketSource, /instruments: \{ type: Array/)

@@ -14,6 +14,26 @@ function compactDate(value) {
   return text.length >= 10 ? text.slice(5, 10) : text
 }
 
+const MULTI_MARKET_OVERLAYS = [
+  { name: 'SMA20', key: 'sma20', color: '#d7b56d', width: 1.35 },
+  { name: 'EMA12', key: 'ema12', color: '#8f989f', width: 1.1 },
+  { name: 'EMA26', key: 'ema26', color: '#7487a1', width: 1.05 },
+  { name: '布林上轨', key: 'bollinger_upper', color: '#796b4e', width: 1, type: 'dashed' },
+  { name: '布林下轨', key: 'bollinger_lower', color: '#796b4e', width: 1, type: 'dashed' },
+]
+
+/**
+ * 多市场页面的标准 K 线配置；模拟盘直接复用，避免两个页面出现不同的图表效果。
+ */
+export function getMultiMarketChartOptions(overrides = {}) {
+  return {
+    withVolume: false,
+    visibleCount: 60,
+    overlays: MULTI_MARKET_OVERLAYS.map(item => ({ ...item })),
+    ...overrides,
+  }
+}
+
 export function useMarketChart() {
   const chart = useEcharts()
 

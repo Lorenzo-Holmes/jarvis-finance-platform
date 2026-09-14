@@ -1,7 +1,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { api } from '../../api/client'
-import { useMarketChart } from '../../composables/useMarketChart'
+import { getMultiMarketChartOptions, useMarketChart } from '../../composables/useMarketChart'
 
 const props = defineProps({
   account: { type: Object, default: null },
@@ -230,17 +230,9 @@ async function loadKline() {
 
 async function renderChart() {
   if (!klineData.value.length) return
-  await marketChart.renderCandles(klineData.value, {
-    withVolume: true,
+  await marketChart.renderCandles(klineData.value, getMultiMarketChartOptions({
     visibleCount: activeRange.value.limit,
-    riseColor: '#b9ff22',
-    fallColor: '#ff4d52',
-    showLegend: false,
-    showSlider: false,
-    xLabelsOnVolume: true,
-    gridColor: 'rgba(255,255,255,.032)',
-    axisColor: '#8c9299',
-  })
+  }))
   attachChartEvents()
   renderAnnotations()
 }
