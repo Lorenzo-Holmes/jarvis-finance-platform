@@ -137,6 +137,16 @@ public class AiController {
     }
 
     /**
+     * 市场趋势预测（FR-12）：与报价端点一致，服务端从自营行情库注入日 K 收盘价，
+     * 由 Python 确定性层据此外推趋势区间并给出技术依据（均线 / RSI / 支撑阻力）。
+     */
+    @PostMapping("/trend")
+    public Map<String, Object> trend(@RequestBody Map<String, Object> body) {
+        consumeAiQuota("AI_TREND");
+        return postAndRecord("/api/ai/analyze/trend", enrichTrendBody(body));
+    }
+
+    /**
      * 个性化策略生成（FR-11）：问卷参数纯转发，不涉及服务端取数。
      * 风险等级与建议配置比例由 Python 确定性计算层生成，Java 不做任何改写。
      */
@@ -229,6 +239,30 @@ public class AiController {
         // 样本量多取一些，保证 Python 侧有足够历史做波动率估计；上限与 RiskReq 的 2000 保持一致。
         quotePayload.put("closes", loadServerOwnedCloses(market, 250));
         return quotePayload;
+    }
+
+    /**
+     * 市场趋势预测（FR-12）：收盘价一律由服务端取数并覆盖客户端同名字段，
+     * 客户端只能决定「标的 / 预测天数 / 置信度」这类无副作用参数。
+     */
+    private Map<String, Object> enrichTrendBody(Map<String, Object> body) {
+        Map<String, Object> trendPayload = new LinkedHashMap<>();
+        if (marketDataService == null || body == null) return body;
+
+        String market = body.get("market") == null ? "gold_etf" : String.valueOf(body.get("market"));
+        trendPayload.put("symbol", market);
+
+        if (body.get("horizon_days") instanceof Number) {
+            int horizon = ((Number) body.get("horizon_days")).intValue();
+            trendPayload.put("horizon_days", Math.max(1, Math.min(horizon, 60)));
+        }
+        if (body.get("confidence") instanceof Number) {
+            trendPayload.put("confidence", body.get("confidence"));
+        }
+
+        // 与报价端点一致：取足够历史供 Python 侧做波动率估计，绝不回退客户端传值。
+        trendPayload.put("closes", loadServerOwnedCloses(market, 250));
+        return trendPayload;
     }
 
     /**

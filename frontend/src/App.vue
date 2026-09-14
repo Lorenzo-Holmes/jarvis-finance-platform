@@ -20,6 +20,7 @@ const ChainPage = defineAsyncComponent(() => import('./pages/ChainPage.vue'))
 const RiskPage = defineAsyncComponent(() => import('./pages/RiskPage.vue'))
 const StrategyPage = defineAsyncComponent(() => import('./pages/StrategyPage.vue'))
 const QuotePage = defineAsyncComponent(() => import('./pages/QuotePage.vue'))
+const TrendPage = defineAsyncComponent(() => import('./pages/TrendPage.vue'))
 const OpsView = defineAsyncComponent(() => import('./components/OpsView.vue'))
 const AdminView = defineAsyncComponent(() => import('./components/AdminView.vue'))
 
@@ -134,6 +135,7 @@ onMounted(() => {
     <ChainPage v-if="visitedTabs.has('产业链图谱')" v-show="activeTab === '产业链图谱'" />
     <RiskPage v-if="visitedTabs.has('风险预警')" v-show="activeTab === '风险预警'" />
     <StrategyPage v-if="visitedTabs.has('策略生成')" v-show="activeTab === '策略生成'" />
+    <TrendPage v-if="visitedTabs.has('市场趋势预测')" v-show="activeTab === '市场趋势预测'" />
 
     <section v-if="activeTab === '运维'" class="panel-wrap">
       <OpsView />

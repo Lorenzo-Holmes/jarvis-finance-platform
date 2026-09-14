@@ -15,6 +15,7 @@ import requests
 
 from .research_tools import (
     deterministic_context,
+    market_trend as trend_metrics,
     quote_metrics,
     risk_metrics,
     strategy_profile,
@@ -45,7 +46,7 @@ AI_TIMEOUT = int(os.getenv("AI_TIMEOUT", os.getenv("DEEPSEEK_TIMEOUT", "60")))
 # 系统提示词 - 金融投研助手
 FIN_SYS_PROMPT = (
     "你是「库里帕酱」，贾维斯金融投研平台的 AI 投资助手。"
-    "你擅长：实时金价解读、黄金ETF投资咨询、财报解析、产业链挖掘、研报情感分析、智能报价。"
+    "你擅长：实时金价解读、黄金ETF投资咨询、财报解析、产业链挖掘、研报情感分析、智能报价、市场趋势预测。"
     "回答专业、简洁、可执行，涉及持仓建议时提示风险，不承诺收益。"
     "当系统提供确定性研究上下文时，其中的价格和量化指标由程序计算，是唯一可信数值口径；"
     "不得擅自修改、重算或编造这些数值。上下文缺少所需数据时必须明确说明数据不足。"
@@ -229,6 +230,7 @@ def capabilities() -> Dict[str, Any]:
             "风险预警（VaR/ES）",
             "模拟盘持仓与杠杆风险分析",
             "个性化策略生成（风险偏好问卷）",
+            "市场趋势预测（单资产日K统计基线）",
         ],
     }
 
@@ -489,5 +491,74 @@ def generate_strategy(horizon_years: Any = None,
     return {
         "available": True,
         "profile": profile,
+        "content": content,
+    }
+
+
+# 市场趋势预测（FR-12）：从确定性结果中挑选供前端展示的「预测结果」字段
+_TREND_FORECAST_KEYS = (
+    "symbol", "horizon_days", "confidence", "bars", "last_close",
+    "center", "lower", "upper", "change_to_center_pct",
+    "slope_pct_per_day", "band_pct", "vol_daily_pct",
+)
+
+
+def market_trend(closes: List[Any], horizon_days: Optional[int] = None,
+                 confidence: Optional[float] = None,
+                 symbol: Optional[str] = None) -> Dict[str, Any]:
+    """市场趋势预测（FR-12）：趋势区间与技术依据由确定性层计算，LLM 只写解读。
+
+    返回 {available, forecast, indicators, direction, content}；样本不足时 available=False。
+    - forecast（预测结果）：未来 horizon_days 个交易日趋势区间（中心/下界/上界等）
+    - indicators（预测依据）：均线（SMA5/20、EMA12）、RSI14、距 SMA20、
+      近 20 日支撑/阻力与均线排列
+    - direction：方向标签 {key, label}
+    """
+    result = trend_metrics(closes, horizon_days=horizon_days,
+                           confidence=confidence, symbol=symbol)
+    if not result.get("available"):
+        return {"available": False, "reason": result.get("reason"), "bars": result.get("bars")}
+
+    forecast = {key: result.get(key) for key in _TREND_FORECAST_KEYS}
+    indicators = result.get("indicators") or {}
+    direction = result.get("direction") or {}
+
+    readable = {
+        "标的": forecast.get("symbol"),
+        "样本根数": forecast.get("bars"),
+        "最新收盘价": forecast.get("last_close"),
+        "预测窗口(交易日)": forecast.get("horizon_days"),
+        "置信度": forecast.get("confidence"),
+        "趋势方向": direction.get("label"),
+        "预测中心值": forecast.get("center"),
+        "区间下界": forecast.get("lower"),
+        "区间上界": forecast.get("upper"),
+        "中心值涨跌幅(%)": forecast.get("change_to_center_pct"),
+        "日均斜率(%)": forecast.get("slope_pct_per_day"),
+        "日波动率(%)": forecast.get("vol_daily_pct"),
+        "SMA5": indicators.get("sma5"),
+        "SMA20": indicators.get("sma20"),
+        "EMA12": indicators.get("ema12"),
+        "RSI14": indicators.get("rsi14"),
+        "距SMA20(%)": indicators.get("distance_to_sma20_pct"),
+        "近20日支撑": indicators.get("support20"),
+        "近20日阻力": indicators.get("resistance20"),
+        "均线排列": indicators.get("ma_trend"),
+    }
+    prompt = (
+        "你是市场趋势分析师。以下【确定性计算结果】由程序基于历史日 K 收盘价计算，"
+        "禁止自行修改或重算其中数值，数值缺失时如实说明数据不足。\n"
+        f"确定性计算结果: {json.dumps(readable, ensure_ascii=False, default=str)}\n"
+        "请输出市场趋势预测报告：1) 趋势方向与区间解读（结合预测中心值与上下界）"
+        "2) 预测依据（均线排列、RSI、支撑与阻力位的含义）"
+        "3) 关键变量与潜在风险 4) 一句总体结论（上行 / 区间震荡 / 下行）。"
+        "要求简洁专业，正文不超过 300 字，数值一律引用上面的口径。"
+    )
+    content = _chat_request([{"role": "user", "content": prompt}], temperature=0.4, max_tokens=900)
+    return {
+        "available": True,
+        "forecast": forecast,
+        "indicators": indicators,
+        "direction": direction,
         "content": content,
     }

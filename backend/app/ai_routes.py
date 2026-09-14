@@ -99,6 +99,18 @@ class StrategyReq(BaseModel):
     experience: Literal["none", "basic", "rich"] = "basic"
 
 
+class TrendReq(BaseModel):
+    """市场趋势预测（FR-12）：closes 为历史收盘价序列。
+
+    与风险/报价端点一致：closes 由 Java 主后端从自营 K 线库注入并覆盖客户端传值；
+    样本量是否足够由确定性计算层判断，统一返回 available=False 而非 422。
+    """
+    closes: List[float] = Field(default_factory=list, max_length=2000)
+    horizon_days: Optional[int] = Field(default=None, ge=1, le=60)
+    confidence: Optional[float] = Field(default=None, ge=0.5, le=0.99)
+    symbol: Optional[str] = Field(default=None, max_length=32)
+
+
 def _guard(fn, **kw):
     """执行并统一把 RuntimeError 转 502"""
     try:
@@ -187,6 +199,16 @@ def analyze_strategy(req: StrategyReq):
                            target_return_pct=req.target_return_pct,
                            capital=req.capital,
                            experience=req.experience)}
+
+
+@router.post("/analyze/trend")
+def analyze_trend(req: TrendReq):
+    return {"code": 200, "message": "ok",
+            "data": _guard(ai_service.market_trend,
+                           closes=req.closes,
+                           horizon_days=req.horizon_days,
+                           confidence=req.confidence,
+                           symbol=req.symbol)}
 
 
 @router.post("/quote")
