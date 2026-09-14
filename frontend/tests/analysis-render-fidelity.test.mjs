@@ -81,3 +81,15 @@ test('render fidelity V3 extraction exposes glass-decrypt stages without moving 
   assert.match(transition, /options\.enterDuration \|\| 1080/)
 })
 
+test('render fidelity V3-G uses an original focused GLB with procedural fallback', () => {
+  const scene = read('components/analysis/AnalysisArchiveScene.vue')
+  const assetReadme = fs.readFileSync(path.resolve(here, '../public/assets/analysis-os/README.md'), 'utf8')
+
+  assert.match(scene, /GLTFLoader/)
+  assert.match(scene, /jarvis-archive-v1\.glb/)
+  assert.match(scene, /detailAssetStatus = 'fallback'/)
+  assert.match(scene, /qualityProfile\.name !== 'MOBILE'/)
+  assert.match(scene, /disposeFocusedArchiveAsset/)
+  assert.match(assetReadme, /original JARVIS archive model/)
+})
+

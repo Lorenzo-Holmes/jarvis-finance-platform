@@ -86,6 +86,8 @@ let postProbeTimer = 0
 let postProbeAttempted = false
 let postProbeFailed = false
 let postProcessingStatus = 'direct'
+let detailAsset = null
+let detailAssetStatus = 'idle'
 
 const drag = new ArchiveDrag()
 const laneTrack = { value: CENTER_LANE, velocity: 0, target: CENTER_LANE }
@@ -227,7 +229,51 @@ function updateFocusVisuals() {
         ? focusedGlassMaterial
         : archiveLibrary.materials.glass
     }
+    if (entry.baseGroup) entry.baseGroup.visible = !(isFocused && detailAsset)
+    if (entry.identityGroup) entry.identityGroup.position.z = isFocused && detailAsset ? 0.22 : 0
+    if (entry.nearGroup && isFocused && detailAsset) entry.nearGroup.visible = false
   }
+  if (detailAsset && focused && detailAsset.parent !== focused.group) {
+    focused.group.add(detailAsset)
+    detailAsset.position.set(0, 0, 0)
+    detailAsset.rotation.set(0, 0, 0)
+    detailAsset.visible = true
+  }
+}
+
+async function loadFocusedArchiveAsset() {
+  if (detailAsset || detailAssetStatus === 'loading' || detailAssetStatus === 'ready') return
+  detailAssetStatus = 'loading'
+  try {
+    const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js')
+    const loader = new GLTFLoader()
+    const gltf = await loader.loadAsync('/assets/analysis-os/jarvis-archive-v1.glb')
+    if (disposed) return
+    detailAsset = gltf.scene
+    detailAsset.name = 'JARVIS_FOCUSED_ARCHIVE_GLB'
+    detailAsset.traverse(node => {
+      if (!node.isMesh) return
+      node.castShadow = true
+      node.receiveShadow = true
+    })
+    detailAssetStatus = 'ready'
+    updateFocusVisuals()
+  } catch (error) {
+    console.warn('Analysis OS focused GLB unavailable; using procedural fallback', error)
+    detailAssetStatus = 'fallback'
+  }
+}
+
+function disposeFocusedArchiveAsset() {
+  if (!detailAsset) return
+  detailAsset.traverse(node => {
+    if (!node.isMesh) return
+    node.geometry?.dispose?.()
+    const materials = Array.isArray(node.material) ? node.material : [node.material]
+    materials.forEach(material => material?.dispose?.())
+  })
+  detailAsset.removeFromParent?.()
+  detailAsset = null
 }
 
 function emitFocusFromTrack() {
@@ -434,6 +480,7 @@ function resize() {
   configureArchiveRenderer(renderer, qualityProfile)
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, qualityProfile.maxDpr))
   renderer.setSize(width, height, false)
+  if (qualityProfile.name !== 'MOBILE' && detailAssetStatus === 'idle') loadFocusedArchiveAsset()
   if (qualityChanged && !qualityProfile.postCandidate && composerBundle) {
     composerRevision += 1
     disposeArchiveComposer(composerBundle)
@@ -701,6 +748,7 @@ function init() {
     buildArchiveArray()
     resize()
     emitFocusFromTrack()
+    if (qualityProfile?.name !== 'MOBILE') loadFocusedArchiveAsset()
 
     renderer.domElement.addEventListener('pointerdown', onPointerDown)
     renderer.domElement.addEventListener('pointermove', onPointerMove)
@@ -738,6 +786,7 @@ function dispose() {
   focusedGlassMaterial = null
   archiveLibrary?.dispose?.()
   archiveLibrary = null
+  disposeFocusedArchiveAsset()
   renderer?.dispose()
   renderer?.forceContextLoss?.()
   renderer?.domElement?.remove()
@@ -764,6 +813,7 @@ function getDebugState() {
     postProcessing: Boolean(composerBundle),
     postCandidate: Boolean(qualityProfile?.postCandidate),
     postProcessingStatus,
+    detailAssetStatus,
     visibleNear,
     visibleFocus,
     drawCalls: renderer?.info?.render?.calls ?? 0,

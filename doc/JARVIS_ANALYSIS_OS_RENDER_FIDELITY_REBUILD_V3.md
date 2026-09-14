@@ -894,3 +894,30 @@ JARVIS 映射原则：
 2. Extract / Decrypt / Detail Bridge 已形成同一条连续时间线；
 3. 剩余最大的视觉差距主要来自原创程序化档案模型的微观工业细节、透明材质层次，以及最终相机参数，而不是产品信息架构；
 4. 若用户最终仍认为模型实体感明显低于参考，再进入 V3-G：制作 **原创 Blender/GLB Archive Asset**，并沿用现有交互/LOD/transition，不复制 RhineLabUI 的非代码模型资产。
+
+---
+
+## 22. V3-G · 原创 Blender / GLB Archive Asset
+
+### 22.1 已完成
+
+- [x] 使用本机 Blender 5.2 LTS 生成原创 `frontend/public/assets/analysis-os/jarvis-archive-v1.glb`。
+- [x] 源生成脚本固定为 `tools/blender/build_jarvis_archive_v1.py`，可重复构建，不依赖第三方模型资产。
+- [x] GLB 当前约 494KB，包含主基板、内衬、外框、四边密封压条、透明玻璃、双轨、双环、中央桥、锁扣、紧固件与微型下部结构。
+- [x] Three.js 通过 `GLTFLoader` 按需加载 GLB。
+- [x] GLB 只替换当前 Focus / Extraction 档案；档案海其余对象继续使用程序化远/中景 LOD。
+- [x] 动态模块文字仍由 CanvasTexture 叠加，因此一个 GLB 可以服务全部 11 个模块。
+- [x] 加载失败时 `detailAssetStatus=fallback`，自动回到程序化档案，不阻断主终端。
+- [x] MOBILE 不主动加载高细节 GLB；桌面档位按需加载。
+- [x] Scene dispose 时释放 GLB geometry / material。
+
+### 22.2 实际视觉验收
+
+- [x] 浏览态 `detailAssetStatus=ready`，单 canvas，现有 SSAO / Archive Sea 保持正常。
+- [x] Focus GLB 与动态 JARVIS 模块标签保持同一档案坐标系。
+- [x] Glass Decrypt 关键帧中，高细节档案沿 Y 轴抬升，玻璃、框架、双环、导轨和动态标签保持对齐。
+- [x] 背景档案仍为连续 Archive Sea，没有因为引入 GLB 退化成单对象展示页。
+
+### 22.3 继续原则
+
+后续若继续提升模型完成度，优先修改 Blender 源脚本和 GLB，而不是继续在 Three.js 中叠加大量只服务 Focus 的 mesh。程序化模型保留为远景 LOD 和加载失败 fallback。
