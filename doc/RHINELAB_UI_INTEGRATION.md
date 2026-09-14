@@ -31,7 +31,7 @@ That PoC passed the repository CI before the renderer was replaced.
 
 ## Phase 2: Three.js + existing market APIs
 
-Phase 2 is implemented in this draft branch and is awaiting local visual/lifecycle acceptance:
+Phase 2 is implemented in this draft branch. Automated local browser acceptance was completed on 2026-09-14; the only remaining gate is a direct pixel-level visual review through the host Computer Use channel:
 
 - The CSS-only archive layer has been replaced by an isolated Three.js WebGL scene.
 - Archive cards use original JARVIS glass/terminal styling, CanvasTexture labels, depth, lighting, subtle idle motion, pointer parallax, and selected-object focus.
@@ -40,23 +40,30 @@ Phase 2 is implemented in this draft branch and is awaiting local visual/lifecyc
 - Quotes are marked as live, stale/catalog, or fallback. If the API cannot provide data, fallback objects display no fabricated price and explicitly state that they are navigation-only placeholders.
 - K-line charts, order entry, tables, AI chat, and other dense financial controls remain DOM/ECharts views instead of being rendered into WebGL.
 - Scene teardown cancels RAF, disconnects `ResizeObserver`, removes listeners, disposes textures/materials/geometries, disposes the renderer, and releases the WebGL context.
+- While `研究终端` is cached with `v-show`, the scene now receives an explicit active state. Its RAF pauses while another workspace tab is active and resumes when the user returns, avoiding hidden-tab GPU work without discarding the selected object or loaded research data.
 - Three.js is lazy-loaded with the `AnalysisOsPage` async route, so it is not part of the initial unauthenticated landing bundle.
 
 ## CI evidence
 
 Repository CI has already verified the Phase 2 source compiles and the existing frontend behavior remains covered. The dependency lock is synchronized to Three.js `0.183.2`; final CI should use a clean `npm ci` rather than the earlier `npm install` fallback.
 
+## Local acceptance evidence · 2026-09-14
+
+Completed against the real local Vue/Vite frontend and Java/H2 backend through DevSpace + a headed Playwright browser:
+
+- `npm ci` succeeded directly with the synchronized lockfile.
+- `npm run test:p0` passed: 27/27 tests, 0 failures.
+- `npm run build` passed. The Analysis OS async chunk is about 520.9 kB / 134.4 kB gzip; the existing ECharts chunk is about 537.4 kB / 179.9 kB gzip.
+- Responsive layout was exercised at 1440×900, 1280×800, 1024×768, 430×844 and 390×844. No horizontal document overflow was observed. 1440/1280 retain the scene + 340px research rail; 1024 and below stack the research panel below the scene; the WebGL canvas follows the responsive stage dimensions.
+- `prefers-reduced-motion: reduce` was emulated in the real browser. The boot overlay completed through the reduced 80ms path, the canvas remained available, and CSS animation/transition durations resolved to the reduced-motion override.
+- A real authenticated temporary H2 user loaded the Analysis OS as the default workspace and received live market catalog/quote data from the local Java API.
+- Server-side watchlist precedence was verified by persisting `SOLUSDT` for the temporary user and resyncing; it moved to the first archive object while remaining backed by live quote data.
+- Fallback behavior was verified by intentionally failing `/api/market/instruments`: the terminal switched to `FALLBACK`, rendered 15 labeled navigation objects, and showed `—` rather than fabricated prices. Removing the injected failure restored `LIVE API` data.
+- Lifecycle instrumentation exposed one issue during acceptance: the cached `v-show` page kept the Three.js RAF alive while hidden. The branch now passes an explicit active state to the scene. Runtime instrumentation measured active rendering, zero Analysis OS RAF callbacks while the user was on `行情`, and rendering resuming after returning to `研究终端`. Four additional tab round-trips retained exactly one Three.js canvas and produced no new WebGL/RAF warnings.
+- The existing authenticated simulation workspace loaded successfully with the temporary user, including market selection, chart controls, and Buy/Sell entry points. No backend authentication, CSRF, API, or order logic was changed by the Analysis OS work.
+
+The local npm audit currently reports 3 dependency advisories (2 moderate, 1 high). They pre-exist the acceptance path and did not block install/test/build; do not apply `npm audit fix --force` as part of this integration without a separate dependency-upgrade review.
+
 ## Remaining acceptance boundary
 
-Keep this PR in Draft until all of the following are complete:
-
-- `npm ci` succeeds directly with the synchronized lockfile.
-- `npm run test:p0` passes.
-- `npm run build` passes.
-- Desktop widths around 1440/1280/1024 and mobile widths around 430/390 are visually checked in the real local application.
-- Reduced-motion behavior is visually verified.
-- Entering/leaving the research terminal repeatedly is checked for render-loop, listener, and WebGL resource leaks.
-- Real authenticated market/watchlist data is verified in the browser, including fallback behavior when quote calls fail.
-- Existing simulation-trading and authentication flows remain unchanged.
-
-The local visual/lifecycle checks require the DevSpace/Browser execution channel and must not be inferred from GitHub CI alone.
+Keep this PR in Draft until one final direct visual pass is completed in the host-controlled Chrome/Computer Use channel for the five responsive widths above. The headed browser already generated and exercised those layouts, but the host app-approval card timed out before the assistant could inspect the rendered pixels directly. Do not infer that final pixel-level review from DOM metrics alone.
