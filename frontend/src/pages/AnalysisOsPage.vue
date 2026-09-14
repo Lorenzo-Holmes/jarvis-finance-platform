@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { api } from '../api/client'
 import AnalysisArchiveScene from '../components/analysis/AnalysisArchiveScene.vue'
 import { JARVIS_MODULES, MODULE_LANES, moduleByKey, modulesForLane, wrap } from '../analysis-os/data/modules'
+import { useArchiveAudio } from '../analysis-os/audio/useArchiveAudio'
 import { useArchiveIdle } from '../analysis-os/motion/useArchiveIdle'
 import { useArchiveTransition } from '../analysis-os/motion/useArchiveTransition'
 
@@ -17,6 +18,7 @@ const focusedKey = ref(modules[0].key)
 const indexOpen = ref(false)
 const query = ref('')
 const booting = ref(true)
+const bootPhase = ref('WAKE')
 const dataState = ref('loading')
 const dataError = ref('')
 const lastUpdated = ref('')
@@ -24,6 +26,7 @@ const clock = ref('—')
 const moduleIndexRef = ref(null)
 const archiveSceneRef = ref(null)
 let bootTimer = 0
+const bootTimers = []
 let clockTimer = 0
 let syncVersion = 0
 const reducedMotion = typeof window !== 'undefined'
@@ -32,6 +35,8 @@ const archiveIdle = useArchiveIdle({ reduced: reducedMotion })
 const { environmentState, sleepAmount, hudDim } = archiveIdle
 const archiveTransition = useArchiveTransition()
 const { transitionState, extractionProgress } = archiveTransition
+const archiveAudio = useArchiveAudio()
+const { enabled: soundEnabled } = archiveAudio
 const WORKSPACE_REVEAL_HOLD_MS = 180
 
 const focusedModule = computed(() => moduleByKey(focusedKey.value, modules))
@@ -59,6 +64,13 @@ const accessStage = computed(() => {
   if (progress < 0.9) return { code: 'GLASS DECRYPT', detail: 'INTERNAL STRUCTURE REVEALED' }
   return { code: 'DOCUMENT REVEAL', detail: 'RESEARCH CONTEXT READY' }
 })
+const bootCopy = computed(() => ({
+  WAKE: { code: 'SYSTEM WAKE', detail: 'POWER BUS · RENDER CORE · INPUT GRID', progress: 18 },
+  IDENTITY: { code: 'IDENTITY RESOLVED', detail: 'JARVIS ANALYSIS OS · LOCAL SESSION', progress: 42 },
+  PERMISSION: { code: 'PERMISSION SCAN', detail: 'MODULE INDEX · RESEARCH CONTEXT · WORKSPACE', progress: 68 },
+  ARCHIVE: { code: 'MODULE ARCHIVE ONLINE', detail: 'SPATIAL ARRAY · MOTION FIELD · ACCESS SURFACE', progress: 92 },
+  READY: { code: 'SYSTEM READY', detail: 'ARCHIVE CONTROL TRANSFERRED', progress: 100 },
+}[bootPhase.value] || { code: 'SYSTEM WAKE', detail: 'INITIALIZING', progress: 0 }))
 
 async function syncSystemStatus() {
   const version = ++syncVersion
@@ -83,9 +95,11 @@ async function syncSystemStatus() {
 function focusModule(key, source = 'index') {
   if (!moduleByKey(key, modules)) return
   if (extractionProgress.value > 0.001) return
+  const changed = focusedKey.value !== key
   if (source !== 'scene') archiveIdle.activity(source)
   focusedKey.value = key
   transitionState.value = 'FOCUSED'
+  if (changed) archiveAudio.play('focus')
   emit('focus-change', key)
   if (source !== 'scene') scrollActiveIndexIntoView()
 }
@@ -95,11 +109,13 @@ async function activateModule(key = focusedKey.value) {
   if (!module) return
   if (extractionProgress.value > 0.001 || transitionState.value === 'EXTRACTING') return
   archiveIdle.activity('activate')
+  archiveAudio.play('extract')
   focusedKey.value = module.key
   await nextTick()
   const entered = await archiveTransition.enter(reducedMotion)
   if (!entered) return
   if (!reducedMotion) await new Promise(resolve => window.setTimeout(resolve, WORKSPACE_REVEAL_HOLD_MS))
+  archiveAudio.play('reveal')
   emit('navigate', module.routeKey)
   archiveTransition.workspaceActive()
 }
@@ -176,11 +192,48 @@ function onKeydown(event) {
   }
 }
 
-function skipBoot() {
+function completeBoot() {
+  bootPhase.value = 'READY'
   booting.value = false
 }
 
+function skipBoot() {
+  bootTimers.splice(0).forEach(timer => window.clearTimeout(timer))
+  completeBoot()
+}
+
+function scheduleBootSequence(reduced = false) {
+  bootTimers.splice(0).forEach(timer => window.clearTimeout(timer))
+  bootPhase.value = reduced ? 'READY' : 'WAKE'
+  if (reduced) {
+    bootTimer = window.setTimeout(completeBoot, 80)
+    return
+  }
+  const steps = [
+    [260, 'IDENTITY'],
+    [720, 'PERMISSION'],
+    [1320, 'ARCHIVE'],
+    [1900, 'READY'],
+  ]
+  for (const [delay, phase] of steps) {
+    const timer = window.setTimeout(() => {
+      bootPhase.value = phase
+    }, delay)
+    bootTimers.push(timer)
+  }
+  bootTimers.push(window.setTimeout(completeBoot, 2250))
+}
+
+function toggleSound() {
+  archiveAudio.toggle()
+}
+
 watch(focusedKey, scrollActiveIndexIntoView)
+watch(() => accessStage.value.code, code => {
+  if (extractionProgress.value <= 0.001) return
+  if (code === 'GLASS DECRYPT') archiveAudio.play('decrypt')
+  if (code === 'DOCUMENT REVEAL') archiveAudio.play('reveal')
+})
 watch(() => props.requestedModuleKey, key => {
   if (!key || key === focusedKey.value || !moduleByKey(key, modules)) return
   focusModule(key, 'external')
@@ -193,6 +246,7 @@ watch(() => props.active, active => {
   if (transitionState.value === 'WORKSPACE_ACTIVE') {
     archiveIdle.setEnabled(false)
     nextTick(async () => {
+      archiveAudio.play('return')
       await archiveTransition.returnToArchive(reducedMotion)
       if (props.requestedModuleKey
         && props.requestedModuleKey !== focusedKey.value
@@ -215,7 +269,7 @@ watch(() => props.active, active => {
 
 onMounted(() => {
   const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-  bootTimer = window.setTimeout(() => { booting.value = false }, reduced ? 80 : 900)
+  scheduleBootSequence(reduced)
   const updateClock = () => { clock.value = new Date().toLocaleTimeString('zh-CN', { hour12: false }) }
   updateClock()
   clockTimer = window.setInterval(updateClock, 1000)
@@ -245,6 +299,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   syncVersion += 1
   if (bootTimer) window.clearTimeout(bootTimer)
+  bootTimers.splice(0).forEach(timer => window.clearTimeout(timer))
   if (clockTimer) window.clearInterval(clockTimer)
   window.removeEventListener('keydown', onKeydown)
   if (typeof window !== 'undefined') delete window.__jarvisArchiveDebug
@@ -263,13 +318,29 @@ onBeforeUnmount(() => {
     aria-label="JARVIS Analysis OS 模块档案终端"
     @pointerdown.capture="archiveIdle.activity('pointer')"
   >
-    <div v-if="booting" class="boot-layer" @click="skipBoot">
-      <div class="boot-orbit" aria-hidden="true"><span></span><i></i></div>
-      <p>JARVIS SYSTEM</p>
-      <h1>ANALYSIS OS</h1>
-      <div class="boot-line"><i></i></div>
-      <small>AUTHENTICATED · MODULE ARCHIVE INITIALIZING</small>
-      <button type="button" @click.stop="skipBoot">ENTER SYSTEM</button>
+    <div v-if="booting" class="boot-layer" :data-phase="bootPhase" @click="skipBoot">
+      <div class="boot-scan-grid" aria-hidden="true"></div>
+      <div class="boot-system-mark" aria-hidden="true">
+        <div class="boot-orbit"><span></span><i></i></div>
+        <div class="boot-axis"></div>
+      </div>
+      <div class="boot-copy">
+        <span>JARVIS / FINANCIAL RESEARCH</span>
+        <p>{{ bootCopy.code }}</p>
+        <h1>ANALYSIS <b>OS</b></h1>
+        <small>{{ bootCopy.detail }}</small>
+        <div class="boot-line"><i :style="{ width: `${bootCopy.progress}%` }"></i></div>
+        <div class="boot-readout">
+          <span>{{ String(bootCopy.progress).padStart(3, '0') }}%</span>
+          <strong>{{ bootPhase }}</strong>
+        </div>
+      </div>
+      <div class="boot-permission" aria-hidden="true">
+        <span :class="{ active: ['IDENTITY','PERMISSION','ARCHIVE','READY'].includes(bootPhase) }">IDENTITY</span>
+        <span :class="{ active: ['PERMISSION','ARCHIVE','READY'].includes(bootPhase) }">ACCESS</span>
+        <span :class="{ active: ['ARCHIVE','READY'].includes(bootPhase) }">ARCHIVE</span>
+      </div>
+      <button type="button" @click.stop="skipBoot">SKIP / ENTER</button>
     </div>
 
     <div class="archive-stage">
@@ -313,6 +384,7 @@ onBeforeUnmount(() => {
       <div class="module-index-tools">
         <button type="button" @click="indexOpen = true">⌕ SEARCH</button>
         <button type="button" :disabled="dataState === 'loading'" @click="syncSystemStatus">↻ SYNC</button>
+        <button type="button" :aria-pressed="soundEnabled" @click="toggleSound">{{ soundEnabled ? '◉ SOUND' : '○ SOUND' }}</button>
         <span>{{ dataStateLabel }}</span>
         <time>{{ clock }}</time>
       </div>
@@ -438,20 +510,56 @@ onBeforeUnmount(() => {
 }
 .archive-stage { position: absolute; inset: 0; z-index: 0; }
 .boot-layer {
-  position: fixed; inset: 0; z-index: 200; display: grid; place-content: center; justify-items: center;
-  background: radial-gradient(ellipse at 51% 48%, #ecebe6 0%, #e5e2dc 76%, #e4dfdb 100%);
-  color: #171914; cursor: pointer; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  position: fixed; inset: 0; z-index: 200; overflow: hidden;
+  background: #e6e2da; color: #171914; cursor: pointer;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  opacity: 1; transition: opacity .34s ease, background .55s ease;
 }
-.boot-layer p { margin: 22px 0 8px; font-size: 11px; letter-spacing: .24em; }
-.boot-layer h1 { margin: 0; font: 300 clamp(35px, 5vw, 68px)/1 system-ui, sans-serif; letter-spacing: .06em; }
-.boot-layer small { margin-top: 11px; font-size: 9px; letter-spacing: .15em; color: #716e66; }
-.boot-layer button { margin-top: 32px; border: 0; background: transparent; font: inherit; font-size: 9px; letter-spacing: .18em; cursor: pointer; color: #77736a; }
-.boot-orbit { position: relative; width: 112px; height: 112px; border: 1px solid #9d9a90; border-radius: 50%; }
-.boot-orbit::before { content: ''; position: absolute; inset: 16px; border: 1px solid #c1bdb4; border-radius: 50%; }
-.boot-orbit span { position: absolute; left: 50%; top: -8px; width: 1px; height: 128px; background: #8b877e; transform: rotate(36deg); animation: orbit-line 1s cubic-bezier(.22,1,.36,1) both; }
-.boot-orbit i { position: absolute; left: 50%; top: 50%; width: 8px; height: 8px; margin: -4px; background: #252720; border-radius: 50%; }
-.boot-line { width: min(440px, 62vw); height: 1px; background: #cac5ba; margin-top: 25px; overflow: hidden; }
-.boot-line i { display: block; width: 100%; height: 100%; background: #24261f; animation: boot-line 1s ease both; }
+.boot-layer::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(circle at 50% 48%, rgba(255,255,255,.32), transparent 36%), linear-gradient(180deg, rgba(255,255,255,.18), transparent 42%);
+}
+.boot-scan-grid {
+  position: absolute; inset: 0; opacity: .46;
+  background-image:
+    linear-gradient(rgba(87,83,75,.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(87,83,75,.08) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: linear-gradient(180deg, #000, transparent 82%);
+  transform: scale(1.06); transition: opacity .45s ease, transform .8s cubic-bezier(.22,1,.36,1);
+}
+.boot-system-mark {
+  position: absolute; left: 11vw; top: 50%; width: 170px; height: 170px; transform: translateY(-50%);
+  transition: transform .7s cubic-bezier(.22,1,.36,1), opacity .45s ease;
+}
+.boot-orbit { position: absolute; inset: 0; border: 1px solid rgba(74,72,66,.5); border-radius: 50%; }
+.boot-orbit::before, .boot-orbit::after { content: ''; position: absolute; border: 1px solid rgba(117,111,101,.34); border-radius: 50%; }
+.boot-orbit::before { inset: 21px; }
+.boot-orbit::after { inset: 51px; }
+.boot-orbit span { position: absolute; left: 50%; top: -17px; width: 1px; height: 204px; background: #716b60; transform: rotate(31deg); transform-origin: center; animation: orbit-line 1.2s cubic-bezier(.22,1,.36,1) both; }
+.boot-orbit i { position: absolute; left: 50%; top: 50%; width: 8px; height: 8px; margin: -4px; background: #252720; border-radius: 50%; box-shadow: 0 0 0 11px rgba(49,48,44,.06); }
+.boot-axis { position: absolute; left: -26px; right: -26px; top: 50%; height: 1px; background: rgba(82,79,73,.28); }
+.boot-copy { position: absolute; left: 36vw; right: 14vw; top: 50%; transform: translateY(-50%); }
+.boot-copy > span { color: #8b857a; font-size: 8px; letter-spacing: .18em; }
+.boot-copy p { margin: 20px 0 8px; color: #4e4c46; font-size: 10px; letter-spacing: .23em; }
+.boot-copy h1 { margin: 0; display: flex; gap: .34em; align-items: baseline; font: 300 clamp(42px, 5.2vw, 76px)/.95 system-ui, sans-serif; letter-spacing: -.045em; }
+.boot-copy h1 b { font-weight: 700; letter-spacing: .04em; }
+.boot-copy small { display: block; margin-top: 15px; color: #777168; font-size: 8px; letter-spacing: .12em; }
+.boot-line { width: min(560px, 58vw); height: 1px; margin-top: 28px; overflow: hidden; background: rgba(126,119,108,.28); }
+.boot-line i { display: block; height: 100%; background: #34352f; transition: width .48s cubic-bezier(.22,1,.36,1); }
+.boot-readout { width: min(560px, 58vw); margin-top: 8px; display: flex; justify-content: space-between; color: #8f887e; font-size: 7px; letter-spacing: .13em; }
+.boot-readout strong { color: #4f5049; font-weight: 600; }
+.boot-permission { position: absolute; left: 36vw; right: 14vw; bottom: 15vh; display: grid; grid-template-columns: repeat(3,1fr); border-top: 1px solid rgba(109,104,95,.24); }
+.boot-permission span { position: relative; padding-top: 10px; color: #aaa398; font-size: 7px; letter-spacing: .15em; }
+.boot-permission span::before { content: ''; position: absolute; left: 0; top: -1px; width: 0; height: 1px; background: #403f39; transition: width .45s ease; }
+.boot-permission span.active { color: #57574f; }
+.boot-permission span.active::before { width: 68%; }
+.boot-layer > button { position: absolute; right: 4vw; bottom: 4vh; border: 0; background: transparent; color: #8b857b; font: 600 7px/1 ui-monospace, monospace; letter-spacing: .15em; cursor: pointer; }
+.boot-layer[data-phase="PERMISSION"] .boot-system-mark { transform: translateY(-50%) scale(.92) rotate(8deg); }
+.boot-layer[data-phase="ARCHIVE"] .boot-system-mark { transform: translateY(-50%) scale(.72); opacity: .64; }
+.boot-layer[data-phase="ARCHIVE"] .boot-scan-grid { opacity: .22; transform: scale(1); }
+.boot-layer[data-phase="ARCHIVE"] { background: rgba(230,226,218,.93); }
+.boot-layer[data-phase="READY"] { opacity: 0; background: rgba(230,226,218,.36); pointer-events: none; }
 
 .terminal-brand { position: absolute; z-index: 8; left: 42px; top: 33px; width: 218px; line-height: 1; user-select: none; }
 .terminal-brand h1 { margin: 0; font-size: 27px; line-height: 30px; letter-spacing: 1.8px; font-weight: 760; }
@@ -495,7 +603,7 @@ onBeforeUnmount(() => {
 .module-index-tools time { color: #4d4c46; }
 
 .data-warning { position: absolute; z-index: 11; right: 30px; top: 75px; margin: 0; max-width: 430px; color: #8b6944; font: 600 7px/1.5 ui-monospace, monospace; text-align: right; letter-spacing: .05em; }
-.archive-callout { position: absolute; z-index: 8; left: 55.5%; top: 38.5%; width: min(380px, 31vw); color: #20221d; pointer-events: none; }
+.archive-callout { position: absolute; z-index: 8; left: auto; right: 6.5%; top: 39%; width: min(320px, 24vw); color: #20221d; pointer-events: none; }
 .archive-callout > p:first-child { margin: 0 0 10px; color: #77736a; font: 600 7px/1 ui-monospace, monospace; letter-spacing: .11em; }
 .archive-callout > p i { margin: 0 13px; color: #aaa398; font-style: normal; }
 .archive-callout h2 { margin: 0; font-size: clamp(23px, 2.15vw, 34px); line-height: .98; font-weight: 650; letter-spacing: -.04em; }
@@ -581,7 +689,7 @@ onBeforeUnmount(() => {
   .terminal-brand { left: 28px; top: 28px; transform: scale(.82); transform-origin: top left; }
   .module-index-shell { left: 250px; right: 24px; }
   .module-index-tools > span, .module-index-tools time { display: none; }
-  .archive-callout { left: 48%; top: 39%; width: 46vw; }
+  .archive-callout { left: 48%; right: auto; top: 39%; width: 46vw; }
   .archive-counter { left: 30px; }
   .archive-hint { left: 275px; }
   .column-navigation { left: 49%; }
@@ -590,6 +698,13 @@ onBeforeUnmount(() => {
 
 @media (max-width: 700px) {
   .analysis-os { min-height: 100dvh; }
+  .boot-system-mark { left: 50%; top: 22%; width: 118px; height: 118px; transform: translate(-50%, -50%); }
+  .boot-copy { left: 24px; right: 24px; top: 48%; transform: translateY(-50%); }
+  .boot-copy h1 { font-size: 42px; }
+  .boot-line, .boot-readout { width: 100%; }
+  .boot-permission { left: 24px; right: 24px; bottom: 17vh; }
+  .boot-layer[data-phase="PERMISSION"] .boot-system-mark { transform: translate(-50%, -50%) scale(.92) rotate(8deg); }
+  .boot-layer[data-phase="ARCHIVE"] .boot-system-mark { transform: translate(-50%, -50%) scale(.72); }
   .terminal-brand { left: 18px; top: 16px; transform: scale(.58); }
   .module-index-shell { left: 0; right: 0; top: auto; bottom: 0; grid-template-columns: 1fr; gap: 0; padding: 0 0 env(safe-area-inset-bottom); background: rgba(232,229,225,.94); border-top: 1px solid #c3bdb2; border-bottom: 0; }
   .module-index-label, .module-index-tools { display: none; }

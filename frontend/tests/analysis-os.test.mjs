@@ -31,7 +31,7 @@ test('analysis OS uses Three.js while preserving original JARVIS branding', () =
   const page = read('pages/AnalysisOsPage.vue')
   const scene = read('components/analysis/AnalysisArchiveScene.vue')
 
-  assert.match(page, /JARVIS SYSTEM/)
+  assert.match(page, /SYSTEM WAKE/)
   assert.match(page, /FINANCIAL RESEARCH/)
   assert.match(page, /ANALYSIS <b>OS<\/b>/)
   assert.match(page, /AnalysisArchiveScene/)

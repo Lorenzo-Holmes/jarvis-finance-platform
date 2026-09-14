@@ -32,11 +32,12 @@ import {
   configureArchiveRenderer,
   createArchiveComposer,
   disposeArchiveComposer,
+  probeArchiveComposer,
   resizeArchiveComposer,
 } from '../../analysis-os/render/renderQuality'
 
-const LANE_SPACING = 4.52
-const ROW_SPACING = 0.56
+const LANE_SPACING = 4.28
+const ROW_SPACING = 0.52
 const CENTER_LANE = 2
 const CENTER_ROW = 12
 const ROW_PERIOD = 6
@@ -81,6 +82,10 @@ let qualityProfile = null
 let keyLight = null
 let renderedFrames = 0
 let composerRevision = 0
+let postProbeTimer = 0
+let postProbeAttempted = false
+let postProbeFailed = false
+let postProcessingStatus = 'direct'
 
 const drag = new ArchiveDrag()
 const laneTrack = { value: CENTER_LANE, velocity: 0, target: CENTER_LANE }
@@ -209,8 +214,13 @@ function updateFocusVisuals() {
   for (const entry of entries) {
     const isFocused = entry === focused
     const isHovered = entry === hoveredEntry
-    const focusedLift = 0.42 + extraction * (4.05 - 0.42)
-    entry.group.userData.targetY = entry.group.userData.baseY + (isFocused ? focusedLift : isHovered ? 0.28 : 0)
+    const focusedLift = 0.62 + extraction * (4.05 - 0.62)
+    const laneDistance = focused ? Math.abs(entry.physicalLane - focused.physicalLane) : 99
+    const rowDistance = focused ? Math.abs(entry.physicalRow - focused.physicalRow) : 99
+    const clearance = !isFocused && extraction < 0.08 && rowDistance <= 2.2
+      ? -Math.max(0, (1 - rowDistance / 2.6)) * (laneDistance < 0.6 ? 0.24 : laneDistance < 1.6 ? 0.09 : 0)
+      : 0
+    entry.group.userData.targetY = entry.group.userData.baseY + (isFocused ? focusedLift : isHovered ? 0.28 : clearance)
     entry.group.userData.targetScale = isFocused ? 1.018 + extraction * 0.035 : 1
     if (entry.glass) {
       entry.glass.material = isFocused && extraction > 0.32
@@ -417,13 +427,25 @@ function resize() {
   if (!element || !renderer || !camera) return
   const width = Math.max(1, element.clientWidth)
   const height = Math.max(1, element.clientHeight)
+  const previousQuality = qualityProfile
   const nextQuality = archiveQualityProfile(width, window.devicePixelRatio || 1)
   const qualityChanged = !qualityProfile || qualityProfile.name !== nextQuality.name
   qualityProfile = nextQuality
   configureArchiveRenderer(renderer, qualityProfile)
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, qualityProfile.maxDpr))
   renderer.setSize(width, height, false)
-  if (qualityChanged || (qualityProfile.post && !composerBundle)) rebuildComposer(width, height, qualityProfile)
+  if (qualityChanged && !qualityProfile.postCandidate && composerBundle) {
+    composerRevision += 1
+    disposeArchiveComposer(composerBundle)
+    composerBundle = null
+    postProcessingStatus = 'direct'
+  } else if (qualityChanged && qualityProfile.post && composerBundle) {
+    rebuildComposer(width, height, qualityProfile)
+  } else if (qualityChanged && qualityProfile.postCandidate && !composerBundle && !postProbeFailed) {
+    postProbeAttempted = false
+    postProcessingStatus = previousQuality?.postCandidate ? postProcessingStatus : 'direct'
+  }
+  if (qualityProfile.post && !composerBundle) rebuildComposer(width, height, qualityProfile)
   resizeArchiveComposer(composerBundle, width, height)
   if (keyLight) {
     const shadowSize = qualityProfile.name === 'HIGH' ? 2048 : 1024
@@ -472,6 +494,32 @@ async function rebuildComposer(width, height, profile) {
   }
   composerBundle = next
   resizeArchiveComposer(composerBundle, width, height)
+}
+
+function schedulePostProcessingProbe(width, height, profile) {
+  if (postProbeAttempted || postProbeTimer || reducedMotion || !profile?.postCandidate) return
+  if (typeof navigator !== 'undefined' && navigator.webdriver) {
+    postProbeAttempted = true
+    postProcessingStatus = 'skipped-automation'
+    return
+  }
+
+  postProbeTimer = window.setTimeout(async () => {
+    postProbeTimer = 0
+    if (disposed || !renderer || !scene || !camera || !props.active || postProbeAttempted) return
+    postProbeAttempted = true
+    postProcessingStatus = 'probing'
+    const revision = ++composerRevision
+    const result = await probeArchiveComposer({ renderer, scene, camera, width, height, profile })
+    if (revision !== composerRevision || disposed) {
+      disposeArchiveComposer(result?.bundle)
+      return
+    }
+    composerBundle = result?.bundle || null
+    postProcessingStatus = result?.status || 'fallback'
+    postProbeFailed = !composerBundle && String(postProcessingStatus).startsWith('fallback')
+    resizeArchiveComposer(composerBundle, width, height)
+  }, 700)
 }
 
 function renderFrame(time) {
@@ -576,6 +624,10 @@ function renderFrame(time) {
 
   if (composerBundle) composerBundle.composer.render()
   else renderer.render(scene, camera)
+  if (!postProbeAttempted && qualityProfile?.postCandidate && renderedFrames > 24) {
+    const rect = renderer.domElement.getBoundingClientRect()
+    schedulePostProcessingProbe(Math.max(1, rect.width), Math.max(1, rect.height), qualityProfile)
+  }
   animationFrame = requestAnimationFrame(renderFrame)
 }
 
@@ -674,6 +726,8 @@ function init() {
 function dispose() {
   disposed = true
   composerRevision += 1
+  if (postProbeTimer) window.clearTimeout(postProbeTimer)
+  postProbeTimer = 0
   stopRendering()
   resizeObserver?.disconnect()
   clearArchive()
@@ -709,6 +763,7 @@ function getDebugState() {
     quality: qualityProfile?.name || 'UNKNOWN',
     postProcessing: Boolean(composerBundle),
     postCandidate: Boolean(qualityProfile?.postCandidate),
+    postProcessingStatus,
     visibleNear,
     visibleFocus,
     drawCalls: renderer?.info?.render?.calls ?? 0,

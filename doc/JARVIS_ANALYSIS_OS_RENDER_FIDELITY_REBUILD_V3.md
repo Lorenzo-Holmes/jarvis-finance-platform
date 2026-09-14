@@ -746,3 +746,60 @@ SSA0 post-processing 管线代码已建立，但默认暂时保持 compatibility
 - [ ] 补原创开场序列。
 - [ ] 补原创声音系统。
 - [ ] 最终与参考视频按关键帧进行构图 / 节奏对照，而不是只比较单张截图。
+
+---
+
+## 20. 2026-09-14 · V3 第二批实现检查点
+
+### 20.1 Post-processing 安全探测
+
+- [x] HIGH / BALANCED 不再直接盲开 SSAO，而是在 direct renderer 稳定运行后异步探测。
+- [x] 探测前清空历史 WebGL error，探测后读取当前 context error。
+- [x] 探测失败时销毁 composer，并立即恢复 direct renderer。
+- [x] 同一会话内 GPU 探测失败后锁定 direct renderer，不循环轰炸 shader。
+- [x] MOBILE / Reduced Motion 不启用昂贵 post-processing。
+- [x] HIGH → MOBILE → HIGH 实测可从 `enabled → direct → enabled` 正常恢复，canvasCount 始终为 1。
+- [x] 当前本地 Edge/Chromium 验收环境自动探测成功，post-processing 处于 enabled，约 60 FPS。
+
+### 20.2 Archive Assembly 第二轮比例精修
+
+- [x] 档案主体由 3.38×4.96 调整为更窄、更薄的 3.16×4.62 比例。
+- [x] 玻璃、标签槽、内部双环、轨道与锁扣同步缩放，减少“厚白文件夹”观感。
+- [x] Focus 档案新增独立玻璃 gasket / 压条，仅 Focus LOD 渲染，不增加远景成本。
+- [x] lane / row spacing 再次收紧，保持档案海密度，同时控制遮挡。
+- [x] Focus 浏览态抬升由 0.42 调整为 0.62；附近档案产生局部 clearance 下沉，当前档案更易识别。
+- [x] 仍保持 Extraction 只沿 Y 轴继续抬升，没有向相机飞卡。
+
+### 20.3 原创 Opening Sequence
+
+- [x] 旧 900ms 单层 Boot Overlay 已替换为多阶段原创开场。
+- [x] 阶段：`SYSTEM WAKE → IDENTITY RESOLVED → PERMISSION SCAN → MODULE ARCHIVE ONLINE → SYSTEM READY`。
+- [x] 开场包含扫描网格、系统轨道标记、权限阶段条、进度线与 JARVIS 身份信息。
+- [x] READY 阶段不瞬切；启动层渐隐，由下面的实时档案海接管画面。
+- [x] 430px 开场实测无横向溢出，标记、标题、进度和权限条均在视口内。
+- [x] Reduced Motion 仍可快速跳过长开场。
+
+### 20.4 原创声音系统
+
+- [x] 新增 `useArchiveAudio.js`，全部声音由 WebAudio Oscillator / Noise Buffer 实时合成。
+- [x] 未引入 mp3 / wav / ogg 或第三方游戏音效资产。
+- [x] 声音默认关闭，必须由用户主动点击 SOUND 开启，遵守浏览器自动播放限制。
+- [x] 已覆盖 wake / focus / extract / decrypt / reveal / return 六类反馈。
+- [x] SOUND 偏好保存在本地 localStorage，可随本地预览会话恢复。
+
+### 20.5 第二批实际验收
+
+- [x] 1440×900 开场 Permission 关键帧已截图检查。
+- [x] 430×844 开场 Permission 关键帧已截图检查，document 宽度等于 viewport。
+- [x] 最新主档案海截图中 HUD 已移至右侧，焦点档案与 HUD 不再完全重叠。
+- [x] 最新 Glass Decrypt 关键帧中玻璃边、双环、压条和 decrypt guide 均保持可辨识。
+- [x] 当前 post-processing enabled 路径无新增 WebGL/shader console error。
+- [x] 当前控制台剩余错误仅为本地 Java 后端未启动导致 `/api/market/instruments` 500。
+- [x] SOUND 开关实测可切换 `aria-pressed=false → true` 并写入本地偏好。
+
+### 20.6 仍未完成
+
+- [ ] 在用户真实日常 Edge 窗口中做最终 GPU / 色彩 / 玻璃视觉确认，而不只依赖自动验收会话。
+- [ ] 与参考视频选定 4–6 个关键帧逐项对照相机高度、档案占屏比、景深、HUD 边界和切换节奏。
+- [ ] 如最终对照仍存在明显模型差距，再决定是否制作独立 Blender/GLB 原创档案资产；当前程序化装配体不得直接替换为第三方模型。
+- [ ] 完成最终用户视觉确认后，才进入上游 PR / merge 流程。

@@ -36,6 +36,34 @@ test('render fidelity V3 defines quality profiles, tone mapping and soft-shadow 
   assert.match(scene, /qualityProfile\?\.shadows/)
 })
 
+test('optional post processing probes the GPU and falls back to direct rendering on WebGL errors', () => {
+  const quality = read('analysis-os/render/renderQuality.js')
+  const scene = read('components/analysis/AnalysisArchiveScene.vue')
+
+  assert.match(quality, /probeArchiveComposer/)
+  assert.match(quality, /gl\.getError\(\)/)
+  assert.match(quality, /fallback-webgl/)
+  assert.match(quality, /renderer\.render\(scene, camera\)/)
+  assert.match(scene, /postProcessingStatus/)
+  assert.match(scene, /skipped-automation/)
+  assert.match(scene, /schedulePostProcessingProbe/)
+})
+
+test('boot and sound systems are original local runtime effects without third-party media assets', () => {
+  const page = read('pages/AnalysisOsPage.vue')
+  const audio = read('analysis-os/audio/useArchiveAudio.js')
+
+  for (const stage of ['SYSTEM WAKE', 'IDENTITY RESOLVED', 'PERMISSION SCAN', 'MODULE ARCHIVE ONLINE']) {
+    assert.match(page, new RegExp(stage))
+  }
+  assert.match(page, /bootPhase/)
+  assert.match(page, /SOUND/)
+  assert.match(audio, /AudioContext/)
+  assert.match(audio, /createOscillator/)
+  assert.match(audio, /createBuffer/)
+  assert.doesNotMatch(audio, /fetch\(|\.mp3|\.wav|\.ogg/i)
+})
+
 test('render fidelity V3 extraction exposes glass-decrypt stages without moving the card toward the camera', () => {
   const page = read('pages/AnalysisOsPage.vue')
   const scene = read('components/analysis/AnalysisArchiveScene.vue')
@@ -48,7 +76,7 @@ test('render fidelity V3 extraction exposes glass-decrypt stages without moving 
   assert.match(page, /DOCUMENT REVEAL/)
   assert.match(page, /WORKSPACE_REVEAL_HOLD_MS = 180/)
   assert.match(page, /documentRevealAmount \* 1\.55/)
-  assert.match(scene, /focusedLift = 0\.42 \+ extraction \* \(4\.05 - 0\.42\)/)
+  assert.match(scene, /focusedLift = 0\.62 \+ extraction \* \(4\.05 - 0\.62\)/)
   assert.match(scene, /camera\.position\.copy\(cameraBase\)\.lerp\(cameraDetailBase, detail\)/)
   assert.match(transition, /options\.enterDuration \|\| 1080/)
 })

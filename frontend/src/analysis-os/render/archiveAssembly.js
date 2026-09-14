@@ -19,20 +19,22 @@ function shadow(mesh, cast = true, receive = true) {
 
 export function createArchiveAssetLibrary() {
   const geometries = {
-    body: new RoundedBoxGeometry(3.38, 4.96, 0.24, 3, 0.08),
-    inset: new RoundedBoxGeometry(3.08, 4.64, 0.055, 3, 0.07),
-    glass: new RoundedBoxGeometry(3.02, 4.56, 0.052, 3, 0.08),
-    sideBar: new BoxGeometry(0.085, 4.58, 0.07),
-    topBar: new BoxGeometry(2.98, 0.085, 0.07),
-    rail: new BoxGeometry(0.075, 3.34, 0.045),
-    bridge: new BoxGeometry(0.055, 2.58, 0.055),
-    latch: new RoundedBoxGeometry(0.72, 0.18, 0.085, 2, 0.035),
-    marker: new RoundedBoxGeometry(0.14, 0.54, 0.08, 2, 0.025),
-    labelCarrier: new RoundedBoxGeometry(2.86, 0.82, 0.045, 2, 0.035),
-    label: new PlaneGeometry(2.72, 0.68),
-    ring: new TorusGeometry(0.49, 0.035, 8, 40),
+    body: new RoundedBoxGeometry(3.16, 4.62, 0.19, 3, 0.075),
+    inset: new RoundedBoxGeometry(2.92, 4.32, 0.05, 3, 0.065),
+    glass: new RoundedBoxGeometry(2.86, 4.24, 0.045, 3, 0.07),
+    sideBar: new BoxGeometry(0.072, 4.23, 0.062),
+    topBar: new BoxGeometry(2.80, 0.072, 0.062),
+    rail: new BoxGeometry(0.064, 3.03, 0.038),
+    bridge: new BoxGeometry(0.05, 2.32, 0.05),
+    latch: new RoundedBoxGeometry(0.66, 0.16, 0.075, 2, 0.032),
+    marker: new RoundedBoxGeometry(0.13, 0.50, 0.07, 2, 0.022),
+    labelCarrier: new RoundedBoxGeometry(2.66, 0.76, 0.04, 2, 0.032),
+    label: new PlaneGeometry(2.52, 0.62),
+    ring: new TorusGeometry(0.43, 0.03, 8, 40),
     fastener: new CylinderGeometry(0.055, 0.055, 0.04, 12),
     decrypt: new BoxGeometry(1.16, 0.022, 0.018),
+    glassSide: new BoxGeometry(0.028, 4.02, 0.022),
+    glassTop: new BoxGeometry(2.70, 0.028, 0.022),
   }
 
   const materials = {
@@ -57,6 +59,13 @@ export function createArchiveAssetLibrary() {
       emissiveIntensity: 0.18,
       roughness: 0.32,
       metalness: 0.2,
+      transparent: true,
+      opacity: 0.72,
+    }),
+    gasket: new MeshStandardMaterial({
+      color: new Color('#4c4c47'),
+      roughness: 0.42,
+      metalness: 0.18,
       transparent: true,
       opacity: 0.72,
     }),
@@ -99,11 +108,11 @@ export function createArchiveAssembly(module, labelMaterial, library) {
   const inset = shadow(new Mesh(g.inset, m.inset), false, true)
   inset.position.z = 0.145
   const marker = shadow(new Mesh(g.marker, m.accent), false, true)
-  marker.position.set(1.43, -1.82, 0.205)
+  marker.position.set(1.32, -1.69, 0.185)
   const labelCarrier = shadow(new Mesh(g.labelCarrier, m.labelCarrier), false, true)
-  labelCarrier.position.set(0, 1.66, 0.23)
+  labelCarrier.position.set(0, 1.53, 0.205)
   const label = new Mesh(g.label, labelMaterial)
-  label.position.set(0, 1.66, 0.258)
+  label.position.set(0, 1.53, 0.232)
   label.userData.moduleKey = module.key
   baseGroup.add(body, inset)
   identityGroup.add(marker, labelCarrier, label)
@@ -112,39 +121,48 @@ export function createArchiveAssembly(module, labelMaterial, library) {
   const right = shadow(new Mesh(g.sideBar, m.frame), false, true)
   const top = shadow(new Mesh(g.topBar, m.frame), false, true)
   const bottom = shadow(new Mesh(g.topBar, m.frame), false, true)
-  left.position.set(-1.5, 0, 0.205)
-  right.position.set(1.5, 0, 0.205)
-  top.position.set(0, 2.25, 0.205)
-  bottom.position.set(0, -2.25, 0.205)
+  left.position.set(-1.40, 0, 0.18)
+  right.position.set(1.40, 0, 0.18)
+  top.position.set(0, 2.08, 0.18)
+  bottom.position.set(0, -2.08, 0.18)
 
   const railL = shadow(new Mesh(g.rail, m.rail), false, true)
   const railR = shadow(new Mesh(g.rail, m.rail), false, true)
-  railL.position.set(-0.76, -0.18, 0.206)
-  railR.position.set(0.76, -0.18, 0.206)
+  railL.position.set(-0.69, -0.2, 0.186)
+  railR.position.set(0.69, -0.2, 0.186)
 
   const ringTop = shadow(new Mesh(g.ring, m.inner), false, true)
   const ringBottom = shadow(new Mesh(g.ring, m.inner), false, true)
-  ringTop.position.set(0, 0.52, 0.235)
-  ringBottom.position.set(0, -0.68, 0.235)
+  ringTop.position.set(0, 0.46, 0.212)
+  ringBottom.position.set(0, -0.62, 0.212)
 
   const glass = new Mesh(g.glass, m.glass)
-  glass.position.z = 0.29
+  glass.position.z = 0.258
   glass.renderOrder = 2
   nearGroup.add(left, right, top, bottom, railL, railR, ringTop, ringBottom, glass)
 
   const bridge = shadow(new Mesh(g.bridge, m.inner), false, true)
-  bridge.position.set(0, -0.1, 0.252)
+  bridge.position.set(0, -0.09, 0.228)
   const latch = shadow(new Mesh(g.latch, m.accent), false, true)
-  latch.position.set(0, 2.04, 0.27)
+  latch.position.set(0, 1.89, 0.246)
 
   const fasteners = [
-    [-1.34, 2.08], [1.34, 2.08], [-1.34, -2.08], [1.34, -2.08],
+    [-1.24, 1.93], [1.24, 1.93], [-1.24, -1.93], [1.24, -1.93],
   ].map(([x, y]) => {
     const bolt = shadow(new Mesh(g.fastener, m.frame), false, true)
     bolt.rotation.x = Math.PI / 2
-    bolt.position.set(x, y, 0.30)
+    bolt.position.set(x, y, 0.27)
     return bolt
   })
+
+  const glassEdges = [
+    new Mesh(g.glassSide, m.gasket), new Mesh(g.glassSide, m.gasket),
+    new Mesh(g.glassTop, m.gasket), new Mesh(g.glassTop, m.gasket),
+  ]
+  glassEdges[0].position.set(-1.36, 0, 0.29)
+  glassEdges[1].position.set(1.36, 0, 0.29)
+  glassEdges[2].position.set(0, 2.01, 0.29)
+  glassEdges[3].position.set(0, -2.01, 0.29)
 
   const decryptA = new Mesh(g.decrypt, m.decrypt)
   const decryptB = new Mesh(g.decrypt, m.decrypt)
@@ -155,7 +173,7 @@ export function createArchiveAssembly(module, labelMaterial, library) {
   decryptA.visible = false
   decryptB.visible = false
 
-  focusGroup.add(bridge, latch, ...fasteners, decryptA, decryptB)
+  focusGroup.add(bridge, latch, ...fasteners, ...glassEdges, decryptA, decryptB)
   nearGroup.visible = false
   focusGroup.visible = false
   group.add(baseGroup, identityGroup, nearGroup, focusGroup)

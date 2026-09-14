@@ -52,7 +52,7 @@ export function configureArchiveRenderer(renderer, profile) {
 }
 
 export async function createArchiveComposer({ renderer, scene, camera, width, height, profile }) {
-  if (!profile.post) return null
+  if (!profile.post && !profile.postCandidate) return null
   const [
     { EffectComposer },
     { OutputPass },
@@ -73,6 +73,47 @@ export async function createArchiveComposer({ renderer, scene, camera, width, he
   composer.addPass(ssaoPass)
   composer.addPass(new OutputPass())
   return { composer, ssaoPass }
+}
+
+export async function probeArchiveComposer({ renderer, scene, camera, width, height, profile }) {
+  if (!renderer || !profile?.postCandidate) return { bundle: null, status: 'disabled' }
+  if (typeof navigator !== 'undefined' && navigator.webdriver) {
+    return { bundle: null, status: 'skipped-automation' }
+  }
+
+  const gl = renderer.getContext?.()
+  if (!gl) return { bundle: null, status: 'no-context' }
+
+  // Drain prior WebGL errors so the probe only judges the optional composer path.
+  while (gl.getError() !== gl.NO_ERROR) {
+    // no-op
+  }
+
+  let bundle = null
+  try {
+    bundle = await createArchiveComposer({
+      renderer,
+      scene,
+      camera,
+      width,
+      height,
+      profile: { ...profile, post: true },
+    })
+    if (!bundle) return { bundle: null, status: 'unavailable' }
+    bundle.composer.render()
+    gl.finish?.()
+    const error = gl.getError()
+    if (error !== gl.NO_ERROR) {
+      disposeArchiveComposer(bundle)
+      renderer.render(scene, camera)
+      return { bundle: null, status: `fallback-webgl-${error}` }
+    }
+    return { bundle, status: 'enabled' }
+  } catch (_) {
+    disposeArchiveComposer(bundle)
+    try { renderer.render(scene, camera) } catch (_) { /* keep direct renderer best-effort */ }
+    return { bundle: null, status: 'fallback-exception' }
+  }
 }
 
 export function resizeArchiveComposer(bundle, width, height) {
