@@ -101,8 +101,8 @@ onMounted(() => {
       'container--analysis': activeTab === '研究终端',
     }"
   >
-    <AppHeader :user="user" @logout="logout" @update-profile="updateProfile" />
-    <AppTabs :tabs="tabs" :active="activeTab" @change="switchTab" />
+    <AppHeader v-if="activeTab !== '研究终端'" :user="user" @logout="logout" @update-profile="updateProfile" />
+    <AppTabs v-if="activeTab !== '研究终端'" :tabs="tabs" :active="activeTab" @change="switchTab" />
 
     <AnalysisOsPage
       v-if="visitedTabs.has('研究终端')"
@@ -150,7 +150,7 @@ onMounted(() => {
 <style scoped>
 .container { max-width: 1580px; margin: 0 auto; padding: 0 20px 32px; }
 .container--trading { max-width: none; padding-left: 12px; padding-right: 12px; padding-bottom: 12px; }
-.container--analysis { max-width: none; padding-left: 12px; padding-right: 12px; padding-bottom: 12px; }
+.container--analysis { max-width: none; padding: 0; }
 .panel-wrap { margin-top: 4px; }
 .foot { color: var(--subtle); font-size: 11px; margin-top: 16px; }
 .auth-shell { position: relative; min-height: 100vh; background: var(--bg); }
