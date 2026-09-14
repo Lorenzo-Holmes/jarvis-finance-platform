@@ -80,15 +80,15 @@ watch(() => props.active, async active => {
   <section class="backtest-workspace">
     <div class="section-bar">
       <div>
-        <h1>策略回测工作台</h1>
-        <span>黄金ETF · 双均线策略 · 参数验证与收益对比</span>
+        <h1>BACKTEST / STRATEGY LABORATORY</h1>
+        <span>黄金ETF · 双均线实验 · 参数冻结 · 收益 / 风险 / 回撤复现</span>
       </div>
-      <span class="section-status"><i :class="{ ok: !invalid }"></i>{{ invalid ? '参数待修正' : '参数可运行' }}</span>
+      <span class="section-status"><i :class="{ ok: !invalid }"></i>{{ invalid ? 'PARAMETERS INVALID' : 'EXPERIMENT READY' }}</span>
     </div>
 
     <div class="backtest-layout">
       <aside class="panel bt-parameter-panel">
-        <div class="bt-panel-title">策略参数</div>
+        <div class="bt-panel-title">EXPERIMENT PARAMETERS / 策略参数</div>
         <div class="bt-field">
           <label>短期均线</label>
           <input type="number" v-model.number="bt.short_ma" min="1" class="bt-input" />
@@ -120,7 +120,7 @@ watch(() => props.active, async active => {
         </div>
         <div v-if="validation" class="bt-validation">{{ validation }}</div>
         <button class="btn primary bt-run" type="button" @click="runBacktest" :disabled="bt.running || invalid">
-          {{ bt.running ? '正在计算…' : '运行策略回测' }}
+          {{ bt.running ? 'PROCESSING…' : 'RUN EXPERIMENT' }}
         </button>
         <div class="bt-note">回测结果仅基于历史样本，不代表未来收益。</div>
       </aside>
@@ -186,29 +186,30 @@ watch(() => props.active, async active => {
 </template>
 
 <style scoped>
-.backtest-workspace { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
+.backtest-workspace { display: flex; flex-direction: column; gap: 12px; margin: 0; }
 .section-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 38px; }
 .section-bar h1 { margin: 0; color: var(--text); font-size: 16px; font-weight: 680; letter-spacing: .01em; }
 .section-bar > div > span { display: block; margin-top: 3px; color: var(--subtle); font-size: 10px; }
 .section-status { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 11px; }
 .section-status i { width: 6px; height: 6px; border-radius: 50%; background: var(--bad); }
 .section-status i.ok { background: var(--ok); }
-.backtest-layout { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 10px; align-items: start; }
+.backtest-layout { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 0; align-items: start; border: 1px solid var(--line); }
 .bt-parameter-panel { position: sticky; top: 10px; }
-.bt-panel-title { color: var(--text); font-size: 12px; font-weight: 680; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.bt-parameter-panel { border: 0 !important; border-right: 1px solid var(--line) !important; }
+.bt-panel-title { color: var(--text); font: 650 9px/1 ui-monospace, monospace; letter-spacing: .08em; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
 .bt-field { display: flex; flex-direction: column; gap: 5px; margin-top: 12px; }
 .bt-field label { color: var(--muted); font-size: 10px; }
 .bt-field > span { color: var(--subtle); font-size: 9px; line-height: 1.5; }
-.bt-input { width: 100%; height: 34px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius-sm); color: var(--text); padding: 0 9px; font-size: 12px; font-variant-numeric: tabular-nums; outline: none; }
+.bt-input { width: 100%; height: 34px; background: transparent; border: 0; border-bottom: 1px solid var(--line-strong); border-radius: 0; color: var(--text); padding: 0 4px; font-size: 12px; font-variant-numeric: tabular-nums; outline: none; }
 .bt-input:focus { border-color: #6a5b40; }
 .bt-validation { margin-top: 12px; color: #e3b466; background: rgba(227,180,102,.07); border-left: 2px solid #8a6d3e; padding: 8px 9px; font-size: 10px; line-height: 1.5; }
 .bt-run { width: 100%; min-height: 36px; margin-top: 12px; }
 .bt-note { margin-top: 9px; color: var(--subtle); font-size: 9px; line-height: 1.5; }
 .bt-main { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .bt-repro-meta { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; color: var(--subtle); font-size: 9px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-.bt-repro-meta span { padding: 4px 6px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); }
-.bt-metrics { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 7px; }
-.bt-metric { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 10px 11px; min-width: 0; }
+.bt-repro-meta span { padding: 4px 6px; border: 1px solid var(--line); border-radius: 0; background: transparent; }
+.bt-metrics { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 0; border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
+.bt-metric { background: transparent; border: 0; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); border-radius: 0; padding: 10px 11px; min-width: 0; }
 .bt-metric span { display: block; color: var(--subtle); font-size: 9px; white-space: nowrap; }
 .bt-metric b { display: block; margin-top: 5px; color: var(--text); font-size: 16px; font-weight: 680; letter-spacing: -.015em; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bt-chart-panel { min-width: 0; }
@@ -219,7 +220,7 @@ watch(() => props.active, async active => {
 .bt-benchmark { color: var(--muted) !important; }
 .bt-equity-chart { height: 390px !important; margin-top: 10px !important; }
 .bt-empty { min-height: 450px; display: flex; align-items: center; justify-content: center; flex-direction: column; text-align: center; }
-.bt-empty-mark { width: 44px; height: 44px; display: grid; place-items: center; border: 1px solid #4d4434; color: var(--accent-strong); background: rgba(201,166,95,.05); border-radius: 50%; font-size: 11px; font-weight: 700; letter-spacing: .04em; }
+.bt-empty-mark { width: 54px; height: 38px; display: grid; place-items: center; border: 1px solid var(--line-strong); color: var(--accent-strong); background: transparent; border-radius: 0; font: 700 9px/1 ui-monospace, monospace; letter-spacing: .08em; }
 .bt-empty b { margin-top: 12px; color: var(--text); font-size: 12px; }
 .bt-empty span { max-width: 330px; margin-top: 6px; color: var(--subtle); font-size: 10px; line-height: 1.6; }
 .bt-trades-panel { min-width: 0; }

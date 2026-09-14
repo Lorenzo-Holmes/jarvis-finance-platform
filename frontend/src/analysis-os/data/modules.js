@@ -1,0 +1,112 @@
+export const MODULE_LANES = [
+  { key: 'market', label: 'MARKET / 市场' },
+  { key: 'research', label: 'RESEARCH / 研究' },
+  { key: 'intelligence', label: 'INTELLIGENCE / 情报' },
+  { key: 'strategy', label: 'STRATEGY / 策略' },
+  { key: 'execution', label: 'EXECUTION / 执行' },
+]
+
+export const JARVIS_MODULES = [
+  {
+    id: 'module:market', no: 1, lane: 0, row: 0, key: 'market',
+    labelEn: 'MARKET', labelZh: '行情', category: 'MARKET', routeKey: '行情',
+    code: 'MK-01', summary: '观察实时价格、量能、结构与市场状态。',
+    capabilities: ['LIVE FEED', 'K LINE', 'INDICATORS'], availability: 'ready',
+  },
+  {
+    id: 'module:cross-market', no: 2, lane: 0, row: 1, key: 'cross-market',
+    labelEn: 'CROSS MARKET', labelZh: '多市场', category: 'MARKET', routeKey: '多市场',
+    code: 'MK-02', summary: '比较 A 股、美股、加密与商品市场的强弱、波动和关联。',
+    capabilities: ['RELATIVE STRENGTH', 'CORRELATION', 'FLOW'], availability: 'ready',
+  },
+  {
+    id: 'module:backtest', no: 3, lane: 3, row: 0, key: 'backtest',
+    labelEn: 'BACKTEST', labelZh: '回测', category: 'STRATEGY', routeKey: '回测',
+    code: 'ST-03', summary: '把策略假设放进历史数据中进行可复现实验。',
+    capabilities: ['EXPERIMENT', 'DRAWDOWN', 'TRADE LOG'], availability: 'ready',
+  },
+  {
+    id: 'module:sim-trade', no: 4, lane: 4, row: 0, key: 'sim-trade',
+    labelEn: 'SIM TRADE', labelZh: '模拟盘', category: 'EXECUTION', routeKey: '模拟盘',
+    code: 'EX-04', summary: '在专业交易工作台中进行模拟下单、持仓和止损管理。',
+    capabilities: ['ORDER TICKET', 'POSITIONS', 'STOPS'], availability: 'ready',
+  },
+  {
+    id: 'module:ai-research', no: 5, lane: 1, row: 0, key: 'ai-research',
+    labelEn: 'AI RESEARCH', labelZh: '研究助手', category: 'RESEARCH', routeKey: '研究助手',
+    code: 'RS-05', summary: '围绕当前研究对象组织论点、证据、反证和风险。',
+    capabilities: ['THESIS', 'EVIDENCE', 'COUNTER CASE'], availability: 'ready',
+  },
+  {
+    id: 'module:bull-bear', no: 6, lane: 1, row: 1, key: 'bull-bear',
+    labelEn: 'BULL / BEAR', labelZh: '多空研报', category: 'RESEARCH', routeKey: '多空研报',
+    code: 'RS-06', summary: '并列呈现多头与空头证据，保留争议核心与失效条件。',
+    capabilities: ['BULL CASE', 'BEAR CASE', 'SYNTHESIS'], availability: 'ready',
+  },
+  {
+    id: 'module:financial', no: 7, lane: 1, row: 2, key: 'financial',
+    labelEn: 'FINANCIAL', labelZh: '财报解析', category: 'RESEARCH', routeKey: '财报解析',
+    code: 'RS-07', summary: '阅读财务结构、盈利质量、现金流与异常变化。',
+    capabilities: ['FUNDAMENTALS', 'FILING', 'QUALITY'], availability: 'ready',
+  },
+  {
+    id: 'module:industry-chain', no: 8, lane: 2, row: 0, key: 'industry-chain',
+    labelEn: 'INDUSTRY CHAIN', labelZh: '产业链图谱', category: 'INTELLIGENCE', routeKey: '产业链图谱',
+    code: 'IN-08', summary: '沿上下游节点追踪公司、产业位置和关联风险。',
+    capabilities: ['GRAPH', 'NODE FILE', 'RELATION'], availability: 'ready',
+  },
+  {
+    id: 'module:risk', no: 9, lane: 2, row: 1, key: 'risk',
+    labelEn: 'RISK', labelZh: '风险预警', category: 'INTELLIGENCE', routeKey: '风险预警',
+    code: 'IN-09', summary: '监控风险事件、触发依据、影响范围和解除条件。',
+    capabilities: ['ALERT', 'TRIGGER', 'TIMELINE'], availability: 'ready',
+  },
+  {
+    id: 'module:strategy', no: 10, lane: 3, row: 1, key: 'strategy',
+    labelEn: 'STRATEGY', labelZh: '策略生成', category: 'STRATEGY', routeKey: '策略生成',
+    code: 'ST-10', summary: '把目标、约束与风险预算整理为结构化策略草案。',
+    capabilities: ['OBJECTIVE', 'RULES', 'VALIDATION'], availability: 'ready',
+  },
+  {
+    id: 'module:ops', no: 11, lane: 4, row: 1, key: 'ops',
+    labelEn: 'OPS', labelZh: '运维', category: 'SYSTEM', routeKey: '运维',
+    code: 'EX-11', summary: '查看 Java API、AI、数据库、行情流和认证服务状态。',
+    capabilities: ['HEALTH', 'LATENCY', 'AUDIT'], availability: 'ready',
+  },
+]
+
+export function wrap(value, count) {
+  return ((value % count) + count) % count
+}
+
+export function modulesForLane(lane, modules = JARVIS_MODULES) {
+  const canonicalLane = wrap(lane, MODULE_LANES.length)
+  return modules
+    .filter(module => module.lane === canonicalLane)
+    .sort((a, b) => a.row - b.row)
+}
+
+export function moduleAtCell(lane, row, modules = JARVIS_MODULES) {
+  const list = modulesForLane(lane, modules)
+  if (!list.length) return modules[0] || null
+  return list[wrap(row, list.length)]
+}
+
+export function nearestOccurrence(value, center, period) {
+  if (!period) return value
+  return value + Math.floor((center - value + period / 2) / period) * period
+}
+
+export function cellForModule(key, currentCell = { lane: 0, row: 0 }, modules = JARVIS_MODULES) {
+  const module = modules.find(item => item.key === key) || modules[0]
+  if (!module) return { lane: 0, row: 0 }
+  const lane = nearestOccurrence(module.lane, currentCell.lane, MODULE_LANES.length)
+  const laneList = modulesForLane(module.lane, modules)
+  const moduleRow = Math.max(0, laneList.findIndex(item => item.key === module.key))
+  const row = nearestOccurrence(moduleRow, currentCell.row, Math.max(1, laneList.length))
+  return { lane, row }
+}
+
+export function moduleByKey(key, modules = JARVIS_MODULES) {
+  return modules.find(module => module.key === key) || modules[0] || null
+}

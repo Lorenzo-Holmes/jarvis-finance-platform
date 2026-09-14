@@ -74,15 +74,15 @@ function clearAll() {
   <section class="rk-workspace">
     <div class="section-bar">
       <div>
-        <h1>风险预警</h1>
-        <span>VaR · ES · 波动率 · 最大回撤 · 超阈值预警</span>
+        <h1>RISK SURVEILLANCE / ALERT TERMINAL</h1>
+        <span>VaR · Expected Shortfall · 波动率 · 最大回撤 · 阈值触发与解释</span>
       </div>
-      <span class="section-status"><i :class="{ ok: !validation }"></i>{{ validation ? '输入待完善' : '输入可分析' }}</span>
+      <span class="section-status"><i :class="{ ok: !validation }"></i>{{ validation ? 'TARGET REQUIRED' : 'SURVEILLANCE READY' }}</span>
     </div>
 
     <div class="rk-layout">
       <aside class="panel rk-input-panel">
-        <div class="rk-panel-title">分析参数</div>
+        <div class="rk-panel-title">RISK PARAMETERS / 分析参数</div>
 
         <div class="rk-field">
           <label>标的</label>
@@ -118,7 +118,7 @@ function clearAll() {
 
         <div v-if="validation" class="rk-validation">{{ validation }}</div>
         <button class="btn primary rk-run" type="button" :disabled="analyzing || !!validation" @click="analyze">
-          {{ analyzing ? '正在计算风险…' : '运行风险分析' }}
+          {{ analyzing ? 'CALCULATING…' : 'RUN SURVEILLANCE' }}
         </button>
         <button v-if="result || error" type="button" class="text-action" @click="clearAll">清空结果</button>
         <div class="rk-note">数值由确定性计算层基于历史样本生成，模型仅负责解读；历史模拟法对尾部风险估计偏乐观，仅供参考。</div>
@@ -129,7 +129,7 @@ function clearAll() {
           <div class="rk-banner" :class="riskLevel">
             <span class="rk-banner-dot"></span>
             <div>
-              <b>总体风险评级：{{ riskLabel[riskLevel] || '—' }}</b>
+              <b>RISK LEVEL / {{ riskLabel[riskLevel] || '—' }}</b>
               <span v-if="result.metrics">{{ market.trim() }} · 最近 {{ result.metrics.bars }} 根日 K · {{ result.metrics.confidence * 100 }}% 置信度</span>
             </div>
           </div>
@@ -172,7 +172,7 @@ function clearAll() {
 
           <div class="panel rk-report-panel">
             <div class="rk-report-head">
-              <div><b>风险报告</b><span>AI 基于确定性指标生成，数值口径以指标卡为准</span></div>
+              <div><b>RISK REPORT</b><span>AI 基于确定性指标生成，数值口径以指标区为准</span></div>
             </div>
             <div class="rk-output">{{ result.content?.content || result.content || '（暂无报告）' }}</div>
           </div>
@@ -183,8 +183,8 @@ function clearAll() {
         <DataState v-else-if="error" state="error" title="风险分析失败" :message="error" retryable @retry="analyze" />
 
         <div v-else class="panel rk-empty">
-          <div class="rk-empty-mark">风控</div>
-          <b>等待风险分析</b>
+          <div class="rk-empty-mark">RISK</div>
+          <b>WAITING FOR RISK TARGET</b>
           <span>配置左侧参数后运行分析，即可查看 VaR/ES/波动率/最大回撤指标与超阈值预警卡片。</span>
         </div>
       </div>
@@ -193,20 +193,20 @@ function clearAll() {
 </template>
 
 <style scoped>
-.rk-workspace { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
+.rk-workspace { display: flex; flex-direction: column; gap: 12px; margin: 0; }
 .section-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 38px; }
 .section-bar h1 { margin: 0; color: var(--text); font-size: 16px; font-weight: 680; letter-spacing: .01em; }
 .section-bar > div > span { display: block; margin-top: 3px; color: var(--subtle); font-size: 10px; }
 .section-status { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 11px; }
 .section-status i { width: 6px; height: 6px; border-radius: 50%; background: var(--bad); }
 .section-status i.ok { background: var(--ok); }
-.rk-layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 10px; align-items: start; }
-.rk-input-panel { position: sticky; top: 10px; }
-.rk-panel-title { color: var(--text); font-size: 12px; font-weight: 680; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.rk-layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 0; align-items: start; border: 1px solid var(--line); }
+.rk-input-panel { position: sticky; top: 10px; border: 0 !important; border-right: 1px solid var(--line) !important; }
+.rk-panel-title { color: var(--text); font: 650 9px/1 ui-monospace, monospace; letter-spacing: .08em; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
 .rk-field { display: flex; flex-direction: column; gap: 5px; margin-top: 12px; }
 .rk-field label { color: var(--muted); font-size: 10px; }
 .rk-field > span { color: var(--subtle); font-size: 9px; line-height: 1.5; }
-.rk-input { width: 100%; height: 34px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius-sm); color: var(--text); padding: 0 9px; font-size: 12px; outline: none; }
+.rk-input { width: 100%; height: 34px; background: transparent; border: 0; border-bottom: 1px solid var(--line-strong); border-radius: 0; color: var(--text); padding: 0 4px; font-size: 12px; outline: none; }
 .rk-input:focus { border-color: #6a5b40; }
 .rk-validation { margin-top: 10px; color: #e3b466; background: rgba(227,180,102,.07); border-left: 2px solid #8a6d3e; padding: 8px 9px; font-size: 10px; line-height: 1.5; }
 .rk-run { width: 100%; min-height: 36px; margin-top: 12px; }
@@ -214,7 +214,7 @@ function clearAll() {
 .rk-input-panel .text-action:hover { color: var(--text); }
 .rk-note { margin-top: 9px; color: var(--subtle); font-size: 9px; line-height: 1.5; }
 .rk-main { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-.rk-banner { display: flex; align-items: center; gap: 10px; padding: 10px 13px; border-radius: var(--radius-sm); border: 1px solid var(--line); background: var(--panel); }
+.rk-banner { display: flex; align-items: center; gap: 10px; padding: 10px 13px; border-radius: 0; border: 1px solid var(--line); background: transparent; }
 .rk-banner .rk-banner-dot { width: 8px; height: 8px; border-radius: 50%; background: #5b6066; flex: 0 0 auto; }
 .rk-banner.low .rk-banner-dot { background: var(--ok); }
 .rk-banner.medium { border-color: rgba(227,180,102,.4); background: rgba(227,180,102,.06); }
@@ -223,15 +223,15 @@ function clearAll() {
 .rk-banner.high .rk-banner-dot { background: #ef5350; }
 .rk-banner b { color: var(--text); font-size: 12px; font-weight: 680; }
 .rk-banner span { display: block; margin-top: 2px; color: var(--subtle); font-size: 9px; }
-.rk-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 7px; }
-.rk-metric { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; }
+.rk-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0; border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
+.rk-metric { background: transparent; border: 0; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); border-radius: 0; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; }
 .rk-metric span { color: var(--subtle); font-size: 9px; }
 .rk-metric b { color: var(--text); font-size: 16px; font-weight: 680; font-variant-numeric: tabular-nums; line-height: 1; }
 .rk-metric b.loss { color: #ef5350; }
 .rk-metric small { color: var(--muted); font-size: 8px; line-height: 1.4; }
 .rk-metric.rk-amount b { font-size: 15px; }
 .rk-alerts { display: flex; flex-direction: column; gap: 7px; }
-.rk-alert { border-left: 3px solid #5b6066; background: var(--panel); border-radius: var(--radius-sm); padding: 9px 12px; display: flex; flex-direction: column; gap: 3px; }
+.rk-alert { border-left: 2px solid #6f716b; background: rgba(239,235,227,.48); border-radius: 0; padding: 9px 12px; display: flex; flex-direction: column; gap: 3px; }
 .rk-alert.medium { border-left-color: #e3b466; }
 .rk-alert.high { border-left-color: #ef5350; background: rgba(239,83,80,.05); }
 .rk-alert b { color: var(--text); font-size: 10px; font-weight: 680; }
@@ -241,9 +241,9 @@ function clearAll() {
 .rk-report-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
 .rk-report-head b { color: var(--text); font-size: 12px; font-weight: 680; }
 .rk-report-head span { display: block; margin-top: 3px; color: var(--subtle); font-size: 9px; }
-.rk-output { margin-top: 10px; max-height: 420px; overflow: auto; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 12px 14px; color: var(--text); font-size: 11px; line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; }
+.rk-output { margin-top: 10px; max-height: 420px; overflow: auto; background: transparent; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); border-radius: 0; padding: 14px 2px; color: var(--text); font-size: 11px; line-height: 1.78; white-space: pre-wrap; overflow-wrap: anywhere; }
 .rk-empty { display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 46px 20px; text-align: center; }
-.rk-empty-mark { color: var(--accent); border: 1px solid var(--line-strong); border-radius: 50%; width: 54px; height: 54px; display: grid; place-items: center; font-size: 12px; letter-spacing: .1em; }
+.rk-empty-mark { color: var(--accent-strong); border: 1px solid var(--line-strong); border-radius: 0; width: 58px; height: 40px; display: grid; place-items: center; font: 650 9px/1 ui-monospace, monospace; letter-spacing: .08em; }
 .rk-empty b { color: var(--text); font-size: 12px; font-weight: 650; }
 .rk-empty span { color: var(--subtle); font-size: 10px; line-height: 1.6; max-width: 380px; }
 @media (max-width: 980px) { .rk-layout { grid-template-columns: 280px minmax(0, 1fr); } }

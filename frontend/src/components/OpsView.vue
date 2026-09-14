@@ -63,7 +63,7 @@ onMounted(() => { check(); polling.start() })
 <template>
   <div class="ops">
     <div class="ops-head">
-      <div><h2>服务健康</h2><span>核心后端、数据库与研究服务状态</span></div>
+      <div><h2>SYSTEM OPERATIONS / SERVICE TOPOLOGY</h2><span>Java API · PostgreSQL · Python AI · Research Engine</span></div>
       <div class="ops-summary" :class="allHealthy ? 'ok' : 'bad'" role="status" aria-live="polite"><i></i>{{ allHealthy ? 'ALL SYSTEMS OPERATIONAL' : 'ATTENTION REQUIRED' }}</div>
     </div>
 
@@ -89,30 +89,30 @@ onMounted(() => { check(); polling.start() })
     </section>
 
     <div class="ops-footer">
-      <span>最后检查 <b>{{ lastCheck || '--' }}</b></span>
-      <span>自动刷新间隔 <b>10 秒</b></span>
-      <button type="button" @click="check">立即检查</button>
+      <span>LAST CHECK <b>{{ lastCheck || '--' }}</b></span>
+      <span>AUTO REFRESH <b>10s</b></span>
+      <button type="button" @click="check">RUN PROBE</button>
     </div>
   </div>
 </template>
 
 <style scoped>
-.ops { display: flex; flex-direction: column; gap: 10px; }
-.ops-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 38px; }
-.ops-head h2 { margin: 0; color: var(--text); font-size: 16px; font-weight: 680; }
-.ops-head > div:first-child > span { display: block; margin-top: 3px; color: var(--subtle); font-size: 10px; }
-.ops-summary { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line); border-radius: 3px; background: var(--surface); padding: 4px 7px; color: var(--muted); font-size: 8px; font-weight: 700; letter-spacing: .055em; }
+.ops { display: flex; flex-direction: column; gap: 12px; }
+.ops-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; min-height: 50px; padding: 0 2px 10px; border-bottom: 1px solid var(--line); }
+.ops-head h2 { margin: 0; color: var(--text); font: 650 13px/1 ui-monospace, monospace; letter-spacing: .1em; }
+.ops-head > div:first-child > span { display: block; margin-top: 7px; color: var(--subtle); font-size: 10px; }
+.ops-summary { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line); border-radius: 0; background: transparent; padding: 5px 8px; color: var(--muted); font: 700 8px/1 ui-monospace, monospace; letter-spacing: .055em; }
 .ops-summary i { width: 6px; height: 6px; border-radius: 50%; background: var(--bad); }
 .ops-summary.ok { color: #67c98e; }
 .ops-summary.ok i { background: var(--ok); }
 .ops-summary.bad { color: #e47d79; }
-.health-panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.health-panel { background: transparent; border: 1px solid var(--line); border-radius: 0; overflow: hidden; }
 .health-table-wrap { width: 100%; overflow-x: auto; }
 .health-table { width: 100%; min-width: 820px; border-collapse: collapse; font-size: 10px; }
-.health-table th, .health-table td { text-align: left; padding: 11px 12px; border-bottom: 1px solid #24272b; color: var(--muted); white-space: nowrap; }
-.health-table th { position: sticky; top: 0; z-index: 2; background: #131517; color: var(--subtle); font-size: 9px; font-weight: 550; letter-spacing: .02em; box-shadow: 0 1px 0 #24272b; }
+.health-table th, .health-table td { text-align: left; padding: 11px 12px; border-bottom: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.health-table th { position: sticky; top: 0; z-index: 2; background: #dfd9ce; color: #777269; font: 600 8px/1 ui-monospace, monospace; letter-spacing: .07em; box-shadow: 0 1px 0 var(--line); }
 .health-table tbody tr:last-child td { border-bottom: 0; }
-.health-table tbody tr:hover td { background: #17191b; }
+.health-table tbody tr:hover td { background: rgba(209,201,188,.24); }
 .service-name { display: flex; align-items: center; gap: 8px; }
 .service-name i { width: 6px; height: 6px; border-radius: 50%; background: var(--bad); }
 .service-name i.ok { background: var(--ok); }
@@ -125,6 +125,6 @@ onMounted(() => { check(); polling.start() })
 .health-table a:hover { text-decoration: underline; }
 .ops-footer { display: flex; align-items: center; gap: 18px; color: var(--subtle); font-size: 9px; }
 .ops-footer b { color: var(--muted); font-weight: 600; font-variant-numeric: tabular-nums; }
-.ops-footer button { margin-left: auto; border: 1px solid var(--line-strong); background: #1c1f22; color: var(--text); border-radius: var(--radius-sm); padding: 5px 9px; font-size: 9px; cursor: pointer; }
+.ops-footer button { margin-left: auto; border: 1px solid #383b33; background: #383b33; color: #f2eee6; border-radius: 0; padding: 6px 10px; font: 650 8px/1 ui-monospace, monospace; letter-spacing: .06em; cursor: pointer; }
 @media (max-width: 650px) { .ops-head { align-items: flex-start; flex-direction: column; } .ops-footer { align-items: flex-start; flex-wrap: wrap; } .ops-footer button { margin-left: 0; } }
 </style>

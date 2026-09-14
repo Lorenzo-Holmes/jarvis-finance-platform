@@ -1,5 +1,5 @@
 <script setup>
-import { defineAsyncComponent, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onMounted, ref, watch } from 'vue'
 import { api } from './api/client'
 import LoginView from './components/LoginView.vue'
 import AppHeader from './components/common/AppHeader.vue'
@@ -7,6 +7,9 @@ import AppTabs from './components/common/AppTabs.vue'
 import LandingPage from './pages/LandingPage.vue'
 import { useAuthSession } from './composables/useAuthSession'
 import { useWorkspaceTabs } from './composables/useWorkspaceTabs'
+import ArchiveWorkspaceShell from './analysis-os/components/ArchiveWorkspaceShell.vue'
+import { JARVIS_MODULES } from './analysis-os/data/modules'
+import { useResearchContext } from './analysis-os/state/researchContext'
 
 const AnalysisOsPage = defineAsyncComponent(() => import('./pages/AnalysisOsPage.vue'))
 const MarketPage = defineAsyncComponent(() => import('./pages/MarketPage.vue'))
@@ -27,6 +30,10 @@ const { user, isLoggedIn, sessionState } = session
 const workspace = useWorkspaceTabs(user)
 const { activeTab, visitedTabs, tabs, switchTab } = workspace
 const publicView = ref('landing')
+const activeModule = computed(() => JARVIS_MODULES.find(module => module.routeKey === activeTab.value) || null)
+const archiveModuleKey = ref('market')
+const research = useResearchContext()
+const { context: researchContext, setContext: setResearchContext, clearContext: clearResearchContext } = research
 
 function replacePublicQuery(mutator) {
   const url = new URL(window.location.href)
@@ -59,6 +66,7 @@ function handleLoggedIn(value) {
 async function logout() {
   await session.logout()
   workspace.reset()
+  clearResearchContext()
   publicView.value = 'landing'
   replacePublicQuery((params) => params.delete('view'))
 }
@@ -66,6 +74,21 @@ async function logout() {
 async function updateProfile(displayName) {
   const response = await api.updateProfile(displayName)
   if (response.code === 200 && response.data) session.acceptLogin(response.data)
+}
+
+function syncArchiveModule(key) {
+  if (JARVIS_MODULES.some(module => module.key === key)) archiveModuleKey.value = key
+}
+
+function navigateWorkspace(routeKey) {
+  const module = JARVIS_MODULES.find(item => item.routeKey === routeKey)
+  if (module) archiveModuleKey.value = module.key
+  switchTab(routeKey)
+}
+
+function returnToArchive() {
+  if (activeModule.value) archiveModuleKey.value = activeModule.value.key
+  switchTab('研究终端')
 }
 
 watch(sessionState, (state) => {
@@ -99,49 +122,64 @@ onMounted(() => {
     :class="{
       'container--trading': activeTab === '模拟盘',
       'container--analysis': activeTab === '研究终端',
+      'container--workspace': Boolean(activeModule),
     }"
   >
-    <AppHeader v-if="activeTab !== '研究终端'" :user="user" @logout="logout" @update-profile="updateProfile" />
-    <AppTabs v-if="activeTab !== '研究终端'" :tabs="tabs" :active="activeTab" @change="switchTab" />
+    <AppHeader v-if="activeTab === '管理'" :user="user" @logout="logout" @update-profile="updateProfile" />
+    <AppTabs v-if="activeTab === '管理'" :tabs="tabs" :active="activeTab" @change="switchTab" />
 
     <AnalysisOsPage
       v-if="visitedTabs.has('研究终端')"
       v-show="activeTab === '研究终端'"
       :active="activeTab === '研究终端'"
-      @navigate="switchTab"
+      :requested-module-key="archiveModuleKey"
+      @focus-change="syncArchiveModule"
+      @navigate="navigateWorkspace"
     />
 
-    <MarketPage v-if="visitedTabs.has('行情')" v-show="activeTab === '行情'" :active="activeTab === '行情'" />
+    <ArchiveWorkspaceShell
+      v-if="activeModule"
+      :module="activeModule"
+      :modules="JARVIS_MODULES"
+      :user="user"
+      :context="researchContext"
+      @return="returnToArchive"
+      @navigate-module="navigateWorkspace"
+      @logout="logout"
+      @update-profile="updateProfile"
+    >
+      <MarketPage v-if="activeTab === '行情'" :active="true" @context-change="setResearchContext" />
 
-    <section v-if="activeTab === '多市场'" class="panel-wrap">
-      <CrossMarketView :user="user" />
-    </section>
+      <section v-else-if="activeTab === '多市场'" class="panel-wrap">
+        <CrossMarketView :user="user" @context-change="setResearchContext" />
+      </section>
 
-    <BacktestPage v-if="visitedTabs.has('回测')" v-show="activeTab === '回测'" :active="activeTab === '回测'" />
+      <BacktestPage v-else-if="activeTab === '回测'" :active="true" />
 
-    <section v-if="activeTab === '模拟盘'">
-      <SimTradeView :user="user" />
-    </section>
+      <section v-else-if="activeTab === '模拟盘'">
+        <SimTradeView :user="user" @context-change="setResearchContext" />
+      </section>
 
-    <section v-if="activeTab === '研究助手'" class="panel-wrap">
-      <AiCenter />
-    </section>
+      <section v-else-if="activeTab === '研究助手'" class="panel-wrap">
+        <AiCenter />
+      </section>
 
-    <SentimentPage v-if="visitedTabs.has('多空研报')" v-show="activeTab === '多空研报'" />
-    <FinancialReportPage v-if="visitedTabs.has('财报解析')" v-show="activeTab === '财报解析'" />
-    <ChainPage v-if="visitedTabs.has('产业链图谱')" v-show="activeTab === '产业链图谱'" />
-    <RiskPage v-if="visitedTabs.has('风险预警')" v-show="activeTab === '风险预警'" />
-    <StrategyPage v-if="visitedTabs.has('策略生成')" v-show="activeTab === '策略生成'" />
+      <SentimentPage v-else-if="activeTab === '多空研报'" />
+      <FinancialReportPage v-else-if="activeTab === '财报解析'" />
+      <ChainPage v-else-if="activeTab === '产业链图谱'" />
+      <RiskPage v-else-if="activeTab === '风险预警'" />
+      <StrategyPage v-else-if="activeTab === '策略生成'" />
 
-    <section v-if="activeTab === '运维'" class="panel-wrap">
-      <OpsView />
-    </section>
+      <section v-else-if="activeTab === '运维'" class="panel-wrap">
+        <OpsView />
+      </section>
+    </ArchiveWorkspaceShell>
 
     <section v-if="user?.role === 'ADMIN' && activeTab === '管理'" class="panel-wrap">
       <AdminView />
     </section>
 
-    <footer v-if="activeTab !== '模拟盘' && activeTab !== '研究终端'" class="foot">
+    <footer v-if="activeTab === '管理'" class="foot">
       <span>贾维斯金融投研平台 · 仅供研究参考，不构成投资建议</span>
     </footer>
   </div>
@@ -151,6 +189,7 @@ onMounted(() => {
 .container { max-width: 1580px; margin: 0 auto; padding: 0 20px 32px; }
 .container--trading { max-width: none; padding-left: 12px; padding-right: 12px; padding-bottom: 12px; }
 .container--analysis { max-width: none; padding: 0; }
+.container--workspace { max-width: none; padding: 0; }
 .panel-wrap { margin-top: 4px; }
 .foot { color: var(--subtle); font-size: 11px; margin-top: 16px; }
 .auth-shell { position: relative; min-height: 100vh; background: var(--bg); }

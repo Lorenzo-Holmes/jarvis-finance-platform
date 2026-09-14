@@ -48,15 +48,15 @@ function clearAll() {
   <section class="ch-workspace">
     <div class="section-bar">
       <div>
-        <h1>产业链图谱</h1>
-        <span>上下游 · 供需格局 · 关键厂商 · 景气度与投资逻辑</span>
+        <h1>INDUSTRY GRAPH / NODE DOSSIER</h1>
+        <span>上游 · 中游 · 下游 · 关键节点 · 供需格局与关联风险</span>
       </div>
-      <span class="section-status"><i :class="{ ok: !validation }"></i>{{ validation ? '输入待完善' : '输入可分析' }}</span>
+      <span class="section-status"><i :class="{ ok: !validation }"></i>{{ validation ? 'NODE REQUIRED' : 'NODE READY' }}</span>
     </div>
 
     <div class="ch-layout">
       <aside class="panel ch-input-panel">
-        <div class="ch-panel-title">分析主题</div>
+        <div class="ch-panel-title">NODE INDEX / 分析主题</div>
 
         <div class="ch-field">
           <label>产业节点</label>
@@ -76,7 +76,7 @@ function clearAll() {
 
         <div v-if="validation" class="ch-validation">{{ validation }}</div>
         <button class="btn primary ch-run" type="button" :disabled="analyzing || !!validation" @click="analyze">
-          {{ analyzing ? '正在分析…' : '生成产业链分析' }}
+          {{ analyzing ? 'PROCESSING…' : 'ANALYZE NODE' }}
         </button>
         <div class="ch-actions">
           <button type="button" class="text-action" @click="clearAll">清空</button>
@@ -88,7 +88,7 @@ function clearAll() {
         <template v-if="result">
           <div class="panel ch-result-panel">
             <div class="ch-result-head">
-              <div><b>{{ node.trim() }} 产业链分析</b><span>产业研究参考，请结合最新数据独立判断</span></div>
+              <div><b>NODE FILE / {{ node.trim() }}</b><span>产业研究参考，请结合最新数据独立判断</span></div>
             </div>
             <div class="ch-output">{{ result }}</div>
           </div>
@@ -99,8 +99,8 @@ function clearAll() {
         <DataState v-else-if="error" state="error" title="产业链分析失败" :message="error" retryable @retry="analyze" />
 
         <div v-else class="panel ch-empty">
-          <div class="ch-empty-mark">图谱</div>
-          <b>等待分析结果</b>
+          <div class="ch-empty-mark">NODE</div>
+          <b>WAITING FOR NODE ANALYSIS</b>
           <span>在左侧填写产业节点后运行分析，即可查看上下游、供需、关键厂商与投资逻辑。</span>
         </div>
       </div>
@@ -109,22 +109,22 @@ function clearAll() {
 </template>
 
 <style scoped>
-.ch-workspace { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
+.ch-workspace { display: flex; flex-direction: column; gap: 12px; margin: 0; }
 .section-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 38px; }
 .section-bar h1 { margin: 0; color: var(--text); font-size: 16px; font-weight: 680; letter-spacing: .01em; }
 .section-bar > div > span { display: block; margin-top: 3px; color: var(--subtle); font-size: 10px; }
 .section-status { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 11px; }
 .section-status i { width: 6px; height: 6px; border-radius: 50%; background: var(--bad); }
 .section-status i.ok { background: var(--ok); }
-.ch-layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 10px; align-items: start; }
-.ch-input-panel { position: sticky; top: 10px; }
-.ch-panel-title { color: var(--text); font-size: 12px; font-weight: 680; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.ch-layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 0; align-items: start; border: 1px solid var(--line); }
+.ch-input-panel { position: sticky; top: 10px; border: 0 !important; border-right: 1px solid var(--line) !important; }
+.ch-panel-title { color: var(--text); font: 650 9px/1 ui-monospace, monospace; letter-spacing: .08em; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
 .ch-field { display: flex; flex-direction: column; gap: 5px; margin-top: 12px; }
 .ch-field label { color: var(--muted); font-size: 10px; }
 .ch-field > span { color: var(--subtle); font-size: 9px; line-height: 1.5; }
-.ch-input { width: 100%; height: 34px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius-sm); color: var(--text); padding: 0 9px; font-size: 12px; outline: none; }
+.ch-input { width: 100%; height: 34px; background: transparent; border: 0; border-bottom: 1px solid var(--line-strong); border-radius: 0; color: var(--text); padding: 0 4px; font-size: 12px; outline: none; }
 .ch-input:focus { border-color: #6a5b40; }
-.ch-field textarea { width: 100%; background: var(--surface); border: 1px solid var(--line-strong); color: var(--text); border-radius: var(--radius-sm); outline: none; font-size: 10px; padding: 8px 9px; resize: vertical; line-height: 1.5; }
+.ch-field textarea { width: 100%; background: transparent; border: 0; border-bottom: 1px solid var(--line-strong); color: var(--text); border-radius: 0; outline: none; font-size: 10px; padding: 8px 4px; resize: vertical; line-height: 1.6; }
 .ch-field textarea:focus { border-color: #6a5b40; }
 .ch-quota { margin-top: 10px; color: var(--subtle); font-size: 9px; font-variant-numeric: tabular-nums; }
 .ch-validation { margin-top: 10px; color: #e3b466; background: rgba(227,180,102,.07); border-left: 2px solid #8a6d3e; padding: 8px 9px; font-size: 10px; line-height: 1.5; }
@@ -138,9 +138,9 @@ function clearAll() {
 .ch-result-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
 .ch-result-head b { color: var(--text); font-size: 12px; font-weight: 680; }
 .ch-result-head span { display: block; margin-top: 3px; color: var(--subtle); font-size: 9px; }
-.ch-output { margin-top: 10px; max-height: 560px; overflow: auto; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 12px 14px; color: var(--text); font-size: 11px; line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ch-output { margin-top: 10px; max-height: 560px; overflow: auto; background: transparent; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); border-radius: 0; padding: 14px 2px; color: var(--text); font-size: 11px; line-height: 1.78; white-space: pre-wrap; overflow-wrap: anywhere; }
 .ch-empty { display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 46px 20px; text-align: center; }
-.ch-empty-mark { color: var(--accent); border: 1px solid var(--line-strong); border-radius: 50%; width: 54px; height: 54px; display: grid; place-items: center; font-size: 12px; letter-spacing: .1em; }
+.ch-empty-mark { color: var(--accent-strong); border: 1px solid var(--line-strong); border-radius: 0; width: 58px; height: 40px; display: grid; place-items: center; font: 650 9px/1 ui-monospace, monospace; letter-spacing: .08em; }
 .ch-empty b { color: var(--text); font-size: 12px; font-weight: 650; }
 .ch-empty span { color: var(--subtle); font-size: 10px; line-height: 1.6; max-width: 380px; }
 @media (max-width: 980px) { .ch-layout { grid-template-columns: 280px minmax(0, 1fr); } }

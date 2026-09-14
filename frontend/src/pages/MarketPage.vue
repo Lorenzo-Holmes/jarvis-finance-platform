@@ -10,7 +10,7 @@ import { useFreshness } from '../composables/useFreshness'
 import { formatNumber, formatPercent } from '../utils/formatters'
 
 const props = defineProps({ active: { type: Boolean, default: true } })
-const emit = defineEmits(['connection-change'])
+const emit = defineEmits(['connection-change', 'context-change'])
 
 const connected = ref(false)
 const initializing = ref(true)
@@ -162,6 +162,20 @@ const focusedQuote = computed(() => {
   if (marketFocus.value === 'london_gold') return realtimePrices.value?.london_gold || null
   return jdPrices.value?.[jdKlineCfg.market] || null
 })
+const focusedResearchContext = computed(() => {
+  if (marketFocus.value === 'gold_etf') {
+    return { market: 'gold_etf', symbol: '518850', name: focusedTitle.value, sourceModule: 'market' }
+  }
+  if (marketFocus.value === 'london_gold') {
+    return { market: 'london_gold', symbol: 'XAUUSD', name: focusedTitle.value, sourceModule: 'market' }
+  }
+  return {
+    market: 'jd_gold',
+    symbol: jdKlineCfg.market === 'zheshang' ? 'JD-ZS-GOLD' : 'JD-MS-GOLD',
+    name: focusedTitle.value,
+    sourceModule: 'market',
+  }
+})
 const focusedQuoteStale = computed(() => Boolean(focusedQuote.value?.stale))
 const focusedIntervals = computed(() => marketFocus.value === 'jd'
   ? [{ v: '1', label: '1分' }, { v: '5', label: '5分' }, { v: '15', label: '15分' }, { v: '30', label: '30分' }, { v: '60', label: '1小时' }]
@@ -181,6 +195,7 @@ async function setMarketFocus(key, jdMarket = null) {
   if (key === 'jd' && !jdKlineData.value.length) await loadJdKline()
   await nextTick()
   await renderPrimaryChart()
+  emit('context-change', focusedResearchContext.value)
 }
 
 async function handleQuoteSelect(selection) {
@@ -253,14 +268,18 @@ watch(() => props.active, async active => {
 
 onMounted(initialize)
 onBeforeUnmount(stopPriceStream)
+
+watch([marketFocus, () => jdKlineCfg.market], () => {
+  emit('context-change', focusedResearchContext.value)
+}, { immediate: true })
 </script>
 
 <template>
   <section class="market-workspace">
     <div class="section-bar">
       <div>
-        <h1>黄金市场工作台</h1>
-        <span>核心报价、K 线与积存金数据</span>
+        <h1>MARKET / LIVE FEED</h1>
+        <span>{{ focusedResearchContext.symbol }} · {{ focusedTitle }} · 核心报价、K 线与市场结构</span>
       </div>
       <span class="section-status" :class="{ stale: freshness.stale || focusedQuoteStale }">
         <i :class="{ ok: connected && !freshness.stale && !focusedQuoteStale, warn: freshness.stale || focusedQuoteStale }"></i>
@@ -323,7 +342,7 @@ onBeforeUnmount(stopPriceStream)
 
       <aside class="market-rail">
         <div class="rail-panel quote-detail">
-          <div class="rail-label">当前报价</div>
+          <div class="rail-label">QUOTE / 当前报价</div>
           <div class="rail-symbol">{{ focusedTitle }}</div>
           <div class="rail-price" :class="marketFocus === 'jd' ? 'gold' : ''">{{ formatNumber(focusedQuote?.price) }}</div>
           <div class="rail-change" :class="Number(focusedQuote?.change || 0) >= 0 ? 'pos' : 'neg'">
@@ -340,7 +359,7 @@ onBeforeUnmount(stopPriceStream)
         </div>
 
         <div class="rail-panel data-health">
-          <div class="rail-label">数据状态</div>
+          <div class="rail-label">DATA HEALTH / 数据状态</div>
           <div class="health-row"><span><i :class="{ ok: connected && !freshness.stale && !focusedQuoteStale, warn: freshness.stale || focusedQuoteStale }"></i>市场数据</span><b>{{ !connected ? '检查中' : focusedQuoteStale ? '源行情陈旧' : freshness.stale ? '推送中断' : '正常' }}</b></div>
           <div class="health-row"><span>数据源</span><b>{{ focusedQuote?.source || (marketFocus === 'jd' ? '京东积存金' : '行情接口') }}</b></div>
           <div class="health-row"><span>行情时间</span><b>{{ focusedQuote?.quote_time || focusedQuote?.time || '实时刷新' }}</b></div>
@@ -355,51 +374,52 @@ onBeforeUnmount(stopPriceStream)
 </template>
 
 <style scoped>
-.market-workspace { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
-.section-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 38px; }
-.section-bar h1 { margin: 0; color: var(--text); font-size: 16px; font-weight: 680; letter-spacing: .01em; }
-.section-bar > div > span { display: block; margin-top: 3px; color: var(--subtle); font-size: 10px; }
-.section-status { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 11px; }
+.market-workspace { display: flex; flex-direction: column; gap: 12px; margin: 0; }
+.section-bar { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; min-height: 50px; padding: 0 2px 10px; border-bottom: 1px solid var(--line); }
+.section-bar h1 { margin: 0; color: var(--text); font: 650 13px/1 ui-monospace, monospace; letter-spacing: .11em; }
+.section-bar > div > span { display: block; margin-top: 7px; color: var(--subtle); font-size: 10px; }
+.section-status { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font: 600 9px/1 ui-monospace, monospace; letter-spacing: .05em; }
 .section-status i, .health-row i { width: 6px; height: 6px; border-radius: 50%; background: var(--bad); }
 .section-status i.ok, .health-row i.ok { background: var(--ok); }
 .section-status i.warn, .health-row i.warn { background: var(--warn); }
 .section-status.stale { color: var(--warn); }
-.market-focus-tabs { display: flex; gap: 18px; min-height: 30px; border-bottom: 1px solid var(--line); }
-.focus-tab { position: relative; border: 0; background: transparent; color: var(--muted); padding: 4px 0 9px; font-size: 12px; cursor: pointer; }
+.market-focus-tabs { display: flex; gap: 24px; min-height: 32px; border-bottom: 1px solid var(--line); }
+.focus-tab { position: relative; border: 0; background: transparent; color: var(--muted); padding: 4px 0 10px; font: 600 9px/1 ui-monospace, monospace; letter-spacing: .06em; cursor: pointer; }
 .focus-tab.active { color: var(--text); font-weight: 650; }
 .focus-tab.active::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--accent); }
-.market-primary-layout { display: grid; grid-template-columns: minmax(0, 1fr) 270px; gap: 10px; align-items: stretch; }
+.market-primary-layout { display: grid; grid-template-columns: minmax(0, 1fr) 286px; gap: 0; align-items: stretch; border: 1px solid var(--line); }
 .market-chart-panel { min-width: 0; }
 .chart-caption { display: block; margin-top: 3px; color: var(--subtle); font-size: 10px; }
 .chart-tools { display: flex; align-items: center; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }
-.period-group { display: flex; align-items: center; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); }
-.period-btn { min-width: 38px; border: 0; background: transparent; color: var(--muted); border-radius: 2px; padding: 5px 7px; font-size: 10px; cursor: pointer; }
-.period-btn:hover { color: var(--text); background: #1d2023; }
-.period-btn.active { color: #17140e; background: var(--accent); font-weight: 700; }
+.period-group { display: flex; align-items: center; gap: 0; padding: 0; border: 1px solid var(--line); border-radius: 0; background: transparent; }
+.period-btn { min-width: 38px; border: 0; border-right: 1px solid var(--line); background: transparent; color: var(--muted); border-radius: 0; padding: 6px 7px; font-size: 9px; cursor: pointer; }
+.period-btn:last-child { border-right: 0; }
+.period-btn:hover { color: var(--text); background: rgba(209,201,188,.28); }
+.period-btn.active { color: #f4f0e8; background: #46483f; font-weight: 700; }
 .compact-select { min-height: 30px; padding: 5px 8px; font-size: 10px; }
-.chart-shell { position: relative; margin-top: 10px; }
-.market-main-chart { height: 440px; }
+.chart-shell { position: relative; margin-top: 8px; border-top: 1px solid var(--line); }
+.market-main-chart { height: 500px; }
 .chart-footnote { display: flex; align-items: center; gap: 8px; color: var(--subtle); font-size: 10px; margin-top: 7px; font-variant-numeric: tabular-nums; }
 .chart-footnote b { color: var(--muted); font-weight: 550; }
-.market-rail { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-.rail-panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; }
-.rail-label { color: var(--subtle); font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
+.market-rail { display: flex; flex-direction: column; gap: 0; min-width: 0; border-left: 1px solid var(--line); }
+.rail-panel { background: rgba(239,235,227,.55); border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: 16px; }
+.rail-label { color: var(--subtle); font: 600 8px/1 ui-monospace, monospace; letter-spacing: .11em; text-transform: uppercase; }
 .rail-symbol { margin-top: 9px; color: var(--muted); font-size: 11px; }
 .rail-price { margin-top: 3px; color: var(--text); font-size: 29px; line-height: 1.08; font-weight: 680; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
 .rail-price.gold { color: var(--accent-strong); }
 .rail-change { margin-top: 6px; font-size: 11px; font-variant-numeric: tabular-nums; }
 .data-list { margin: 14px 0 0; border-top: 1px solid var(--line); }
-.data-list > div { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 30px; border-bottom: 1px solid #222529; }
+.data-list > div { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 31px; border-bottom: 1px solid var(--line); }
 .data-list dt { color: var(--subtle); font-size: 10px; }
 .data-list dd { margin: 0; color: var(--text); font-size: 11px; font-weight: 550; font-variant-numeric: tabular-nums; }
 .data-health { flex: 1; }
-.health-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 32px; border-bottom: 1px solid #222529; color: var(--muted); font-size: 10px; }
+.health-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 32px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 10px; }
 .health-row span { display: inline-flex; align-items: center; gap: 6px; }
 .health-row b { max-width: 145px; color: var(--text); font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .data-health p { margin: 12px 0 0; color: var(--subtle); font-size: 10px; line-height: 1.6; }
 .pos { color: var(--ok); }
 .neg { color: var(--bad); }
-@media (max-width: 1100px) { .market-primary-layout { grid-template-columns: minmax(0, 1fr) 240px; } }
-@media (max-width: 900px) { .market-primary-layout { grid-template-columns: 1fr; } .market-rail { display: grid; grid-template-columns: 1fr 1fr; } .market-main-chart { height: 380px; } }
+@media (max-width: 1100px) { .market-primary-layout { grid-template-columns: minmax(0, 1fr) 245px; } }
+@media (max-width: 900px) { .market-primary-layout { grid-template-columns: 1fr; } .market-rail { display: grid; grid-template-columns: 1fr 1fr; border-left: 0; border-top: 1px solid var(--line); } .rail-panel + .rail-panel { border-left: 1px solid var(--line); } .market-main-chart { height: 410px; } }
 @media (max-width: 620px) { .section-bar { align-items: flex-start; flex-direction: column; } .market-rail { grid-template-columns: 1fr; } .chart-tools { justify-content: flex-start; } .period-group { max-width: 100%; overflow-x: auto; } }
 </style>

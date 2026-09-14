@@ -81,15 +81,15 @@ function barWidth(value) {
   <section class="sg-workspace">
     <div class="section-bar">
       <div>
-        <h1>策略生成</h1>
-        <span>风险偏好问卷 · 风险等级 · 建议配置比例 · AI 策略说明</span>
+        <h1>STRATEGY FOUNDRY / OBJECTIVE BUILDER</h1>
+        <span>目标 · 风险预算 · 约束 · 确定性配置 · AI 策略说明</span>
       </div>
-      <span class="section-status"><i class="ok"></i>{{ generating ? '正在生成策略' : '问卷已就绪' }}</span>
+      <span class="section-status"><i class="ok"></i>{{ generating ? 'GENERATING' : 'OBJECTIVE READY' }}</span>
     </div>
 
     <div class="sg-layout">
       <aside class="panel sg-input-panel">
-        <div class="sg-panel-title">风险偏好问卷</div>
+        <div class="sg-panel-title">OBJECTIVE / 风险偏好问卷</div>
 
         <div class="sg-field">
           <label>投资期限</label>
@@ -148,7 +148,7 @@ function barWidth(value) {
         </div>
 
         <button class="btn primary sg-run" type="button" :disabled="generating" @click="generate">
-          {{ generating ? '正在生成策略…' : '生成个性化策略' }}
+          {{ generating ? 'GENERATING…' : 'GENERATE STRATEGY' }}
         </button>
         <button v-if="result || error" type="button" class="text-action" @click="clearAll">清空结果</button>
         <div class="sg-note">风险等级与配置比例由确定性计算层按问卷计算，模型仅负责解读；建议为展示型参考，不构成投资建议。</div>
@@ -159,7 +159,7 @@ function barWidth(value) {
           <div class="sg-banner" :class="levelClass">
             <span class="sg-banner-dot"></span>
             <div>
-              <b>风险等级：{{ levelLabel }}</b>
+              <b>RISK PROFILE / {{ levelLabel }}</b>
               <span>
                 综合得分 {{ result.profile.score }} / 100 ·
                 期限 {{ horizonYears }} 年 · 可承受回撤 {{ maxDrawdownPct }}% · 目标年化 {{ targetReturnPct }}%
@@ -169,7 +169,7 @@ function barWidth(value) {
 
           <div class="panel sg-card">
             <div class="sg-card-head">
-              <div><b>建议资产配置</b><span>合计 100% · 由问卷确定性映射，AI 不改写比例</span></div>
+              <div><b>ALLOCATION / 建议资产配置</b><span>合计 100% · 由问卷确定性映射，AI 不改写比例</span></div>
               <span v-if="result.profile.gold_amount != null" class="sg-amount">
                 黄金 ETF 建议金额 {{ fmtMoney(result.profile.gold_amount) }}
               </span>
@@ -201,7 +201,7 @@ function barWidth(value) {
 
           <div class="panel sg-report-panel">
             <div class="sg-report-head">
-              <div><b>AI 策略说明</b><span>基于确定性等级与配置比例生成，数值口径以配置卡为准</span></div>
+              <div><b>STRATEGY DOSSIER / AI 策略说明</b><span>基于确定性等级与配置比例生成，数值口径以配置区为准</span></div>
             </div>
             <div class="sg-output">{{ result.content?.content || result.content || '（暂无策略说明）' }}</div>
           </div>
@@ -217,8 +217,8 @@ function barWidth(value) {
         <DataState v-else-if="error" state="error" title="策略生成失败" :message="error" retryable @retry="generate" />
 
         <div v-else class="panel sg-empty">
-          <div class="sg-empty-mark">策略</div>
-          <b>等待生成策略</b>
+          <div class="sg-empty-mark">PLAN</div>
+          <b>WAITING FOR OBJECTIVE</b>
           <span>回答左侧风险偏好问卷后点击生成，即可查看风险等级、建议资产配置比例与 AI 策略说明。</span>
         </div>
       </div>
@@ -227,27 +227,27 @@ function barWidth(value) {
 </template>
 
 <style scoped>
-.sg-workspace { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
+.sg-workspace { display: flex; flex-direction: column; gap: 12px; margin: 0; }
 .section-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 38px; }
 .section-bar h1 { margin: 0; color: var(--text); font-size: 16px; font-weight: 680; letter-spacing: .01em; }
 .section-bar > div > span { display: block; margin-top: 3px; color: var(--subtle); font-size: 10px; }
 .section-status { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 11px; }
 .section-status i { width: 6px; height: 6px; border-radius: 50%; background: var(--bad); }
 .section-status i.ok { background: var(--ok); }
-.sg-layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 10px; align-items: start; }
-.sg-input-panel { position: sticky; top: 10px; }
-.sg-panel-title { color: var(--text); font-size: 12px; font-weight: 680; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.sg-layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 0; align-items: start; border: 1px solid var(--line); }
+.sg-input-panel { position: sticky; top: 10px; border: 0 !important; border-right: 1px solid var(--line) !important; }
+.sg-panel-title { color: var(--text); font: 650 9px/1 ui-monospace, monospace; letter-spacing: .08em; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
 .sg-field { display: flex; flex-direction: column; gap: 5px; margin-top: 12px; }
 .sg-field label { color: var(--muted); font-size: 10px; }
 .sg-field > span { color: var(--subtle); font-size: 9px; line-height: 1.5; }
-.sg-input { width: 100%; height: 34px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius-sm); color: var(--text); padding: 0 9px; font-size: 12px; outline: none; }
+.sg-input { width: 100%; height: 34px; background: transparent; border: 0; border-bottom: 1px solid var(--line-strong); border-radius: 0; color: var(--text); padding: 0 4px; font-size: 12px; outline: none; }
 .sg-input:focus { border-color: #6a5b40; }
 .sg-run { width: 100%; min-height: 36px; margin-top: 14px; }
 .sg-input-panel .text-action { margin-top: 8px; border: 0; background: transparent; color: var(--subtle); font-size: 9px; cursor: pointer; }
 .sg-input-panel .text-action:hover { color: var(--text); }
 .sg-note { margin-top: 9px; color: var(--subtle); font-size: 9px; line-height: 1.5; }
 .sg-main { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-.sg-banner { display: flex; align-items: center; gap: 10px; padding: 10px 13px; border-radius: var(--radius-sm); border: 1px solid var(--line); background: var(--panel); }
+.sg-banner { display: flex; align-items: center; gap: 10px; padding: 10px 13px; border-radius: 0; border: 1px solid var(--line); background: transparent; }
 .sg-banner .sg-banner-dot { width: 8px; height: 8px; border-radius: 50%; background: #5b6066; flex: 0 0 auto; }
 .sg-banner.low .sg-banner-dot { background: var(--ok); }
 .sg-banner.medium { border-color: rgba(227,180,102,.4); background: rgba(227,180,102,.06); }
@@ -264,25 +264,25 @@ function barWidth(value) {
 .sg-alloc { display: flex; flex-direction: column; gap: 9px; }
 .sg-alloc-row { display: grid; grid-template-columns: 84px minmax(0, 1fr) 62px; align-items: center; gap: 10px; }
 .sg-alloc-label { color: var(--muted); font-size: 10px; }
-.sg-alloc-track { position: relative; height: 9px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); overflow: hidden; }
-.sg-alloc-track i { display: block; height: 100%; border-radius: 999px; background: #4d5460; transition: width .45s ease; }
-.sg-alloc-track i.gold { background: linear-gradient(90deg, #a8863f, var(--accent-strong)); }
+.sg-alloc-track { position: relative; height: 8px; border-radius: 0; background: rgba(207,201,190,.45); border: 1px solid var(--line); overflow: hidden; }
+.sg-alloc-track i { display: block; height: 100%; border-radius: 0; background: #676b64; transition: width .45s ease; }
+.sg-alloc-track i.gold { background: var(--accent); }
 .sg-alloc-row b { color: var(--text); font-size: 11px; font-weight: 650; text-align: right; font-variant-numeric: tabular-nums; }
-.sg-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 7px; }
-.sg-metric { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; }
+.sg-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0; border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
+.sg-metric { background: transparent; border: 0; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); border-radius: 0; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; }
 .sg-metric span { color: var(--subtle); font-size: 9px; }
 .sg-metric b { color: var(--text); font-size: 16px; font-weight: 680; font-variant-numeric: tabular-nums; line-height: 1; }
 .sg-metric small { color: var(--muted); font-size: 8px; }
 .sg-reasons { display: flex; flex-direction: column; gap: 6px; }
-.sg-reason { border-left: 3px solid var(--line-strong); background: var(--panel); border-radius: var(--radius-sm); padding: 8px 11px; }
+.sg-reason { border-left: 2px solid var(--line-strong); background: rgba(239,235,227,.48); border-radius: 0; padding: 8px 11px; }
 .sg-reason span { color: var(--muted); font-size: 10px; line-height: 1.55; }
 .sg-report-panel { display: flex; flex-direction: column; }
 .sg-report-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
 .sg-report-head b { color: var(--text); font-size: 12px; font-weight: 680; }
 .sg-report-head span { display: block; margin-top: 3px; color: var(--subtle); font-size: 9px; }
-.sg-output { margin-top: 10px; max-height: 420px; overflow: auto; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 12px 14px; color: var(--text); font-size: 11px; line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; }
+.sg-output { margin-top: 10px; max-height: 420px; overflow: auto; background: transparent; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); border-radius: 0; padding: 14px 2px; color: var(--text); font-size: 11px; line-height: 1.78; white-space: pre-wrap; overflow-wrap: anywhere; }
 .sg-empty { display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 46px 20px; text-align: center; }
-.sg-empty-mark { color: var(--accent); border: 1px solid var(--line-strong); border-radius: 50%; width: 54px; height: 54px; display: grid; place-items: center; font-size: 12px; letter-spacing: .1em; }
+.sg-empty-mark { color: var(--accent-strong); border: 1px solid var(--line-strong); border-radius: 0; width: 58px; height: 40px; display: grid; place-items: center; font: 650 9px/1 ui-monospace, monospace; letter-spacing: .08em; }
 .sg-empty b { color: var(--text); font-size: 12px; font-weight: 650; }
 .sg-empty span { color: var(--subtle); font-size: 10px; line-height: 1.6; max-width: 380px; }
 @media (max-width: 980px) { .sg-layout { grid-template-columns: 280px minmax(0, 1fr); } }

@@ -175,8 +175,8 @@ onMounted(() => {
   <div class="ai">
     <div class="research-head">
       <div>
-        <h2>研究工作台</h2>
-        <span>行情、财报与产业链研究能力</span>
+        <h2>RESEARCH INTELLIGENCE / ANALYSIS DESK</h2>
+        <span>问题 → 证据 → 反证 → 风险 → 结论；行情、财报与产业链能力保持联动</span>
       </div>
       <div class="engine-status" :title="statusError || '研究引擎状态'">
         <i :class="aiStatus?.available ? 'ok' : 'bad'"></i>
@@ -188,7 +188,7 @@ onMounted(() => {
     <div class="research-layout">
       <aside class="toolbox">
         <section class="tool-section">
-          <div class="tool-head"><div><b>行情快照</b><span>黄金ETF</span></div><button type="button" class="text-action" @click="runQuote" :disabled="quoteLoading">{{ quoteLoading ? '分析中' : '生成' }}</button></div>
+          <div class="tool-head"><div><b>01 / MARKET EVIDENCE</b><span>黄金ETF行情快照</span></div><button type="button" class="text-action" @click="runQuote" :disabled="quoteLoading">{{ quoteLoading ? '分析中' : '生成' }}</button></div>
           <div v-if="quoteData" class="quote-snapshot">
             <b>{{ quoteData.price }}</b>
             <span :class="quoteData.change >= 0 ? 'pos' : 'neg'">{{ quoteData.change }} · {{ quoteData.change_pct }}%</span>
@@ -201,7 +201,7 @@ onMounted(() => {
         </section>
 
         <section class="tool-section">
-          <div class="tool-head"><div><b>财报解析</b><span>文本研究</span></div><button type="button" class="text-action" @click="runReport" :disabled="reportLoading || !reportText.trim()">{{ reportLoading ? '解析中' : '解析' }}</button></div>
+          <div class="tool-head"><div><b>02 / FILING EVIDENCE</b><span>财报文本研究</span></div><button type="button" class="text-action" @click="runReport" :disabled="reportLoading || !reportText.trim()">{{ reportLoading ? '解析中' : '解析' }}</button></div>
           <textarea v-model="reportText" aria-label="财报文本" placeholder="粘贴财报内容或关键数据…" rows="5"></textarea>
           <DataState v-if="reportLoading" state="loading" title="正在解析财报" compact />
           <DataState v-else-if="reportError" state="error" title="财报解析失败" :message="reportError" compact retryable @retry="runReport" />
@@ -209,7 +209,7 @@ onMounted(() => {
         </section>
 
         <section class="tool-section">
-          <div class="tool-head"><div><b>产业链研究</b><span>主题分析</span></div><button type="button" class="text-action" @click="runChain" :disabled="chainLoading || !chainNode.trim()">{{ chainLoading ? '分析中' : '分析' }}</button></div>
+          <div class="tool-head"><div><b>03 / CHAIN EVIDENCE</b><span>主题与产业链分析</span></div><button type="button" class="text-action" @click="runChain" :disabled="chainLoading || !chainNode.trim()">{{ chainLoading ? '分析中' : '分析' }}</button></div>
           <input v-model="chainNode" class="input" aria-label="产业链主题" placeholder="黄金 / 铜 / 芯片…" />
           <DataState v-if="chainLoading" state="loading" title="正在分析产业链" compact />
           <DataState v-else-if="chainError" state="error" title="产业链分析失败" :message="chainError" compact retryable @retry="runChain" />
@@ -219,25 +219,25 @@ onMounted(() => {
 
       <main class="panel conversation-panel">
         <div class="conversation-head">
-          <div><b>研究会话</b><span>结合市场、策略或材料继续追问</span></div>
-          <span class="context-note">保留最近 20 条上下文</span>
+          <div><b>RESEARCH NOTES</b><span>结合市场、策略或材料连续建立研究论证</span></div>
+          <span class="context-note">20 MESSAGE CONTEXT</span>
         </div>
 
         <div class="prompt-templates">
-          <span>研究模板</span>
+          <span>QUESTION TEMPLATES</span>
           <button v-for="s in sugg" :key="s" type="button" @click="useSuggestion(s)">{{ s }}</button>
         </div>
 
         <div class="chat-window" ref="chatBox" role="log" aria-live="polite" aria-relevant="additions text" aria-label="研究会话记录">
           <div v-for="(m, i) in messages" :key="i" class="message-row" :class="m.role">
-            <div class="message-meta"><span>{{ m.role === 'user' ? 'YOU' : 'JARVIS RESEARCH' }}</span><i></i></div>
+            <div class="message-meta"><span>{{ m.role === 'user' ? 'RESEARCH QUESTION' : 'JARVIS NOTE' }}</span><i></i></div>
             <div class="message-content">{{ m.content }}</div>
           </div>
         </div>
 
         <div class="composer">
           <input v-model="input" @keyup.enter="sendChat" aria-label="研究问题" placeholder="输入研究问题，例如：比较黄金ETF与伦敦金近期走势" :disabled="sending" />
-          <button type="button" class="send-btn" @click="sending ? stopChat() : sendChat()" :class="{ stop: sending }" :aria-label="sending ? '停止生成' : '提交研究问题'">{{ sending ? '停止' : '提交研究' }}</button>
+          <button type="button" class="send-btn" @click="sending ? stopChat() : sendChat()" :class="{ stop: sending }" :aria-label="sending ? '停止生成' : '提交研究问题'">{{ sending ? 'STOP' : 'RUN RESEARCH' }}</button>
         </div>
         <div class="research-disclaimer">生成内容用于研究辅助，请结合原始数据和风险约束独立判断。</div>
       </main>
@@ -246,36 +246,36 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.ai { display: flex; flex-direction: column; gap: 10px; }
-.research-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; min-height: 38px; }
-.research-head h2 { margin: 0; color: var(--text); font-size: 16px; font-weight: 680; }
-.research-head > div:first-child > span { display: block; margin-top: 3px; color: var(--subtle); font-size: 10px; }
+.ai { display: flex; flex-direction: column; gap: 12px; }
+.research-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 14px; min-height: 50px; padding: 0 2px 10px; border-bottom: 1px solid var(--line); }
+.research-head h2 { margin: 0; color: var(--text); font: 650 13px/1 ui-monospace, monospace; letter-spacing: .1em; }
+.research-head > div:first-child > span { display: block; margin-top: 7px; color: var(--subtle); font-size: 10px; }
 .engine-status { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 9px; }
 .engine-status i { width: 6px; height: 6px; border-radius: 50%; background: var(--bad); }
 .engine-status i.ok { background: var(--ok); }
-.engine-status b { color: var(--subtle); border: 1px solid var(--line-strong); border-radius: 3px; padding: 2px 5px; font-size: 8px; letter-spacing: .06em; }
-.research-layout { display: grid; grid-template-columns: 310px minmax(0, 1fr); gap: 10px; align-items: stretch; min-width: 0; }
-.toolbox { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-.tool-section, .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
-.tool-section { padding: 12px; }
+.engine-status b { color: var(--subtle); border: 1px solid var(--line-strong); border-radius: 0; padding: 2px 5px; font-size: 8px; letter-spacing: .06em; }
+.research-layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 0; align-items: stretch; min-width: 0; border: 1px solid var(--line); }
+.toolbox { display: flex; flex-direction: column; gap: 0; min-width: 0; border-right: 1px solid var(--line); }
+.tool-section, .panel { background: rgba(239,235,227,.52); border: 0; border-bottom: 1px solid var(--line); border-radius: 0; }
+.tool-section { padding: 13px; }
 .tool-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 9px; }
 .tool-head > div { display: flex; flex-direction: column; gap: 3px; }
-.tool-head b { color: var(--text); font-size: 11px; font-weight: 650; }
+.tool-head b { color: var(--text); font: 650 9px/1 ui-monospace, monospace; letter-spacing: .06em; }
 .tool-head span { color: var(--subtle); font-size: 8px; }
 .text-action { border: 0; background: transparent; color: var(--accent-strong); padding: 1px 0; font-size: 9px; cursor: pointer; }
 .text-action:disabled { opacity: .42; cursor: not-allowed; }
-.quote-snapshot { display: grid; grid-template-columns: 1fr auto; gap: 3px 8px; align-items: baseline; margin-top: 10px; padding: 9px 10px; background: var(--surface); border: 1px solid #222529; border-radius: var(--radius-sm); }
+.quote-snapshot { display: grid; grid-template-columns: 1fr auto; gap: 3px 8px; align-items: baseline; margin-top: 10px; padding: 9px 0; background: transparent; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); border-radius: 0; }
 .quote-snapshot > b { color: var(--accent-strong); font-size: 19px; line-height: 1; font-weight: 680; font-variant-numeric: tabular-nums; }
 .quote-snapshot > span { font-size: 9px; font-variant-numeric: tabular-nums; }
 .quote-snapshot small { grid-column: 1 / -1; color: var(--subtle); font-size: 8px; }
-.input, textarea { width: 100%; background: var(--surface); border: 1px solid var(--line-strong); color: var(--text); border-radius: var(--radius-sm); outline: none; font-size: 10px; }
-.input { height: 32px; padding: 0 9px; margin-top: 9px; }
-textarea { padding: 8px 9px; margin-top: 9px; resize: vertical; line-height: 1.5; }
+.input, textarea { width: 100%; background: transparent; border: 0; border-bottom: 1px solid var(--line-strong); color: var(--text); border-radius: 0; outline: none; font-size: 10px; }
+.input { height: 32px; padding: 0 4px; margin-top: 9px; }
+textarea { padding: 8px 4px; margin-top: 9px; resize: vertical; line-height: 1.5; }
 .input:focus, textarea:focus { border-color: #695b40; }
 .tool-section :deep(.data-state) { margin-top: 9px; }
-.tool-output { margin-top: 9px; max-height: 170px; overflow: auto; border-left: 2px solid #72684f; background: var(--surface); padding: 8px 9px; color: var(--text); font-size: 9px; line-height: 1.6; white-space: pre-wrap; }
+.tool-output { margin-top: 9px; max-height: 170px; overflow: auto; border-left: 2px solid var(--accent); background: rgba(232,229,225,.58); padding: 8px 9px; color: var(--text); font-size: 9px; line-height: 1.6; white-space: pre-wrap; }
 .tool-empty { margin-top: 9px; color: var(--subtle); font-size: 9px; line-height: 1.55; }
-.conversation-panel { display: flex; flex-direction: column; min-width: 0; padding: 13px; }
+.conversation-panel { display: flex; flex-direction: column; min-width: 0; padding: 13px; background: rgba(245,242,235,.35) !important; }
 .conversation-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
 .conversation-head > div { display: flex; align-items: baseline; gap: 8px; }
 .conversation-head b { color: var(--text); font-size: 12px; font-weight: 680; }
@@ -283,21 +283,21 @@ textarea { padding: 8px 9px; margin-top: 9px; resize: vertical; line-height: 1.5
 .context-note { color: var(--muted) !important; }
 .prompt-templates { display: flex; align-items: center; gap: 6px; padding: 9px 0; overflow-x: auto; }
 .prompt-templates > span { color: var(--subtle); font-size: 8px; white-space: nowrap; margin-right: 2px; }
-.prompt-templates button { flex: 0 0 auto; border: 1px solid var(--line-strong); background: transparent; color: var(--muted); border-radius: 3px; padding: 5px 7px; font-size: 9px; cursor: pointer; }
+.prompt-templates button { flex: 0 0 auto; border: 1px solid var(--line-strong); background: transparent; color: var(--muted); border-radius: 0; padding: 5px 7px; font-size: 9px; cursor: pointer; }
 .prompt-templates button:hover { border-color: #5b503b; color: var(--text); background: rgba(201,166,95,.04); }
-.chat-window { flex: 1; min-height: 470px; max-height: 620px; overflow: auto; background: var(--surface); border: 1px solid #222529; border-radius: var(--radius-sm); }
-.message-row { display: grid; grid-template-columns: 108px minmax(0, 1fr); gap: 12px; padding: 13px 14px; border-bottom: 1px solid #222529; }
+.chat-window { flex: 1; min-height: 470px; max-height: 620px; overflow: auto; background: transparent; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); border-radius: 0; }
+.message-row { display: grid; grid-template-columns: 122px minmax(0, 1fr); gap: 12px; padding: 13px 5px; border-bottom: 1px solid var(--line); }
 .message-row:last-child { border-bottom: 0; }
-.message-row.user { background: #151719; }
-.message-row.assistant { background: #121416; }
+.message-row.user { background: rgba(209,201,188,.13); }
+.message-row.assistant { background: transparent; }
 .message-meta { display: flex; align-items: flex-start; gap: 6px; color: var(--subtle); font-size: 8px; letter-spacing: .045em; }
 .message-meta i { width: 4px; height: 4px; margin-top: 4px; border-radius: 50%; background: #555a60; }
 .message-row.assistant .message-meta i { background: var(--accent); }
 .message-content { color: var(--text); font-size: 11px; line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; }
 .composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; margin-top: 9px; }
-.composer input { width: 100%; height: 38px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius-sm); color: var(--text); padding: 0 10px; font-size: 10px; outline: none; }
+.composer input { width: 100%; height: 38px; background: transparent; border: 0; border-bottom: 1px solid var(--line-strong); border-radius: 0; color: var(--text); padding: 0 5px; font-size: 10px; outline: none; }
 .composer input:focus { border-color: #695b40; }
-.send-btn { min-width: 92px; border: 1px solid var(--accent); border-radius: var(--radius-sm); background: var(--accent); color: #17140e; padding: 0 12px; font-size: 10px; font-weight: 700; cursor: pointer; }
+.send-btn { min-width: 104px; border: 1px solid #383b33; border-radius: 0; background: #383b33; color: #f2eee6; padding: 0 12px; font: 700 8px/1 ui-monospace, monospace; letter-spacing: .06em; cursor: pointer; }
 .send-btn.stop { border-color: #684043; background: rgba(239,83,80,.08); color: #e47d79; }
 .research-disclaimer { margin-top: 6px; color: var(--subtle); font-size: 8px; line-height: 1.5; }
 .pos { color: #27c46b; } .neg { color: #ef5350; }
