@@ -107,6 +107,7 @@ onMounted(() => {
     <AnalysisOsPage
       v-if="visitedTabs.has('研究终端')"
       v-show="activeTab === '研究终端'"
+      :active="activeTab === '研究终端'"
       @navigate="switchTab"
     />
 

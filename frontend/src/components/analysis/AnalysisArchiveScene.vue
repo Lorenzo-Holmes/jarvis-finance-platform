@@ -23,12 +23,13 @@ import {
   Vector2,
   WebGLRenderer,
 } from 'three'
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 const props = defineProps({
   assets: { type: Array, default: () => [] },
   selectedId: { type: String, default: '' },
   query: { type: String, default: '' },
+  active: { type: Boolean, default: true },
 })
 
 const emit = defineEmits(['select'])
@@ -43,6 +44,7 @@ let raycaster = null
 let pointer = null
 let resizeObserver = null
 let animationFrame = 0
+let rendering = false
 let reducedMotion = false
 let disposed = false
 const entries = []
@@ -264,7 +266,11 @@ function onClick(event) {
 }
 
 function renderFrame(time) {
-  if (disposed || !renderer || !scene || !camera || !root) return
+  if (disposed || !renderer || !scene || !camera || !root || !props.active) {
+    rendering = false
+    animationFrame = 0
+    return
+  }
   const easing = reducedMotion ? 1 : 0.12
   root.rotation.x += ((root.userData.targetRotationX || 0) - root.rotation.x) * easing
   root.rotation.y += ((root.userData.targetRotationY || 0) - root.rotation.y) * easing
@@ -282,6 +288,18 @@ function renderFrame(time) {
   })
 
   renderer.render(scene, camera)
+  animationFrame = requestAnimationFrame(renderFrame)
+}
+
+function stopRendering() {
+  if (animationFrame) cancelAnimationFrame(animationFrame)
+  animationFrame = 0
+  rendering = false
+}
+
+function startRendering() {
+  if (disposed || !renderer || rendering || !props.active) return
+  rendering = true
   animationFrame = requestAnimationFrame(renderFrame)
 }
 
@@ -341,7 +359,7 @@ function init() {
     renderer.domElement.addEventListener('click', onClick)
     resizeObserver = new ResizeObserver(resize)
     resizeObserver.observe(element)
-    animationFrame = requestAnimationFrame(renderFrame)
+    startRendering()
   } catch (error) {
     console.error('Analysis OS WebGL scene failed to initialize', error)
     failed.value = true
@@ -350,7 +368,7 @@ function init() {
 
 function dispose() {
   disposed = true
-  cancelAnimationFrame(animationFrame)
+  stopRendering()
   resizeObserver?.disconnect()
   if (renderer?.domElement) {
     renderer.domElement.removeEventListener('pointermove', onPointerMove)
@@ -370,6 +388,17 @@ function dispose() {
 
 watch(() => props.assets, buildArchiveArray, { deep: true })
 watch(() => [props.selectedId, props.query], updateVisualState)
+watch(() => props.active, async (active) => {
+  if (active) {
+    await nextTick()
+    if (props.active) {
+      resize()
+      startRendering()
+    }
+  } else {
+    stopRendering()
+  }
+})
 
 onMounted(init)
 onBeforeUnmount(dispose)

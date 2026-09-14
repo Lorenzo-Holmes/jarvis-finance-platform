@@ -5,6 +5,10 @@ import AnalysisArchiveScene from '../components/analysis/AnalysisArchiveScene.vu
 
 const emit = defineEmits(['navigate'])
 
+const props = defineProps({
+  active: { type: Boolean, default: false },
+})
+
 const FALLBACK_ASSETS = [
   { id: 'fallback:XAU', symbol: 'XAU', name: '伦敦金', market: 'global', marketLabel: 'GLOBAL', sector: 'METALS', price: '—', change: '—', direction: 'up', risk: 'MEDIUM', confidence: 72 },
   { id: 'fallback:518850', symbol: '518850', name: '黄金 ETF', market: 'a_share', marketLabel: 'CN · SSE', sector: 'COMMODITY', price: '—', change: '—', direction: 'up', risk: 'LOW', confidence: 76 },
@@ -259,6 +263,7 @@ onBeforeUnmount(() => {
           :assets="assets"
           :selected-id="selectedId"
           :query="query"
+          :active="props.active"
           @select="selectAsset"
         />
 
