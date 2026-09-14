@@ -92,7 +92,7 @@ onMounted(() => {
     <LoginView @logged-in="handleLoggedIn" />
   </div>
 
-  <div v-else class="container">
+  <div v-else class="container" :class="{ 'container--trading': activeTab === '模拟盘' }">
     <AppHeader :user="user" @logout="logout" @update-profile="updateProfile" />
     <AppTabs :tabs="tabs" :active="activeTab" @change="switchTab" />
 
@@ -126,7 +126,7 @@ onMounted(() => {
       <AdminView />
     </section>
 
-    <footer class="foot">
+    <footer v-if="activeTab !== '模拟盘'" class="foot">
       <span>贾维斯金融投研平台 · 仅供研究参考，不构成投资建议</span>
     </footer>
   </div>
@@ -134,6 +134,7 @@ onMounted(() => {
 
 <style scoped>
 .container { max-width: 1580px; margin: 0 auto; padding: 0 20px 32px; }
+.container--trading { max-width: none; padding-left: 12px; padding-right: 12px; padding-bottom: 12px; }
 .panel-wrap { margin-top: 4px; }
 .foot { color: var(--subtle); font-size: 11px; margin-top: 16px; }
 .auth-shell { position: relative; min-height: 100vh; background: var(--bg); }
