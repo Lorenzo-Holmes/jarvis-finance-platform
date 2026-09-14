@@ -917,6 +917,8 @@ JARVIS 映射原则：
 - [x] Focus GLB 与动态 JARVIS 模块标签保持同一档案坐标系。
 - [x] Glass Decrypt 关键帧中，高细节档案沿 Y 轴抬升，玻璃、框架、双环、导轨和动态标签保持对齐。
 - [x] 背景档案仍为连续 Archive Sea，没有因为引入 GLB 退化成单对象展示页。
+- [x] 430×844 首次进入为 `MOBILE / detailAssetStatus=idle / canvasCount=1`，不会下载或实例化高细节 GLB。
+- [x] 同一会话从 430px 切回 1440px 后为 `HIGH / detailAssetStatus=ready / canvasCount=1 / postProcessingStatus=enabled`，桌面按需加载成功。
 
 ### 22.3 继续原则
 
