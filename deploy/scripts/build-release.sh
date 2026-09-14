@@ -19,7 +19,6 @@ echo "[1/4] Java tests + production app jar"
 (
   cd java-backend
   "$MVN" clean test package
-  "$MVN" spring-boot:repackage
 )
 APP_JAR="$(find java-backend/target -maxdepth 1 -type f -name 'gold-research-backend-*.jar' ! -name '*migration*' ! -name '*.original' | head -1)"
 [ -n "$APP_JAR" ] || { echo "ERROR: app jar not found" >&2; exit 1; }

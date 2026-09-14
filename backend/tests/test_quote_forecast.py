@@ -209,12 +209,34 @@ def test_smart_quote_with_closes_adds_forecast_and_injects_prompt(monkeypatch):
 
 
 def test_smart_quote_insufficient_closes_omits_forecast(monkeypatch):
-    """样本不足时不报错，只是不输出 forecast（与风险端点的统一语义一致）。"""
+    """样本不足时明确返回 available=false，避免前端展示空的趋势指标。"""
+    called = False
+
+    def fake_chat_request(*args, **kwargs):
+        nonlocal called
+        called = True
+        return {"content": "不应调用模型"}
+
     monkeypatch.setattr(
         "backend.app.ai_service._chat_request",
-        lambda messages, temperature=0.7, max_tokens=None: {"content": "占位"},
+        fake_chat_request,
     )
     result = smart_quote({"price": 100}, closes=[100, 101, 102])
 
-    assert result["available"] is True
+    assert result["available"] is False
+    assert result["reason"] == "insufficient_closes"
+    assert result["bars"] == 3
+    assert called is False
     assert "forecast" not in result
+
+
+def test_smart_quote_empty_closes_is_unavailable(monkeypatch):
+    monkeypatch.setattr(
+        "backend.app.ai_service._chat_request",
+        lambda *args, **kwargs: {"content": "不应调用模型"},
+    )
+    result = smart_quote({"price": 100}, closes=[])
+
+    assert result["available"] is False
+    assert result["reason"] == "insufficient_closes"
+    assert result["bars"] == 0

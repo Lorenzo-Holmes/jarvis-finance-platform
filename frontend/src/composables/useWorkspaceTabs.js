@@ -1,15 +1,16 @@
 import { computed, ref, watch } from 'vue'
 
-const BASE_TABS = ['行情', '多市场', '回测', '模拟盘', '研究助手', '智能报价', '多空研报', '财报解析', '产业链图谱', '风险预警', '策略生成', '运维']
+const DEFAULT_TAB = '研究终端'
+const BASE_TABS = [DEFAULT_TAB, '行情', '多市场', '回测', '模拟盘', '研究助手', '智能报价', '多空研报', '财报解析', '产业链图谱', '风险预警', '策略生成', '运维']
 
 export function useWorkspaceTabs(userRef) {
-  const activeTab = ref('行情')
-  const visitedTabs = ref(new Set(['行情']))
+  const activeTab = ref(DEFAULT_TAB)
+  const visitedTabs = ref(new Set([DEFAULT_TAB]))
   const tabs = computed(() => userRef.value?.role === 'ADMIN' ? [...BASE_TABS, '管理'] : BASE_TABS)
 
   function reset() {
-    activeTab.value = '行情'
-    visitedTabs.value = new Set(['行情'])
+    activeTab.value = DEFAULT_TAB
+    visitedTabs.value = new Set([DEFAULT_TAB])
   }
 
   function switchTab(name) {

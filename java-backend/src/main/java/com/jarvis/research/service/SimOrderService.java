@@ -1,6 +1,7 @@
 package com.jarvis.research.service;
 
 import com.jarvis.research.market.MarketDataService;
+import com.jarvis.research.market.ExtendedMarketDataService;
 import com.jarvis.research.user.SimOrder;
 import com.jarvis.research.user.SimOrderRepository;
 import com.jarvis.research.user.SimPosition;
@@ -47,6 +48,9 @@ public class SimOrderService {
 
     @Autowired(required = false)
     private JdGoldService jdGoldService;
+
+    @Autowired(required = false)
+    private ExtendedMarketDataService extendedMarketDataService;
 
     @Transactional
     public Map<String, Object> placeStopMarket(Long userId,
@@ -211,7 +215,18 @@ public class SimOrderService {
                     && jdGoldService != null) {
                 raw = jdGoldService.latestQuote(symbol);
             } else {
-                return null;
+                String market = SimMarketSupport.market(symbol);
+                if (market == null || extendedMarketDataService == null) return null;
+                Map<String, Object> quote = extendedMarketDataService.quote(market, symbol);
+                BigDecimal price = decimal(quote.get("price"));
+                if (price == null || price.signum() <= 0) return null;
+                LocalDateTime quoteTime = SimMarketSupport.quoteTime(
+                        quote.get("quote_time") != null ? quote.get("quote_time") : quote.get("time"));
+                boolean stale = Boolean.TRUE.equals(quote.get("stale"))
+                        || quoteTime == null
+                        || quoteTime.isBefore(LocalDateTime.now().minusSeconds(
+                                SimMarketSupport.maxAgeSeconds(market)));
+                return new Quote(scaleValue(price), stale);
             }
             if (!(raw instanceof Map<?, ?> quote)) return null;
             BigDecimal price = decimal(quote.get("price"));
@@ -302,10 +317,7 @@ public class SimOrderService {
     }
 
     private void validateSupportedSymbol(String symbol) {
-        if (!"sh518850".equals(symbol)
-                && !"hf_XAU".equals(symbol)
-                && !"jd_zheshang".equals(symbol)
-                && !"jd_minsheng".equals(symbol)) {
+        if (SimMarketSupport.legacyMarket(symbol) == null && SimMarketSupport.market(symbol) == null) {
             throw new IllegalArgumentException("暂不支持该标的挂单: " + symbol);
         }
     }

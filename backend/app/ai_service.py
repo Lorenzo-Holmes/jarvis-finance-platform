@@ -367,16 +367,22 @@ def smart_quote(price_data: Dict[str, Any], closes: Optional[List[Any]] = None,
     ]
 
     forecast = None
-    if closes:
+    if closes is not None:
         forecast = trend_forecast(closes, horizon_days=horizon_days,
                                   confidence=confidence, symbol=symbol)
-        if forecast.get("available"):
-            sections.append(
-                f"未来 {forecast['horizon_days']} 个交易日趋势区间（统计基线外推，"
-                f"非投资建议）: {json.dumps(forecast, ensure_ascii=False, default=str)}"
-            )
-        else:
-            forecast = None
+        if not forecast.get("available"):
+            # Java 即使行情库暂时没有样本也会传入空列表；此时必须向调用方
+            # 明确返回不可用，不能误报 available=True 并继续调用 LLM。
+            return {
+                "available": False,
+                "reason": forecast.get("reason", "insufficient_closes"),
+                "bars": forecast.get("bars", 0),
+                "metrics": metrics,
+            }
+        sections.append(
+            f"未来 {forecast['horizon_days']} 个交易日趋势区间（统计基线外推，"
+            f"非投资建议）: {json.dumps(forecast, ensure_ascii=False, default=str)}"
+        )
 
     sections.append(f"原始行情: {json.dumps(price_data, ensure_ascii=False, default=str)}")
     sections.append("要求: 3-5 条要点, 含趋势判断/风险提示, 200字内。")

@@ -6,7 +6,7 @@ import DataState from './common/DataState.vue'
 import QuoteDetail from './market/QuoteDetail.vue'
 import TechnicalSummary from './market/TechnicalSummary.vue'
 import ResearchRail from './market/ResearchRail.vue'
-import { useMarketChart } from '../composables/useMarketChart'
+import { getMultiMarketChartOptions, useMarketChart } from '../composables/useMarketChart'
 import { usePolling } from '../composables/usePolling'
 import { useLatestRequest } from '../composables/useLatestRequest'
 import { useFreshness } from '../composables/useFreshness'
@@ -373,17 +373,7 @@ async function loadData() {
 }
 
 async function renderChart() {
-  await marketChart.renderCandles(kline.value, {
-    withVolume: false,
-    visibleCount: 60,
-    overlays: [
-      { name: 'SMA20', key: 'sma20', color: '#d7b56d', width: 1.35 },
-      { name: 'EMA12', key: 'ema12', color: '#8f989f', width: 1.1 },
-      { name: 'EMA26', key: 'ema26', color: '#7487a1', width: 1.05 },
-      { name: '布林上轨', key: 'bollinger_upper', color: '#796b4e', width: 1, type: 'dashed' },
-      { name: '布林下轨', key: 'bollinger_lower', color: '#796b4e', width: 1, type: 'dashed' },
-    ],
-  })
+  await marketChart.renderCandles(kline.value, getMultiMarketChartOptions())
 }
 
 function resizeChart() {

@@ -322,6 +322,7 @@ test('simulation view reuses multi-market instruments and enforces the trading w
   assert.match(source, /const marketOpen = computed/)
   assert.match(source, /模拟盘仅允许在开市时间成交/)
   assert.match(source, /<TradingTerminal/)
+  assert.match(terminalSource, /getMultiMarketChartOptions/)
   assert.match(terminalSource, /sessionOpen: \{ type: Boolean/)
   assert.match(terminalSource, /!props\.sessionOpen/)
   assert.match(ticketSource, /instruments: \{ type: Array/)
@@ -428,4 +429,9 @@ test('quote page renders trend band from backend forecast and never sends closes
   // tab 已注册并挂载
   assert.match(tabsSource, /'智能报价'/)
   assert.match(appSource, /QuotePage v-if="visitedTabs\.has\('智能报价'\)"/)
+})
+
+test('strategy analysis explicitly opts into the bounded CSRF retry policy', async () => {
+  const clientSource = await readFile(join(frontendRoot, 'src/api/client.js'), 'utf8')
+  assert.match(clientSource, /aiStrategy:[\s\S]*csrfRetry:\s*true/)
 })

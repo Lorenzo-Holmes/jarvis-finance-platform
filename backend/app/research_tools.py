@@ -644,7 +644,8 @@ def _z_score_for(confidence: Decimal) -> Decimal:
         (Decimal("0.975"), Decimal("1.9600")),
         (Decimal("0.95"), Decimal("1.6449")),
         (Decimal("0.90"), Decimal("1.2816")),
-        (Decimal("0.80"), Decimal("1.2816")),
+        (Decimal("0.80"), Decimal("0.8416")),
+        (Decimal("0.50"), Decimal("0.0000")),
     )
     for threshold, z in table:
         if confidence >= threshold:
@@ -725,4 +726,3 @@ def trend_forecast(closes_raw: Any, horizon_days: Any = None,
         "band_pct": _fmt(_percent(band, last_close), Q4),
         "vol_daily_pct": _fmt(std * Decimal("100"), Q4),
     }
-
