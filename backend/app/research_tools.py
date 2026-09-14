@@ -607,3 +607,122 @@ def strategy_profile(horizon_years: Any = None,
         result["capital"] = _fmt(capital_value, _Q2)
         result["gold_amount"] = _fmt(capital_value * gold_pct / Decimal("100"), _Q2)
     return result
+
+
+# ---- 智能询报价：价格走势趋势区间（FR-07）----
+# 输入为历史收盘价序列（由 Java 主后端注入真实日 K），趋势区间全部由本层确定性计算，
+# LLM 只负责解读，不得改写中心值与上下界。
+_TREND_MIN_BARS = 20         # 最少样本根数（不足则判定不可用）
+_TREND_MIN_RETURNS = 20      # 收益率最少个数（波动率估计需要）
+_TREND_DEFAULT_HORIZON = 5   # 默认预测天数（交易日）
+_TREND_MAX_HORIZON = 60      # 预测天数上限（超过则裁剪）
+_TREND_LOOKBACK = 20         # 斜率拟合使用的回看窗口
+
+
+def _linear_slope(values: List[Decimal]) -> Optional[Decimal]:
+    """最小二乘拟合斜率（每步增量），保留原始量纲。"""
+    n = len(values)
+    if n < 2:
+        return None
+    xs = [Decimal(i) for i in range(n)]
+    mean_x = sum(xs, Decimal("0")) / Decimal(n)
+    mean_y = sum(values, Decimal("0")) / Decimal(n)
+    numerator = sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, values))
+    denominator = sum((x - mean_x) ** 2 for x in xs)
+    if denominator == 0:
+        return None
+    return numerator / denominator
+
+
+def _z_score_for(confidence: Decimal) -> Decimal:
+    """给定置信度的单侧 z 值（正态近似，纯 Decimal 常量表）。
+
+    只覆盖常见置信度，其余取最近档，避免引入 scipy 等依赖、保持口径可审计。
+    """
+    table = (
+        (Decimal("0.99"), Decimal("2.3263")),
+        (Decimal("0.975"), Decimal("1.9600")),
+        (Decimal("0.95"), Decimal("1.6449")),
+        (Decimal("0.90"), Decimal("1.2816")),
+        (Decimal("0.80"), Decimal("1.2816")),
+    )
+    for threshold, z in table:
+        if confidence >= threshold:
+            return z
+    return table[-1][1]
+
+
+def trend_forecast(closes_raw: Any, horizon_days: Any = None,
+                   confidence: Any = None, symbol: Any = None) -> Dict[str, Any]:
+    """基于历史收盘价的统计/时序基线预测，输出未来价格走势趋势区间（FR-07）。
+
+    方法（确定性、无机器学习，纯 Decimal）：
+      1. 用最近 _TREND_LOOKBACK 根收盘价做最小二乘线性拟合，得到每步斜率；
+      2. 中心值 = 最近收盘价 + 斜率 × 预测天数（线性外推）；
+      3. 区间半宽 = 单侧 z 值 × 日收益波动率 × sqrt(预测天数) × 最近收盘价；
+      4. 上下界 = 中心值 ± 半宽。
+
+    返回（available=False 时仅含 available/bars/reason）：
+      - horizon_days / confidence：预测参数
+      - last_close / center / lower / upper：最近收盘价与趋势区间
+      - change_to_center_pct：中心值相对最近收盘价的涨跌幅（%）
+      - slope_pct_per_day：日均斜率（%，正=上行）
+      - band_pct：区间半宽占最近收盘价的百分比（%）
+      - vol_daily_pct：日收益波动率（%）
+    """
+    closes = [_decimal(value) for value in (closes_raw or [])]
+    closes = [value for value in closes if value is not None and value > 0]
+    bars = len(closes)
+    if bars < _TREND_MIN_BARS:
+        return {"available": False, "reason": "insufficient_closes", "bars": bars}
+
+    horizon = _decimal(horizon_days)
+    if horizon is None:
+        horizon = Decimal(_TREND_DEFAULT_HORIZON)
+    horizon = int(min(max(horizon, Decimal("1")), Decimal(_TREND_MAX_HORIZON)))
+
+    conf = _decimal(confidence)
+    if conf is None:
+        conf = Decimal("0.95")
+    conf = min(max(conf, Decimal("0.5")), Decimal("0.99"))
+
+    returns: List[Decimal] = []
+    for previous, current in zip(closes, closes[1:]):
+        returns.append(current / previous - Decimal("1"))
+    if len(returns) < _TREND_MIN_RETURNS:
+        return {"available": False, "reason": "insufficient_closes", "bars": bars}
+
+    last_close = closes[-1]
+    window = closes[-min(_TREND_LOOKBACK, bars):]
+    slope = _linear_slope(window)
+    if slope is None:
+        slope = Decimal("0")
+
+    center = last_close + slope * Decimal(horizon)
+
+    std = _std_dev(returns)
+    if std is None:
+        return {"available": False, "reason": "insufficient_closes", "bars": bars}
+    z = _z_score_for(conf)
+    band = z * std * Decimal(horizon).sqrt() * last_close
+    lower = center - band
+    upper = center + band
+    if lower <= 0:
+        lower = last_close * Decimal("0.01")
+
+    return {
+        "available": True,
+        "symbol": str(symbol) if symbol is not None else None,
+        "horizon_days": horizon,
+        "confidence": _fmt(conf),
+        "bars": bars,
+        "last_close": _fmt(last_close),
+        "center": _fmt(center),
+        "lower": _fmt(lower),
+        "upper": _fmt(upper),
+        "change_to_center_pct": _fmt(_percent(center - last_close, last_close), Q4),
+        "slope_pct_per_day": _fmt(_percent(slope, last_close), Q4),
+        "band_pct": _fmt(_percent(band, last_close), Q4),
+        "vol_daily_pct": _fmt(std * Decimal("100"), Q4),
+    }
+

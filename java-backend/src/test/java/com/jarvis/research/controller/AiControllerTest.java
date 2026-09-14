@@ -31,6 +31,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -194,5 +195,109 @@ class AiControllerTest {
 
         verify(rateLimit, never()).consume(anyLong());
         verify(proxy, never()).post(eq("/api/ai/analyze/strategy"), any());
+    }
+
+    @Test
+    void quoteUsesServerOwnedClosesAndIgnoresClientForgery() {
+        AiProxyService proxy = mock(AiProxyService.class);
+        AiRateLimitService rateLimit = mock(AiRateLimitService.class);
+        FeaturePermissionService permissions = mock(FeaturePermissionService.class);
+        MarketDataService marketDataService = mock(MarketDataService.class);
+        SimTradeService simTradeService = mock(SimTradeService.class);
+
+        when(marketDataService.getDailyKline("gold_etf", 250)).thenReturn(Map.of(
+                "data", java.util.List.of(
+                        Map.of("date", "2026-08-01", "close", 100.0),
+                        Map.of("date", "2026-08-02", "close", 101.0),
+                        Map.of("date", "2026-08-03", "close", 102.0))));
+        when(proxy.post(eq("/api/ai/quote"), any())).thenReturn(Map.of("code", 200));
+
+        SecurityContextHolder.getContext().setAuthentication(
+                new TestingAuthenticationToken(42L, null));
+
+        AiController controller = new AiController(
+                proxy, rateLimit, permissions, marketDataService, simTradeService);
+        Map<String, Object> priceData = new java.util.LinkedHashMap<>();
+        priceData.put("price", 102.0);
+        priceData.put("prev_close", 101.0);
+        controller.quote(java.util.Map.of(
+                "market", "gold_etf",
+                "price_data", priceData,
+                "horizon_days", 5,
+                "confidence", 0.95,
+                // 客户端伪造的历史收盘价应被服务端数据覆盖
+                "closes", java.util.List.of(1.0, 2.0, 3.0)));
+
+        ArgumentCaptor<Object> bodyCaptor = ArgumentCaptor.forClass(Object.class);
+        verify(proxy).post(eq("/api/ai/quote"), bodyCaptor.capture());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> body = (Map<String, Object>) bodyCaptor.getValue();
+        assertEquals("gold_etf", body.get("symbol"));
+        assertEquals(5, body.get("horizon_days"));
+        assertEquals(0.95, body.get("confidence"));
+        assertEquals(java.util.List.of(100.0, 101.0, 102.0), body.get("closes"));
+        assertEquals(priceData, body.get("price_data"));
+        assertFalse(body.containsKey("market"));
+        verify(permissions).require(42L, "AI_QUOTE");
+        verify(rateLimit).consume(42L);
+    }
+
+    @Test
+    void quoteWithoutHistorySendsEmptyClosesInsteadOfFailing() {
+        AiProxyService proxy = mock(AiProxyService.class);
+        AiRateLimitService rateLimit = mock(AiRateLimitService.class);
+        FeaturePermissionService permissions = mock(FeaturePermissionService.class);
+        MarketDataService marketDataService = mock(MarketDataService.class);
+        SimTradeService simTradeService = mock(SimTradeService.class);
+
+        when(marketDataService.getDailyKline("gold_etf", 250))
+                .thenThrow(new IllegalStateException("行情源暂不可用"));
+        when(proxy.post(eq("/api/ai/quote"), any())).thenReturn(Map.of("code", 200));
+
+        SecurityContextHolder.getContext().setAuthentication(
+                new TestingAuthenticationToken(42L, null));
+
+        AiController controller = new AiController(
+                proxy, rateLimit, permissions, marketDataService, simTradeService);
+        controller.quote(java.util.Map.of("price_data", java.util.Map.of("price", 100.0)));
+
+        ArgumentCaptor<Object> bodyCaptor = ArgumentCaptor.forClass(Object.class);
+        verify(proxy).post(eq("/api/ai/quote"), bodyCaptor.capture());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> body = (Map<String, Object>) bodyCaptor.getValue();
+        // 行情不可用时返回空序列，由 Python 统一表达 available=false；绝不回退客户端传值
+        assertEquals(java.util.List.of(), body.get("closes"));
+        assertEquals("gold_etf", body.get("symbol"));
+        verify(rateLimit).consume(42L);
+    }
+
+    @Test
+    void quoteClampsHorizonDaysToSupportedRange() {
+        AiProxyService proxy = mock(AiProxyService.class);
+        AiRateLimitService rateLimit = mock(AiRateLimitService.class);
+        FeaturePermissionService permissions = mock(FeaturePermissionService.class);
+        MarketDataService marketDataService = mock(MarketDataService.class);
+        SimTradeService simTradeService = mock(SimTradeService.class);
+
+        when(marketDataService.getDailyKline("gold_etf", 250)).thenReturn(Map.of("data", java.util.List.of()));
+        when(proxy.post(eq("/api/ai/quote"), any())).thenReturn(Map.of("code", 200));
+
+        SecurityContextHolder.getContext().setAuthentication(
+                new TestingAuthenticationToken(42L, null));
+        AiController controller = new AiController(
+                proxy, rateLimit, permissions, marketDataService, simTradeService);
+
+        controller.quote(java.util.Map.of("horizon_days", 999));
+        controller.quote(java.util.Map.of("horizon_days", 0));
+
+        ArgumentCaptor<Object> bodyCaptor = ArgumentCaptor.forClass(Object.class);
+        verify(proxy, times(2)).post(eq("/api/ai/quote"), bodyCaptor.capture());
+        java.util.List<Object> bodies = bodyCaptor.getAllValues();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> high = (Map<String, Object>) bodies.get(0);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> low = (Map<String, Object>) bodies.get(1);
+        assertEquals(60, high.get("horizon_days"));
+        assertEquals(1, low.get("horizon_days"));
     }
 }
