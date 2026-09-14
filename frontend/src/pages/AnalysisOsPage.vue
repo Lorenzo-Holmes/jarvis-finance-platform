@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { api } from '../api/client'
 import AnalysisArchiveScene from '../components/analysis/AnalysisArchiveScene.vue'
-import { JARVIS_MODULES, MODULE_LANES, moduleByKey, modulesForLane, wrap } from '../analysis-os/data/modules'
+import { JARVIS_MODULES, moduleByKey, wrap } from '../analysis-os/data/modules'
 import { useArchiveAudio } from '../analysis-os/audio/useArchiveAudio'
 import { useArchiveIdle } from '../analysis-os/motion/useArchiveIdle'
 import { useArchiveTransition } from '../analysis-os/motion/useArchiveTransition'
@@ -15,6 +15,8 @@ const props = defineProps({
 
 const modules = JARVIS_MODULES
 const focusedKey = ref(modules[0].key)
+const retrievalState = ref('FOCUSED')
+const retrievalDirection = ref(0)
 const indexOpen = ref(false)
 const moduleIndexExpanded = ref(false)
 const query = ref('')
@@ -30,6 +32,9 @@ let bootTimer = 0
 const bootTimers = []
 let clockTimer = 0
 let syncVersion = 0
+let retrievalTimer = 0
+let matchTimer = 0
+let lastNavigationDirection = 1
 const reducedMotion = typeof window !== 'undefined'
   && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 const archiveIdle = useArchiveIdle({ reduced: reducedMotion })
@@ -55,7 +60,6 @@ const filteredModules = computed(() => {
 const dataStateLabel = computed(() => ({
   loading: 'SYNCING', live: 'LIVE API', catalog: 'CATALOG', fallback: 'FALLBACK',
 }[dataState.value] || 'UNKNOWN'))
-const currentLane = computed(() => MODULE_LANES[focusedModule.value?.lane || 0])
 const documentRevealAmount = computed(() => Math.max(0, Math.min(1, (extractionProgress.value - 0.72) / 0.28)))
 const accessStage = computed(() => {
   const progress = extractionProgress.value
@@ -93,22 +97,109 @@ async function syncSystemStatus() {
   }
 }
 
-function focusModule(key, source = 'index') {
-  if (!moduleByKey(key, modules)) return
-  if (extractionProgress.value > 0.001) return
-  const changed = focusedKey.value !== key
-  if (source !== 'scene') archiveIdle.activity(source)
-  focusedKey.value = key
+function clearRetrievalTimers() {
+  if (retrievalTimer) window.clearTimeout(retrievalTimer)
+  if (matchTimer) window.clearTimeout(matchTimer)
+  retrievalTimer = 0
+  matchTimer = 0
+}
+
+function bindModule(key, source = 'external') {
+  const module = moduleByKey(key, modules)
+  if (!module || extractionProgress.value > 0.001) return
+  clearRetrievalTimers()
+  const changed = focusedKey.value !== module.key
+  focusedKey.value = module.key
+  retrievalState.value = 'FOCUSED'
   transitionState.value = 'FOCUSED'
-  if (changed) archiveAudio.play('focus')
-  emit('focus-change', key)
-  if (source !== 'scene') scrollActiveIndexIntoView()
+  if (changed) emit('focus-change', module.key)
+  if (source !== 'scene') archiveIdle.activity(source)
+  scrollActiveIndexIntoView()
+}
+
+function handleSceneFlow(direction = 0) {
+  clearRetrievalTimers()
+  retrievalState.value = 'FLOW'
+  transitionState.value = 'BROWSING'
+  if (direction) {
+    retrievalDirection.value = Math.sign(direction)
+    lastNavigationDirection = Math.sign(direction)
+  }
+}
+
+function handleSceneStep(delta) {
+  if (!delta || extractionProgress.value > 0.001) return
+  handleSceneFlow(delta)
+  const nextIndex = wrap(focusedIndex.value + delta, modules.length)
+  const next = modules[nextIndex]
+  if (!next) return
+  focusedKey.value = next.key
+  emit('focus-change', next.key)
+}
+
+function beginRetrieval() {
+  clearRetrievalTimers()
+  retrievalState.value = 'QUERY'
+  const queryDelay = reducedMotion ? 35 : 180
+  const matchDelay = reducedMotion ? 45 : 230
+  retrievalTimer = window.setTimeout(() => {
+    retrievalState.value = 'MATCH'
+    archiveAudio.play('focus')
+    matchTimer = window.setTimeout(() => {
+      retrievalState.value = 'FOCUSED'
+      transitionState.value = 'FOCUSED'
+    }, matchDelay)
+  }, queryDelay)
+}
+
+function handleSceneSettled() {
+  if (extractionProgress.value > 0.001) return
+  beginRetrieval()
+}
+
+function navigateBySteps(steps, source = 'index') {
+  if (!steps || extractionProgress.value > 0.001) return
+  archiveIdle.activity(source)
+  handleSceneFlow(steps)
+  const scene = archiveSceneRef.value
+  if (scene?.shiftRows) {
+    scene.shiftRows(steps, source)
+    return
+  }
+  handleSceneStep(steps)
+  beginRetrieval()
+}
+
+function shortestModuleDelta(targetKey) {
+  const targetIndex = modules.findIndex(module => module.key === targetKey)
+  if (targetIndex < 0) return 0
+  const current = focusedIndex.value
+  const positive = wrap(targetIndex - current, modules.length)
+  const negative = positive - modules.length
+  if (Math.abs(positive) < Math.abs(negative)) return positive
+  if (Math.abs(negative) < Math.abs(positive)) return negative
+  return lastNavigationDirection >= 0 ? positive : negative
+}
+
+function navigateToModule(module, source = 'index') {
+  if (!module) return
+  if (module.key === focusedKey.value && retrievalState.value === 'FOCUSED') {
+    activateModule(module.key)
+    return
+  }
+  const delta = shortestModuleDelta(module.key)
+  if (!delta) {
+    bindModule(module.key, source)
+    return
+  }
+  navigateBySteps(delta, source)
 }
 
 async function activateModule(key = focusedKey.value) {
   const module = moduleByKey(key, modules)
   if (!module) return
   if (extractionProgress.value > 0.001 || transitionState.value === 'EXTRACTING') return
+  if (retrievalState.value === 'FLOW' || retrievalState.value === 'QUERY') return
   archiveIdle.activity('activate')
   archiveAudio.play('extract')
   focusedKey.value = module.key
@@ -122,31 +213,19 @@ async function activateModule(key = focusedKey.value) {
 }
 
 function handleIndexClick(module) {
-  if (module.key === focusedKey.value) activateModule(module.key)
-  else focusModule(module.key)
-}
-
-function handleSceneFocus(key) {
-  focusModule(key, 'scene')
+  navigateToModule(module, 'index')
 }
 
 function moveLinear(delta) {
-  archiveIdle.activity('module-step')
-  const next = (focusedIndex.value + delta + modules.length) % modules.length
-  focusModule(modules[next].key)
+  navigateBySteps(delta, 'module-step')
 }
 
 function moveVertical(delta) {
-  archiveIdle.activity('module-row-step')
-  const current = focusedModule.value
-  if (!current) return
-  const list = modulesForLane(current.lane, modules)
-  const index = Math.max(0, list.findIndex(item => item.key === current.key))
-  const next = list[wrap(index + delta, list.length)]
-  if (next) focusModule(next.key)
+  navigateBySteps(delta, 'module-row-step')
 }
 
 function scrollActiveIndexIntoView() {
+  if (!moduleIndexExpanded.value) return
   nextTick(() => {
     const root = moduleIndexRef.value
     const active = root?.querySelector?.(`[data-module-key="${focusedKey.value}"]`)
@@ -230,6 +309,9 @@ function toggleSound() {
 }
 
 watch(focusedKey, scrollActiveIndexIntoView)
+watch(moduleIndexExpanded, expanded => {
+  if (expanded) scrollActiveIndexIntoView()
+})
 watch(() => accessStage.value.code, code => {
   if (extractionProgress.value <= 0.001) return
   if (code === 'GLASS DECRYPT') archiveAudio.play('decrypt')
@@ -237,7 +319,7 @@ watch(() => accessStage.value.code, code => {
 })
 watch(() => props.requestedModuleKey, key => {
   if (!key || key === focusedKey.value || !moduleByKey(key, modules)) return
-  focusModule(key, 'external')
+  bindModule(key, 'external')
 })
 watch(() => props.active, active => {
   if (!active) {
@@ -252,7 +334,7 @@ watch(() => props.active, active => {
       if (props.requestedModuleKey
         && props.requestedModuleKey !== focusedKey.value
         && moduleByKey(props.requestedModuleKey, modules)) {
-        focusModule(props.requestedModuleKey, 'external')
+        bindModule(props.requestedModuleKey, 'external')
       }
       archiveIdle.setEnabled(true)
       archiveIdle.activity('return-to-archive')
@@ -279,7 +361,7 @@ onMounted(() => {
   scrollActiveIndexIntoView()
   if (props.active) archiveIdle.start()
   if (props.requestedModuleKey && moduleByKey(props.requestedModuleKey, modules)) {
-    focusModule(props.requestedModuleKey, 'external')
+    bindModule(props.requestedModuleKey, 'external')
   } else {
     emit('focus-change', focusedKey.value)
   }
@@ -291,6 +373,8 @@ onMounted(() => {
       sleepAmount: { enumerable: true, get: () => sleepAmount.value },
       extractionProgress: { enumerable: true, get: () => extractionProgress.value },
       transitionState: { enumerable: true, get: () => transitionState.value },
+      retrievalState: { enumerable: true, get: () => retrievalState.value },
+      retrievalDirection: { enumerable: true, get: () => retrievalDirection.value },
       scene: { enumerable: true, get: () => archiveSceneRef.value?.getDebugState?.() || null },
     })
     window.__jarvisArchiveDebug = debug
@@ -299,6 +383,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   syncVersion += 1
+  clearRetrievalTimers()
   if (bootTimer) window.clearTimeout(bootTimer)
   bootTimers.splice(0).forEach(timer => window.clearTimeout(timer))
   if (clockTimer) window.clearInterval(clockTimer)
@@ -349,10 +434,13 @@ onBeforeUnmount(() => {
         ref="archiveSceneRef"
         :modules="modules"
         :focused-key="focusedKey"
+        :retrieval-state="retrievalState"
         :sleep-amount="sleepAmount"
         :extraction-progress="extractionProgress"
         :active="props.active"
-        @focus="handleSceneFocus"
+        @flow="handleSceneFlow"
+        @step="handleSceneStep"
+        @settled="handleSceneSettled"
         @activate="activateModule"
         @interaction="archiveIdle.activity"
       />
@@ -404,7 +492,7 @@ onBeforeUnmount(() => {
     </p>
 
     <section
-      v-if="focusedModule"
+      v-if="focusedModule && retrievalState === 'FOCUSED'"
       class="archive-callout"
       aria-label="当前聚焦模块"
       :style="{ opacity: Math.max(0, .86 - extractionProgress * 1.58) }"
@@ -420,6 +508,18 @@ onBeforeUnmount(() => {
         <span v-for="item in focusedModule.capabilities" :key="item">{{ item }}</span>
       </div>
       <button type="button" @click="activateModule(focusedModule.key)">ACCESS FILE <span>→</span></button>
+    </section>
+
+    <section
+      v-if="focusedModule && retrievalState !== 'FOCUSED' && extractionProgress < 0.01"
+      class="retrieval-hud"
+      :data-state="retrievalState"
+      aria-live="polite"
+    >
+      <span>{{ retrievalState === 'FLOW' ? 'ARCHIVE FLOW' : retrievalState === 'QUERY' ? 'ARCHIVE QUERY' : 'MATCH FOUND' }}</span>
+      <strong>{{ retrievalState === 'MATCH' ? focusedModule.code : `${moduleNumber} / ${focusedModule.labelEn}` }}</strong>
+      <small>{{ retrievalState === 'FLOW' ? 'INDEX STREAM ACTIVE' : retrievalState === 'QUERY' ? 'SEARCHING ARCHIVE…' : `${focusedModule.labelZh} / IDENTITY RESOLVED` }}</small>
+      <i></i>
     </section>
 
     <section
@@ -469,8 +569,8 @@ onBeforeUnmount(() => {
     </div>
 
     <div class="column-navigation" aria-label="当前模块列">
-      <span>COLUMN {{ String((focusedModule?.lane || 0) + 1).padStart(2, '0') }} / 05</span>
-      <strong>{{ currentLane?.label }}</strong>
+      <span>ARCHIVE SEA / CYCLIC FLOW</span>
+      <strong>{{ retrievalState }} · {{ retrievalDirection < 0 ? 'PREVIOUS' : retrievalDirection > 0 ? 'NEXT' : 'HOLD' }}</strong>
     </div>
 
     <section v-if="indexOpen" class="module-directory" aria-label="模块目录">
@@ -489,7 +589,7 @@ onBeforeUnmount(() => {
           :key="module.key"
           type="button"
           :class="{ active: module.key === focusedKey }"
-          @click="focusModule(module.key); indexOpen = false"
+          @click="navigateToModule(module, 'search'); indexOpen = false"
         >
           <span>{{ String(module.no).padStart(2, '0') }}</span>
           <strong>{{ module.labelEn }}</strong>
@@ -629,6 +729,19 @@ onBeforeUnmount(() => {
 .archive-callout > button { pointer-events: auto; margin: 21px 0 0 32px; border: 0; background: transparent; color: #33352f; padding: 0; font: 650 8px/1 ui-monospace, monospace; letter-spacing: .085em; cursor: pointer; }
 .archive-callout > button span { margin-left: 34px; font-size: 14px; vertical-align: -1px; }
 .archive-callout > button:hover { color: #8a7657; }
+.retrieval-hud {
+  position: absolute; z-index: 10; left: 56%; top: 39%; width: min(300px, 24vw);
+  display: grid; gap: 8px; color: #5f5b53; pointer-events: none;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.retrieval-hud > span { color: #8c8579; font-size: 7px; font-weight: 650; letter-spacing: .16em; }
+.retrieval-hud > strong { color: #42443d; font-size: 11px; font-weight: 650; letter-spacing: .055em; }
+.retrieval-hud > small { color: #9a9388; font-size: 7px; font-weight: 600; letter-spacing: .11em; }
+.retrieval-hud > i { position: relative; display: block; width: 100%; height: 1px; margin-top: 5px; overflow: hidden; background: rgba(126,119,108,.22); }
+.retrieval-hud > i::after { content: ''; position: absolute; inset: 0 auto 0 0; width: 30%; background: #9a7b50; transform: translateX(-120%); animation: retrieval-scan .72s cubic-bezier(.22,1,.36,1) infinite; }
+.retrieval-hud[data-state="MATCH"] > span,
+.retrieval-hud[data-state="MATCH"] > strong { color: #7b633f; }
+.retrieval-hud[data-state="MATCH"] > i::after { width: 100%; transform: none; animation: none; }
 .access-sequence {
   position: absolute; z-index: 13; right: 7%; top: 37%; width: min(330px, 28vw);
   padding: 16px 0; color: #292b25; pointer-events: none;
@@ -698,12 +811,14 @@ onBeforeUnmount(() => {
 
 @keyframes boot-line { from { transform: translateX(-100%); } to { transform: translateX(0); } }
 @keyframes orbit-line { from { opacity: 0; transform: rotate(-70deg) scaleY(.2); } to { opacity: 1; transform: rotate(36deg) scaleY(1); } }
+@keyframes retrieval-scan { 0% { transform: translateX(-120%); } 100% { transform: translateX(420%); } }
 
 @media (max-width: 1100px) {
   .terminal-brand { left: 28px; top: 28px; transform: scale(.82); transform-origin: top left; }
   .module-index-shell { left: 250px; right: 24px; }
   .module-index-tools > span, .module-index-tools time { display: none; }
   .archive-callout { left: 52%; right: auto; top: 39%; width: 42vw; }
+  .retrieval-hud { left: 52%; width: 40vw; }
   .archive-counter { left: 30px; }
   .archive-hint { left: 275px; }
   .column-navigation { left: 49%; }
@@ -726,6 +841,7 @@ onBeforeUnmount(() => {
   .module-index-track button { min-width: 102px; height: 54px; padding: 7px 12px; }
   .module-index-track button::after { bottom: 0; }
   .archive-callout { left: 18px; right: 18px; top: 23%; width: auto; }
+  .retrieval-hud { left: 18px; right: 18px; top: 24%; width: auto; }
   .archive-callout .file-number { font-size: 10px; }
   .module-summary { max-width: 330px; }
   .archive-counter { left: 18px; bottom: 77px; transform: scale(.72); transform-origin: bottom left; }

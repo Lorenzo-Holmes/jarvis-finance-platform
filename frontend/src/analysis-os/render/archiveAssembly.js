@@ -181,6 +181,9 @@ export function createArchiveAssembly(module, labelMaterial, library) {
   return {
     group,
     body,
+    marker,
+    labelCarrier,
+    label,
     baseGroup,
     identityGroup,
     nearGroup,

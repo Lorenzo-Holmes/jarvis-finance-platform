@@ -76,7 +76,7 @@ test('render fidelity V3 extraction exposes glass-decrypt stages without moving 
   assert.match(page, /DOCUMENT REVEAL/)
   assert.match(page, /WORKSPACE_REVEAL_HOLD_MS = 180/)
   assert.match(page, /documentRevealAmount \* 1\.55/)
-  assert.match(scene, /focusedLift = 1\.55 \+ extraction \* \(4\.05 - 1\.55\)/)
+  assert.match(scene, /1\.55 \+ extraction \* \(4\.05 - 1\.55\)/)
   assert.match(scene, /camera\.position\.copy\(cameraBase\)\.lerp\(cameraDetailBase, detail\)/)
   assert.match(transition, /options\.enterDuration \|\| 1080/)
 })
@@ -93,7 +93,7 @@ test('render fidelity V3-G uses an original focused GLB with procedural fallback
   assert.match(assetReadme, /original JARVIS archive model/)
 })
 
-test('archive field composition V4 favors a sparse raked field and collapsed module index', () => {
+test('archive field composition V5 keeps a sparse raked field with anonymous background files', () => {
   const scene = read('components/analysis/AnalysisArchiveScene.vue')
   const page = read('pages/AnalysisOsPage.vue')
 
@@ -101,9 +101,28 @@ test('archive field composition V4 favors a sparse raked field and collapsed mod
   assert.match(scene, /const LANE_ROW_SKEW = 0\.58/)
   assert.match(scene, /const targetTilt = focused === entry \? 0 : -0\.26/)
   assert.match(scene, /rowRelative > 0/)
-  assert.match(scene, /showIdentity = isFocused \|\| entry === hoveredEntry/)
+  assert.match(scene, /ANONYMOUS_ARCHIVE/)
+  assert.match(scene, /showIdentity = Boolean\(isFocused && identified\)/)
+  assert.match(scene, /retrievalState/)
+  assert.doesNotMatch(scene, /moduleAtCell|cellForModule/)
   assert.match(page, /moduleIndexExpanded/)
   assert.match(page, /module-index-shell\.expanded/)
   assert.match(page, /FILE NUMBER:/)
+})
+
+test('archive sea V5 uses bidirectional cyclic flow and a lightweight retrieval illusion', () => {
+  const scene = read('components/analysis/AnalysisArchiveScene.vue')
+  const page = read('pages/AnalysisOsPage.vue')
+
+  assert.match(scene, /emit\('step', delta\)/)
+  assert.match(scene, /emit\('settled'\)/)
+  assert.match(scene, /function shiftRows/)
+  assert.match(page, /wrap\(focusedIndex\.value \+ delta, modules\.length\)/)
+  assert.match(page, /retrievalState\.value = 'FLOW'/)
+  assert.match(page, /retrievalState\.value = 'QUERY'/)
+  assert.match(page, /retrievalState\.value = 'MATCH'/)
+  assert.match(page, /ARCHIVE QUERY/)
+  assert.match(page, /MATCH FOUND/)
+  assert.doesNotMatch(page, /PseudoRandomArchiveResolver|candidateScore|randomCandidate/i)
 })
 

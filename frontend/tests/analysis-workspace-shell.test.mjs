@@ -123,7 +123,8 @@ test('keyboard navigation covers archive rows, workspace escape, and focus resto
 
   assert.match(page, /event\.key === 'ArrowUp'/)
   assert.match(page, /event\.key === 'ArrowDown'/)
-  assert.match(page, /modulesForLane/)
+  assert.match(page, /navigateBySteps\(delta, 'module-row-step'\)/)
+  assert.match(page, /wrap\(focusedIndex\.value \+ delta, modules\.length\)/)
   assert.match(page, /\.focus\?\.\(\{ preventScroll: true \}\)/)
   assert.match(shell, /event\.key !== 'Escape'/)
   assert.match(shell, /requestReturn\(\)/)

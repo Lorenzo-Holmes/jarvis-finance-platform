@@ -20,7 +20,7 @@ import {
   WebGLRenderer,
 } from 'three'
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { cellForModule, moduleAtCell, moduleByKey, wrap } from '../../analysis-os/data/modules'
+import { wrap } from '../../analysis-os/data/modules'
 import { ArchiveDrag, ArchivePlaneMomentum, dampSpring } from '../../analysis-os/motion/archiveMomentum'
 import {
   createArchiveAssembly,
@@ -43,15 +43,27 @@ const CENTER_LANE = 2
 const CENTER_ROW = 12
 const ROW_PERIOD = 6
 
+const ANONYMOUS_ARCHIVE = {
+  id: 'archive:anonymous',
+  key: 'archive-anonymous',
+  no: 0,
+  code: 'ARCHIVE',
+  labelEn: 'ARCHIVE',
+  labelZh: '档案',
+  category: 'ARCHIVE',
+  capabilities: ['INDEX', 'RECORD', 'SEA'],
+}
+
 const props = defineProps({
   modules: { type: Array, default: () => [] },
   focusedKey: { type: String, default: '' },
+  retrievalState: { type: String, default: 'FOCUSED' },
   sleepAmount: { type: Number, default: 0 },
   extractionProgress: { type: Number, default: 0 },
   active: { type: Boolean, default: true },
 })
 
-const emit = defineEmits(['focus', 'activate', 'interaction'])
+const emit = defineEmits(['step', 'settled', 'flow', 'activate', 'interaction'])
 const mountRef = ref(null)
 const failed = ref(false)
 
@@ -73,8 +85,9 @@ let momentum = null
 let wheelTotal = 0
 let wheelTime = 0
 let lastFrameTime = 0
-let internalFocusKey = ''
 let initializedTrack = false
+let lastReportedRow = CENTER_ROW
+let navigationActive = false
 let suppressSleepMotion = false
 let archiveLibrary = null
 let focusedGlassMaterial = null
@@ -167,8 +180,8 @@ function clearArchive() {
   textureCache.clear()
 }
 
-function createCard(module, physicalLane, physicalRow) {
-  const assembly = createArchiveAssembly(module, labelMaterial(module), archiveLibrary)
+function createCard(physicalLane, physicalRow) {
+  const assembly = createArchiveAssembly(ANONYMOUS_ARCHIVE, labelMaterial(ANONYMOUS_ARCHIVE), archiveLibrary)
   const group = assembly.group
 
   const baseX = (physicalLane - CENTER_LANE) * LANE_SPACING
@@ -177,30 +190,32 @@ function createCard(module, physicalLane, physicalRow) {
   const baseZ = (physicalRow - CENTER_ROW) * ROW_SPACING + laneOffset * LANE_ROW_SKEW
   group.position.set(baseX, baseY, baseZ)
   group.rotation.y = (CENTER_LANE - physicalLane) * 0.014
-  group.userData = { baseY, targetY: baseY, physicalLane, physicalRow, moduleKey: module.key }
+  group.userData = { baseY, targetY: baseY, physicalLane, physicalRow, slotKey: `slot:${physicalLane}:${physicalRow}` }
   root.add(group)
-  entries.push({ module, ...assembly, group, physicalLane, physicalRow })
+  entries.push({ ...assembly, group, physicalLane, physicalRow })
 }
 
 function buildArchiveArray() {
   if (!root || !renderer || !archiveLibrary) return
   clearArchive()
-  if (!props.modules.length) return
 
   for (let physicalRow = 0; physicalRow <= 24; physicalRow += 1) {
     for (let physicalLane = -2; physicalLane <= 6; physicalLane += 1) {
-      const module = moduleAtCell(physicalLane, physicalRow, props.modules)
-      if (module) createCard(module, physicalLane, physicalRow)
+      createCard(physicalLane, physicalRow)
     }
   }
 
   if (!initializedTrack) {
-    const initial = cellForModule(props.focusedKey || props.modules[0]?.key, { lane: CENTER_LANE, row: CENTER_ROW }, props.modules)
-    laneTrack.value = laneTrack.target = initial.lane
-    rowTrack.value = rowTrack.target = initial.row
+    laneTrack.value = laneTrack.target = CENTER_LANE
+    rowTrack.value = rowTrack.target = CENTER_ROW
+    lastReportedRow = CENTER_ROW
     initializedTrack = true
   }
   updateFocusVisuals()
+}
+
+function focusedModuleData() {
+  return props.modules.find(module => module.key === props.focusedKey) || props.modules[0] || ANONYMOUS_ARCHIVE
 }
 
 function currentCell() {
@@ -215,36 +230,53 @@ function focusedEntry() {
 function updateFocusVisuals() {
   const focused = focusedEntry()
   const extraction = Math.max(0, Math.min(1, Number(props.extractionProgress) || 0))
+  const identified = extraction > 0.001 || props.retrievalState === 'MATCH' || props.retrievalState === 'FOCUSED'
+  const previewLift = props.retrievalState === 'QUERY'
+    ? 0.32
+    : props.retrievalState === 'MATCH'
+      ? 0.96
+      : props.retrievalState === 'FOCUSED'
+        ? 1.55
+        : 0.08
+  const module = focusedModuleData()
   for (const entry of entries) {
     const isFocused = entry === focused
     const isHovered = entry === hoveredEntry
-    const focusedLift = 1.55 + extraction * (4.05 - 1.55)
+    const focusedLift = extraction > 0.001
+      ? 1.55 + extraction * (4.05 - 1.55)
+      : previewLift
     const laneDelta = focused ? entry.physicalLane - focused.physicalLane : 99
     const laneDistance = focused ? Math.abs(entry.physicalLane - focused.physicalLane) : 99
     const rowDelta = focused ? entry.physicalRow - focused.physicalRow : 99
     const rowDistance = Math.abs(rowDelta)
-    const clearance = !isFocused && extraction < 0.08 && rowDelta > 0 && rowDelta <= 5.2
+    const clearance = identified && !isFocused && extraction < 0.08 && rowDelta > 0 && rowDelta <= 5.2
       ? -Math.max(0, (1 - rowDelta / 5.8)) * (laneDistance < 0.6 ? 0.74 : laneDistance < 1.6 ? 0.22 : 0)
       : 0
-    const readingVoid = !isFocused && extraction < 0.08 && laneDelta > 0 && laneDelta <= 2 && rowDistance <= 2.6
+    const readingVoid = identified && !isFocused && extraction < 0.08 && laneDelta > 0 && laneDelta <= 2 && rowDistance <= 2.6
       ? -Math.max(0, 1 - rowDistance / 3.0) * (laneDelta < 1.2 ? 1.02 : 0.54)
       : 0
     entry.group.userData.targetY = entry.group.userData.baseY + (isFocused ? focusedLift : isHovered ? 0.28 : clearance + readingVoid)
-    entry.group.userData.targetScale = isFocused ? 1.028 + extraction * 0.028 : isHovered ? 0.985 : 0.965
+    entry.group.userData.targetScale = isFocused && identified ? 1.028 + extraction * 0.028 : isHovered ? 0.985 : 0.965
     if (entry.glass) {
       entry.glass.material = isFocused && extraction > 0.32
         ? focusedGlassMaterial
         : archiveLibrary.materials.glass
     }
-    if (entry.baseGroup) entry.baseGroup.visible = !(isFocused && detailAsset)
-    if (entry.identityGroup) entry.identityGroup.position.z = isFocused && detailAsset ? 0.22 : 0
-    if (entry.nearGroup && isFocused && detailAsset) entry.nearGroup.visible = false
+    if (entry.label) entry.label.material = isFocused && identified ? labelMaterial(module) : labelMaterial(ANONYMOUS_ARCHIVE)
+    if (entry.baseGroup) entry.baseGroup.visible = !(isFocused && detailAsset && identified)
+    if (entry.identityGroup) {
+      entry.identityGroup.position.z = isFocused && detailAsset && identified ? 0.22 : 0
+      entry.identityGroup.visible = Boolean(isFocused && identified)
+    }
+    if (entry.nearGroup && isFocused && detailAsset && identified) entry.nearGroup.visible = false
   }
-  if (detailAsset && focused && detailAsset.parent !== focused.group) {
-    focused.group.add(detailAsset)
-    detailAsset.position.set(0, 0, 0)
-    detailAsset.rotation.set(0, 0, 0)
-    detailAsset.visible = true
+  if (detailAsset) {
+    if (focused && detailAsset.parent !== focused.group) {
+      focused.group.add(detailAsset)
+      detailAsset.position.set(0, 0, 0)
+      detailAsset.rotation.set(0, 0, 0)
+    }
+    detailAsset.visible = Boolean(focused && identified)
   }
 }
 
@@ -283,27 +315,29 @@ function disposeFocusedArchiveAsset() {
   detailAsset = null
 }
 
-function emitFocusFromTrack() {
-  const cell = currentCell()
-  const module = moduleAtCell(cell.lane, cell.row, props.modules)
-  if (!module || module.key === internalFocusKey) {
-    updateFocusVisuals()
-    return
+function emitStepFromTrack() {
+  const row = Math.round(rowTrack.value)
+  const delta = row - lastReportedRow
+  if (delta) {
+    lastReportedRow = row
+    emit('step', delta)
   }
-  internalFocusKey = module.key
-  emit('focus', module.key)
   updateFocusVisuals()
 }
 
-function moveToModule(key) {
-  const current = currentCell()
-  const target = cellForModule(key, current, props.modules)
-  momentum = null
-  laneTrack.target = target.lane
-  rowTrack.target = target.row
+function beginFlow(direction = 0) {
+  if (!navigationActive) emit('flow', Math.sign(direction || 0))
+  navigationActive = true
+}
+
+function shiftRows(steps, source = 'index') {
+  if (!Number.isFinite(steps) || !steps || props.extractionProgress > 0.001) return
+  stopMomentum()
+  beginFlow(steps)
+  rowTrack.target = Math.round(rowTrack.target) + steps
   laneTrack.velocity = 0
   rowTrack.velocity = 0
-  emit('interaction', 'index')
+  emit('interaction', source)
 }
 
 function rebaseTracksIfNeeded() {
@@ -323,6 +357,7 @@ function rebaseTracksIfNeeded() {
   if (Math.abs(rowShift) >= ROW_PERIOD) {
     rowTrack.value -= rowShift
     rowTrack.target -= rowShift
+    lastReportedRow -= rowShift
     if (momentum) {
       momentum.row.value -= rowShift
       momentum.row.target -= rowShift
@@ -384,7 +419,7 @@ function captureSleepPosition() {
   rowTrack.value += offset.row
   rowTrack.target += offset.row
   suppressSleepMotion = true
-  emitFocusFromTrack()
+  emitStepFromTrack()
 }
 
 function onPointerDown(event) {
@@ -413,12 +448,13 @@ function onPointerMove(event) {
   if (event.pointerId !== activePointer) return
   drag.move(event.clientX, event.clientY, event.timeStamp)
   if (!drag.active) return
+  beginFlow(drag.value.row || drag.value.lane)
   hoveredEntry = null
   laneTrack.value = laneTrack.target = dragStart.lane + drag.value.lane
   rowTrack.value = rowTrack.target = dragStart.row + drag.value.row
   laneTrack.velocity = rowTrack.velocity = 0
   renderer.domElement.style.cursor = 'grabbing'
-  emitFocusFromTrack()
+  emitStepFromTrack()
 }
 
 function finishPointer(event, cancelled = false) {
@@ -444,13 +480,12 @@ function finishPointer(event, cancelled = false) {
     const entry = pickEntry(event)
     if (entry) {
       const current = focusedEntry()
-      if (current?.module.key === entry.module.key && current.physicalLane === entry.physicalLane && current.physicalRow === entry.physicalRow) {
-        emit('activate', entry.module.key)
+      if (current && current.physicalLane === entry.physicalLane && current.physicalRow === entry.physicalRow) {
+        emit('activate', props.focusedKey)
       } else {
+        beginFlow(entry.physicalRow - currentCell().row)
         laneTrack.target = entry.physicalLane
         rowTrack.target = entry.physicalRow
-        internalFocusKey = entry.module.key
-        emit('focus', entry.module.key)
       }
     }
   }
@@ -472,6 +507,7 @@ function onWheel(event) {
   if (!steps) return
   const direction = Math.sign(wheelTotal)
   wheelTotal -= direction * steps * 100
+  beginFlow(direction)
   rowTrack.target = Math.round(rowTrack.target) + direction * steps
 }
 
@@ -576,6 +612,15 @@ function schedulePostProcessingProbe(width, height, profile) {
   }, 700)
 }
 
+function maybeEmitSettled() {
+  if (!navigationActive || momentum || activePointer !== null) return
+  const laneSettled = Math.abs(laneTrack.value - laneTrack.target) < 0.002
+  const rowSettled = Math.abs(rowTrack.value - rowTrack.target) < 0.002
+  if (!laneSettled || !rowSettled) return
+  navigationActive = false
+  emit('settled')
+}
+
 function renderFrame(time) {
   if (disposed || !renderer || !scene || !camera || !root || !props.active) {
     rendering = false
@@ -590,8 +635,8 @@ function renderFrame(time) {
     momentum.step(dt)
     laneTrack.value = laneTrack.target = momentum.value.lane
     rowTrack.value = rowTrack.target = momentum.value.row
+    emitStepFromTrack()
     rebaseTracksIfNeeded()
-    emitFocusFromTrack()
     if (momentum.phase === 'idle') {
       momentum = null
       laneTrack.target = Math.round(laneTrack.value)
@@ -603,9 +648,11 @@ function renderFrame(time) {
     dampSpring(laneTrack, laneTrack.target, reducedMotion ? 30 : 9, dt)
     dampSpring(rowTrack, rowTrack.target, reducedMotion ? 30 : 9, dt)
     const nextCell = currentCell()
-    if (nextCell.lane !== previousCell.lane || nextCell.row !== previousCell.row) emitFocusFromTrack()
+    if (nextCell.row !== previousCell.row) emitStepFromTrack()
+    else if (nextCell.lane !== previousCell.lane) updateFocusVisuals()
     if (Math.abs(laneTrack.value - laneTrack.target) < 0.0004 && Math.abs(rowTrack.value - rowTrack.target) < 0.0004) rebaseTracksIfNeeded()
   }
+  maybeEmitSettled()
 
   const extraction = Math.max(0, Math.min(1, Number(props.extractionProgress) || 0))
   const detail = smoothstep(Math.max(0, (extraction - 0.08) / 0.92))
@@ -634,6 +681,7 @@ function renderFrame(time) {
 
   const easing = reducedMotion ? 1 : 1 - Math.exp(-dt * 10)
   const focused = focusedEntry()
+  const identified = extraction > 0.001 || props.retrievalState === 'MATCH' || props.retrievalState === 'FOCUSED'
   if (focusedGlassMaterial) {
     const decrypt = smoothstep(Math.max(0, (extraction - 0.38) / 0.52))
     focusedGlassMaterial.roughness = 0.42 + (0.12 - 0.42) * decrypt
@@ -655,7 +703,7 @@ function renderFrame(time) {
     const rowDistance = Math.abs(rowRelative)
     const isFocused = entry === focused
     const isNear = isFocused || (laneDistance <= 2.2 && rowDistance <= 4.6)
-    const showIdentity = isFocused || entry === hoveredEntry || (laneDistance <= 1.05 && rowDistance <= 1.15)
+    const showIdentity = Boolean(isFocused && identified)
     const foregroundSink = !isFocused && rowRelative > 0
       ? -Math.min(1.05, rowRelative * 0.15)
       : 0
@@ -668,8 +716,8 @@ function renderFrame(time) {
     const idleTilt = focused === entry ? 0 : Math.sin(time * 0.00019 + index * 0.17) * 0.003
     entry.group.rotation.x += (targetTilt + idleTilt - entry.group.rotation.x) * easing
     if (entry.identityGroup) entry.identityGroup.visible = showIdentity
-    entry.nearGroup.visible = isNear
-    entry.focusGroup.visible = isFocused || entry === hoveredEntry
+    entry.nearGroup.visible = isNear && !(isFocused && detailAsset && identified)
+    entry.focusGroup.visible = (isFocused && identified) || entry === hoveredEntry
     if (entry.body) entry.body.castShadow = Boolean(qualityProfile?.shadows && isNear)
 
     if (entry.decryptA && entry.decryptB) {
@@ -761,7 +809,7 @@ function init() {
     pointer = new Vector2()
     buildArchiveArray()
     resize()
-    emitFocusFromTrack()
+    updateFocusVisuals()
     if (qualityProfile?.name !== 'MOBILE') loadFocusedArchiveAsset()
 
     renderer.domElement.addEventListener('pointerdown', onPointerDown)
@@ -820,7 +868,9 @@ function getDebugState() {
     rowVelocity: momentum?.velocity?.row ?? rowTrack.velocity,
     momentumPhase: momentum?.phase || 'idle',
     dragging: activePointer !== null && drag.active,
-    focusedKey: focusedEntry()?.module?.key || props.focusedKey,
+    focusedKey: props.focusedKey,
+    retrievalState: props.retrievalState,
+    focusedSlot: focusedEntry()?.group?.userData?.slotKey || null,
     extractionProgress: Number(props.extractionProgress) || 0,
     sleepAmount: Number(props.sleepAmount) || 0,
     quality: qualityProfile?.name || 'UNKNOWN',
@@ -837,12 +887,9 @@ function getDebugState() {
   }
 }
 
-watch(() => props.modules, buildArchiveArray, { deep: true })
-watch(() => props.focusedKey, key => {
-  if (!key) return
-  if (key === internalFocusKey) return
-  moveToModule(key)
-})
+watch(() => props.modules, updateFocusVisuals, { deep: true })
+watch(() => props.focusedKey, updateFocusVisuals)
+watch(() => props.retrievalState, updateFocusVisuals)
 watch(() => props.active, async active => {
   if (active) {
     await nextTick()
@@ -863,7 +910,7 @@ watch(() => props.extractionProgress, updateFocusVisuals)
 onMounted(init)
 onBeforeUnmount(dispose)
 
-defineExpose({ getDebugState, moveToModule })
+defineExpose({ getDebugState, shiftRows })
 </script>
 
 <template>
