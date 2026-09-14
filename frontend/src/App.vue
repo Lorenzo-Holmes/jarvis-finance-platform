@@ -8,6 +8,7 @@ import LandingPage from './pages/LandingPage.vue'
 import { useAuthSession } from './composables/useAuthSession'
 import { useWorkspaceTabs } from './composables/useWorkspaceTabs'
 
+const AnalysisOsPage = defineAsyncComponent(() => import('./pages/AnalysisOsPage.vue'))
 const MarketPage = defineAsyncComponent(() => import('./pages/MarketPage.vue'))
 const BacktestPage = defineAsyncComponent(() => import('./pages/BacktestPage.vue'))
 const CrossMarketView = defineAsyncComponent(() => import('./components/CrossMarketView.vue'))
@@ -92,9 +93,22 @@ onMounted(() => {
     <LoginView @logged-in="handleLoggedIn" />
   </div>
 
-  <div v-else class="container" :class="{ 'container--trading': activeTab === '模拟盘' }">
+  <div
+    v-else
+    class="container"
+    :class="{
+      'container--trading': activeTab === '模拟盘',
+      'container--analysis': activeTab === '研究终端',
+    }"
+  >
     <AppHeader :user="user" @logout="logout" @update-profile="updateProfile" />
     <AppTabs :tabs="tabs" :active="activeTab" @change="switchTab" />
+
+    <AnalysisOsPage
+      v-if="visitedTabs.has('研究终端')"
+      v-show="activeTab === '研究终端'"
+      @navigate="switchTab"
+    />
 
     <MarketPage v-if="visitedTabs.has('行情')" v-show="activeTab === '行情'" :active="activeTab === '行情'" />
 
@@ -126,7 +140,7 @@ onMounted(() => {
       <AdminView />
     </section>
 
-    <footer v-if="activeTab !== '模拟盘'" class="foot">
+    <footer v-if="activeTab !== '模拟盘' && activeTab !== '研究终端'" class="foot">
       <span>贾维斯金融投研平台 · 仅供研究参考，不构成投资建议</span>
     </footer>
   </div>
@@ -135,6 +149,7 @@ onMounted(() => {
 <style scoped>
 .container { max-width: 1580px; margin: 0 auto; padding: 0 20px 32px; }
 .container--trading { max-width: none; padding-left: 12px; padding-right: 12px; padding-bottom: 12px; }
+.container--analysis { max-width: none; padding-left: 12px; padding-right: 12px; padding-bottom: 12px; }
 .panel-wrap { margin-top: 4px; }
 .foot { color: var(--subtle); font-size: 11px; margin-top: 16px; }
 .auth-shell { position: relative; min-height: 100vh; background: var(--bg); }
