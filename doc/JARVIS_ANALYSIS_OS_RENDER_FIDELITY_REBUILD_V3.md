@@ -823,7 +823,7 @@ SSA0 post-processing 管线代码已建立，但默认暂时保持 compatibility
 
 - [x] Browse HUD 改为 `FILE NUMBER: <module code>`，大 `MARKET` 标题不再占据浏览态中央。
 - [x] 入口动作改为 `ACCESS FILE`。
-- [x] Focus preview lift 按当前原创模型比例校准为 `0.90`，Extraction 从当前高度连续接管。
+- [x] Focus preview lift 已在 V4 进一步校准为 `1.55`，Extraction 从当前高度连续接管。
 - [x] 同 lane / 相邻 row 增加局部 clearance，下沉周边档案形成净空，而不是把焦点档案向 Z 轴拉近。
 - [x] 1440×900 本地关键帧重新检查，档案海重新成为第一视觉主体。
 
@@ -923,3 +923,49 @@ JARVIS 映射原则：
 ### 22.3 继续原则
 
 后续若继续提升模型完成度，优先修改 Blender 源脚本和 GLB，而不是继续在 Three.js 中叠加大量只服务 Focus 的 mesh。程序化模型保留为远景 LOD 和加载失败 fallback。
+
+---
+
+## 23. Archive Field Composition V4
+
+本轮直接针对用户最新主页截图与参考视频 52s Archive Browse 关键帧做构图重建。结论是：此前剩余的主要差距已经不是焦点 GLB 本身，而是整个档案海的群体姿态、摄影参数和 HUD 权重。
+
+### 23.1 当前截图暴露的问题
+
+- 档案行列过密，第一印象仍接近“竖立文件夹墙”；
+- 所有档案都接近竖直状态，缺少参考视频中的斜向档案坡面；
+- 非焦点文件标签过多，中景信息噪声过高；
+- 前景大白面板占屏过多，遮挡当前文件；
+- Module Index 长期展开，抢夺档案海的第一视觉权重；
+- Focus 文件和 `FILE NUMBER` 的左右关系与参考帧仍有偏差。
+
+### 23.2 V4 已实施
+
+- [x] `LANE_SPACING` 调整为 5.28，`ROW_SPACING` 调整为 0.88，减少同屏 row 密度。
+- [x] 新增 `LANE_ROW_SKEW = 0.58`，不同 lane 在 Z 轴产生稳定错位，形成连续斜向阵列而非正交矩阵。
+- [x] Desktop 相机从高俯视改为更低、更近的构图，并将 browse aim 向右偏移，使 Focus 文件落在画面左中区域。
+- [x] Focus preview lift 调整为 1.55，完整档案在 Browse 状态即可被辨认；Extraction 仍只沿 Y 轴继续至 4.05。
+- [x] 当前文件前方 rows 增加动态 foreground sink，前景不再形成大面积空白挡板。
+- [x] 当前文件右侧 lanes 增加动态 reading void，使 `FILE NUMBER` 信息条获得真实负空间。
+- [x] 非 Focus 档案统一约 15° 后倾，形成类似参考视频的 archive slope；Focus 文件保持竖直。
+- [x] 非 Focus 档案轻微缩小，焦点/hover 状态平滑恢复尺寸。
+- [x] 非 Focus identity label 默认隐藏，只保留 Focus、hover 与极近邻文件，显著降低中景噪声。
+- [x] 程序化背景档案 frame / rail / inner 材质提亮，减少黑色竖线形成的“书架”观感。
+- [x] 顶部 Module Index 默认折叠，仅保留 `MODULE INDEX + 当前模块`，点击后仍可横向展开完整导航；移动端仍保持底部横向模块轨道。
+- [x] JARVIS 左上品牌尺寸再次下降，避免和 Archive Field 竞争。
+- [x] Browse `FILE NUMBER` HUD 移至中部偏右，与左中 Focus 文件形成接近参考 52s 的双区构图。
+
+### 23.3 焦点 GLB 同步精修
+
+- [x] Blender 原创 Focus GLB 外框由深石墨改为更轻的暖灰金属；
+- [x] Glass Cover 提高透明感并降低黑框反差；
+- [x] 新增原创 `ArchiveAmberSpine` 半透明琥珀竖向结构，替代依赖粗黑边区分 Focus 的做法；
+- [x] GLB 仍只用于桌面 Focus / Extraction，背景档案继续使用轻量 LOD；
+- [x] MOBILE 不下载高细节 GLB，失败继续回退程序化装配体。
+
+### 23.4 V4 仍保留的边界
+
+- 不复制 RhineLabUI 的 Blender/GLB、图片、声音或品牌资产；
+- 不把参考视频截图提交进仓库；
+- 不为了“看起来更像”破坏 JARVIS 的模块语义、真实业务页面或认证边界；
+- V4 的最终通过仍以用户真实 Edge 视觉核对为门槛，而不是仅以自动截图为 PASS。

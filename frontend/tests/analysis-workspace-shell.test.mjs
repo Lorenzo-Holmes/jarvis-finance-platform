@@ -111,7 +111,7 @@ test('archive transition is progress-driven and preserves the extracted card for
   assert.match(transition, /WORKSPACE_ACTIVE/)
   assert.match(transition, /RETURN_ALIGN/)
   assert.match(transition, /RETURN_DESCEND/)
-  assert.match(scene, /0\.90 \+ extraction \* \(4\.05 - 0\.90\)/)
+  assert.match(scene, /1\.55 \+ extraction \* \(4\.05 - 1\.55\)/)
   assert.match(scene, /camera\.position\.copy\(cameraBase\)\.lerp\(cameraDetailBase, detail\)/)
   assert.match(page, /archiveTransition\.enter/)
   assert.match(page, /archiveTransition\.returnToArchive/)

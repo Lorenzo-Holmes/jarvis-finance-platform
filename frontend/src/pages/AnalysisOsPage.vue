@@ -16,6 +16,7 @@ const props = defineProps({
 const modules = JARVIS_MODULES
 const focusedKey = ref(modules[0].key)
 const indexOpen = ref(false)
+const moduleIndexExpanded = ref(false)
 const query = ref('')
 const booting = ref(true)
 const bootPhase = ref('WAKE')
@@ -363,8 +364,16 @@ onBeforeUnmount(() => {
       <p>ANALYSIS <b>OS</b></p>
     </header>
 
-    <section class="module-index-shell" aria-label="Module Index">
-      <div class="module-index-label">MODULE INDEX</div>
+    <section class="module-index-shell" :class="{ expanded: moduleIndexExpanded }" aria-label="Module Index">
+      <button
+        type="button"
+        class="module-index-label"
+        :aria-expanded="moduleIndexExpanded"
+        @click="moduleIndexExpanded = !moduleIndexExpanded"
+      >
+        MODULE INDEX
+        <span>{{ moduleNumber }} / {{ focusedModule?.labelEn }}</span>
+      </button>
       <div ref="moduleIndexRef" class="module-index-track" role="tablist" aria-label="系统模块索引">
         <button
           v-for="module in modules"
@@ -563,10 +572,10 @@ onBeforeUnmount(() => {
 .boot-layer[data-phase="ARCHIVE"] { background: rgba(230,226,218,.93); }
 .boot-layer[data-phase="READY"] { opacity: 0; background: rgba(230,226,218,.36); pointer-events: none; }
 
-.terminal-brand { position: absolute; z-index: 8; left: 42px; top: 33px; width: 218px; line-height: 1; user-select: none; }
-.terminal-brand h1 { margin: 0; font-size: 27px; line-height: 30px; letter-spacing: 1.8px; font-weight: 760; }
+.terminal-brand { position: absolute; z-index: 8; left: 42px; top: 33px; width: 195px; line-height: 1; user-select: none; }
+.terminal-brand h1 { margin: 0; font-size: 25px; line-height: 28px; letter-spacing: 1.65px; font-weight: 760; }
 .terminal-brand > div { font-size: 10px; line-height: 15px; letter-spacing: .6px; font-weight: 620; }
-.terminal-brand p { margin: 1px 0 0; width: 158px; display: flex; justify-content: space-between; font-size: 19px; line-height: 24px; }
+.terminal-brand p { margin: 1px 0 0; width: 145px; display: flex; justify-content: space-between; font-size: 17px; line-height: 22px; }
 .terminal-brand p b { font-weight: 760; letter-spacing: 2px; }
 
 .module-index-shell {
@@ -583,8 +592,11 @@ onBeforeUnmount(() => {
 .analysis-os.is-idle .system-footer,
 .analysis-os.is-idle .powered { opacity: var(--hud-opacity, 1); }
 .analysis-os.is-sleeping .archive-hint { opacity: .24; }
-.module-index-label { color: #918b80; font: 600 7px/1 ui-monospace, monospace; letter-spacing: .15em; white-space: nowrap; }
-.module-index-track { display: flex; min-width: 0; overflow-x: auto; scrollbar-width: none; scroll-behavior: smooth; mask-image: linear-gradient(90deg, transparent, #000 2%, #000 97%, transparent); }
+.module-index-label { display: flex; align-items: center; gap: 9px; padding: 0; border: 0; background: transparent; color: #777269; font: 650 7px/1 ui-monospace, monospace; letter-spacing: .15em; white-space: nowrap; cursor: pointer; }
+.module-index-label span { color: #aaa398; font-size: 6px; letter-spacing: .09em; }
+.module-index-track { display: flex; min-width: 0; max-width: 0; opacity: 0; pointer-events: none; overflow: hidden; scrollbar-width: none; scroll-behavior: smooth; mask-image: linear-gradient(90deg, transparent, #000 2%, #000 97%, transparent); transition: max-width .42s cubic-bezier(.22,1,.36,1), opacity .22s ease; }
+.module-index-shell.expanded .module-index-track { max-width: 100%; opacity: 1; pointer-events: auto; overflow-x: auto; }
+.module-index-shell.expanded .module-index-label span { display: none; }
 .module-index-track::-webkit-scrollbar { display: none; }
 .module-index-track button {
   position: relative; flex: 0 0 auto; min-width: 104px; height: 40px; padding: 3px 12px 5px;
@@ -605,7 +617,7 @@ onBeforeUnmount(() => {
 .module-index-tools time { color: #4d4c46; }
 
 .data-warning { position: absolute; z-index: 11; right: 30px; top: 75px; margin: 0; max-width: 430px; color: #8b6944; font: 600 7px/1.5 ui-monospace, monospace; text-align: right; letter-spacing: .05em; }
-.archive-callout { position: absolute; z-index: 8; left: auto; right: 6.5%; top: 39%; width: min(320px, 24vw); color: #20221d; pointer-events: none; }
+.archive-callout { position: absolute; z-index: 8; left: 56%; right: auto; top: 39%; width: min(340px, 27vw); color: #20221d; pointer-events: none; }
 .archive-callout .file-number { margin: 0; color: #3c3e37; font: 650 11px/1 ui-monospace, monospace; letter-spacing: .035em; }
 .callout-meta { margin-top: 11px; display: flex; align-items: baseline; gap: 11px; color: #827d74; }
 .callout-meta strong { color: #65635c; font: 650 7px/1 ui-monospace, monospace; letter-spacing: .1em; }
@@ -691,7 +703,7 @@ onBeforeUnmount(() => {
   .terminal-brand { left: 28px; top: 28px; transform: scale(.82); transform-origin: top left; }
   .module-index-shell { left: 250px; right: 24px; }
   .module-index-tools > span, .module-index-tools time { display: none; }
-  .archive-callout { left: 48%; right: auto; top: 39%; width: 46vw; }
+  .archive-callout { left: 52%; right: auto; top: 39%; width: 42vw; }
   .archive-counter { left: 30px; }
   .archive-hint { left: 275px; }
   .column-navigation { left: 49%; }
@@ -710,7 +722,7 @@ onBeforeUnmount(() => {
   .terminal-brand { left: 18px; top: 16px; transform: scale(.58); }
   .module-index-shell { left: 0; right: 0; top: auto; bottom: 0; grid-template-columns: 1fr; gap: 0; padding: 0 0 env(safe-area-inset-bottom); background: rgba(232,229,225,.94); border-top: 1px solid #c3bdb2; border-bottom: 0; }
   .module-index-label, .module-index-tools { display: none; }
-  .module-index-track { width: 100%; }
+  .module-index-track { width: 100%; max-width: none; opacity: 1; pointer-events: auto; overflow-x: auto; }
   .module-index-track button { min-width: 102px; height: 54px; padding: 7px 12px; }
   .module-index-track button::after { bottom: 0; }
   .archive-callout { left: 18px; right: 18px; top: 23%; width: auto; }

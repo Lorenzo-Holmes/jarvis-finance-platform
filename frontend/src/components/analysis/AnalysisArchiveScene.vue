@@ -36,8 +36,9 @@ import {
   resizeArchiveComposer,
 } from '../../analysis-os/render/renderQuality'
 
-const LANE_SPACING = 4.28
-const ROW_SPACING = 0.52
+const LANE_SPACING = 5.28
+const ROW_SPACING = 0.88
+const LANE_ROW_SKEW = 0.58
 const CENTER_LANE = 2
 const CENTER_ROW = 12
 const ROW_PERIOD = 6
@@ -171,10 +172,11 @@ function createCard(module, physicalLane, physicalRow) {
   const group = assembly.group
 
   const baseX = (physicalLane - CENTER_LANE) * LANE_SPACING
-  const baseY = -2.12
-  const baseZ = (physicalRow - CENTER_ROW) * ROW_SPACING
+  const laneOffset = physicalLane - CENTER_LANE
+  const baseY = -2.18 - Math.min(0.12, Math.abs(laneOffset) * 0.018)
+  const baseZ = (physicalRow - CENTER_ROW) * ROW_SPACING + laneOffset * LANE_ROW_SKEW
   group.position.set(baseX, baseY, baseZ)
-  group.rotation.y = (CENTER_LANE - physicalLane) * 0.0105
+  group.rotation.y = (CENTER_LANE - physicalLane) * 0.014
   group.userData = { baseY, targetY: baseY, physicalLane, physicalRow, moduleKey: module.key }
   root.add(group)
   entries.push({ module, ...assembly, group, physicalLane, physicalRow })
@@ -216,14 +218,19 @@ function updateFocusVisuals() {
   for (const entry of entries) {
     const isFocused = entry === focused
     const isHovered = entry === hoveredEntry
-    const focusedLift = 0.90 + extraction * (4.05 - 0.90)
+    const focusedLift = 1.55 + extraction * (4.05 - 1.55)
+    const laneDelta = focused ? entry.physicalLane - focused.physicalLane : 99
     const laneDistance = focused ? Math.abs(entry.physicalLane - focused.physicalLane) : 99
-    const rowDistance = focused ? Math.abs(entry.physicalRow - focused.physicalRow) : 99
-    const clearance = !isFocused && extraction < 0.08 && rowDistance <= 3.6
-      ? -Math.max(0, (1 - rowDistance / 4.0)) * (laneDistance < 0.6 ? 0.46 : laneDistance < 1.6 ? 0.16 : 0)
+    const rowDelta = focused ? entry.physicalRow - focused.physicalRow : 99
+    const rowDistance = Math.abs(rowDelta)
+    const clearance = !isFocused && extraction < 0.08 && rowDelta > 0 && rowDelta <= 5.2
+      ? -Math.max(0, (1 - rowDelta / 5.8)) * (laneDistance < 0.6 ? 0.74 : laneDistance < 1.6 ? 0.22 : 0)
       : 0
-    entry.group.userData.targetY = entry.group.userData.baseY + (isFocused ? focusedLift : isHovered ? 0.28 : clearance)
-    entry.group.userData.targetScale = isFocused ? 1.018 + extraction * 0.035 : 1
+    const readingVoid = !isFocused && extraction < 0.08 && laneDelta > 0 && laneDelta <= 2 && rowDistance <= 2.6
+      ? -Math.max(0, 1 - rowDistance / 3.0) * (laneDelta < 1.2 ? 1.02 : 0.54)
+      : 0
+    entry.group.userData.targetY = entry.group.userData.baseY + (isFocused ? focusedLift : isHovered ? 0.28 : clearance + readingVoid)
+    entry.group.userData.targetScale = isFocused ? 1.028 + extraction * 0.028 : isHovered ? 0.985 : 0.965
     if (entry.glass) {
       entry.glass.material = isFocused && extraction > 0.32
         ? focusedGlassMaterial
@@ -332,7 +339,7 @@ function screenPoint(world) {
 function dragProjection() {
   const center = new Vector3(0, -2.12, 0)
   const base = screenPoint(center)
-  const lane = screenPoint(center.clone().add(new Vector3(-LANE_SPACING, 0, 0)))
+  const lane = screenPoint(center.clone().add(new Vector3(-LANE_SPACING, 0, -LANE_ROW_SKEW)))
   const row = screenPoint(center.clone().add(new Vector3(0, 0, -ROW_SPACING)))
   return {
     lane: { x: lane.x - base.x, y: lane.y - base.y },
@@ -501,26 +508,26 @@ function resize() {
   }
   camera.aspect = width / height
   if (width < 700) {
-    cameraBase.set(-13.8, 9.5, 33)
+    cameraBase.set(-13.2, 8.5, 31.8)
     cameraBaseFov = 22.5
     cameraDetailBase.set(-8.9, 6.8, 25.7)
     cameraDetailAim.set(1.2, 0.4, 0)
     cameraDetailFov = 18
-    cameraAimBase.set(0, -0.92, -0.5)
+    cameraAimBase.set(0.9, -1.02, -0.5)
   } else if (width < 1100) {
-    cameraBase.set(-18.8, 10.4, 29.8)
-    cameraBaseFov = 18.4
+    cameraBase.set(-17.8, 8.9, 27.7)
+    cameraBaseFov = 18.0
     cameraDetailBase.set(-12.5, 7.2, 23.2)
     cameraDetailAim.set(2.5, 0.25, 0)
     cameraDetailFov = 15
-    cameraAimBase.set(0, -1.08, -0.55)
+    cameraAimBase.set(2.0, -1.02, -0.55)
   } else {
-    cameraBase.set(-23.8, 11.9, 31.5)
-    cameraBaseFov = 16.4
+    cameraBase.set(-20.8, 8.7, 27.2)
+    cameraBaseFov = 17.1
     cameraDetailBase.set(-14.8, 7.5, 22.3)
     cameraDetailAim.set(3.25, 0.3, -0.2)
     cameraDetailFov = 13.6
-    cameraAimBase.set(-0.2, -1.22, -0.6)
+    cameraAimBase.set(3.05, -1.02, -0.55)
   }
   camera.fov = cameraBaseFov
   camera.position.copy(cameraBase)
@@ -608,6 +615,7 @@ function renderFrame(time) {
   sleep.row *= (1 - detail)
   root.position.x = -(laneTrack.value + sleep.lane - CENTER_LANE) * LANE_SPACING
   root.position.z = -(rowTrack.value + sleep.row - CENTER_ROW) * ROW_SPACING
+    - (laneTrack.value + sleep.lane - CENTER_LANE) * LANE_ROW_SKEW
 
   camera.position.copy(cameraBase).lerp(cameraDetailBase, detail)
   cameraAim.copy(cameraAimBase).lerp(cameraDetailAim, detail)
@@ -642,17 +650,23 @@ function renderFrame(time) {
       ? (Math.sin(time * 0.00055 + entry.physicalRow * 0.22 - entry.physicalLane * 0.35) * 0.11
         + Math.sin(time * 0.00029 - entry.physicalRow * 0.11 + entry.physicalLane * 0.27) * 0.05) * sleep.amount
       : 0
-    entry.group.position.y += (data.targetY + idle + sleepWave - entry.group.position.y) * easing
+    const laneDistance = Math.abs(entry.physicalLane - (laneTrack.value + sleep.lane))
+    const rowRelative = entry.physicalRow - (rowTrack.value + sleep.row)
+    const rowDistance = Math.abs(rowRelative)
+    const isFocused = entry === focused
+    const isNear = isFocused || (laneDistance <= 2.2 && rowDistance <= 4.6)
+    const showIdentity = isFocused || entry === hoveredEntry || (laneDistance <= 1.05 && rowDistance <= 1.15)
+    const foregroundSink = !isFocused && rowRelative > 0
+      ? -Math.min(1.05, rowRelative * 0.15)
+      : 0
+    entry.group.position.y += (data.targetY + idle + sleepWave + foregroundSink - entry.group.position.y) * easing
+
     const targetScale = data.targetScale || 1
     const scale = entry.group.scale.x + (targetScale - entry.group.scale.x) * easing
     entry.group.scale.setScalar(scale)
-    entry.group.rotation.x = focused === entry ? 0 : Math.sin(time * 0.00019 + index * 0.17) * 0.0025
-
-    const laneDistance = Math.abs(entry.physicalLane - (laneTrack.value + sleep.lane))
-    const rowDistance = Math.abs(entry.physicalRow - (rowTrack.value + sleep.row))
-    const isFocused = entry === focused
-    const isNear = isFocused || (laneDistance <= 2.2 && rowDistance <= 4.6)
-    const showIdentity = isFocused || (laneDistance <= 2.6 && rowDistance <= 5.4)
+    const targetTilt = focused === entry ? 0 : -0.26
+    const idleTilt = focused === entry ? 0 : Math.sin(time * 0.00019 + index * 0.17) * 0.003
+    entry.group.rotation.x += (targetTilt + idleTilt - entry.group.rotation.x) * easing
     if (entry.identityGroup) entry.identityGroup.visible = showIdentity
     entry.nearGroup.visible = isNear
     entry.focusGroup.visible = isFocused || entry === hoveredEntry

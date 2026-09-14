@@ -40,9 +40,9 @@ export function createArchiveAssetLibrary() {
   const materials = {
     body: new MeshStandardMaterial({ color: new Color('#d7d0c4'), roughness: 0.44, metalness: 0.08 }),
     inset: new MeshStandardMaterial({ color: new Color('#ece7de'), roughness: 0.52, metalness: 0.03 }),
-    frame: new MeshStandardMaterial({ color: new Color('#706e68'), roughness: 0.32, metalness: 0.34 }),
-    rail: new MeshStandardMaterial({ color: new Color('#a39b8f'), roughness: 0.28, metalness: 0.38 }),
-    inner: new MeshStandardMaterial({ color: new Color('#3b3e38'), roughness: 0.29, metalness: 0.22 }),
+    frame: new MeshStandardMaterial({ color: new Color('#a7a39b'), roughness: 0.4, metalness: 0.2 }),
+    rail: new MeshStandardMaterial({ color: new Color('#bbb4aa'), roughness: 0.38, metalness: 0.22 }),
+    inner: new MeshStandardMaterial({ color: new Color('#666860'), roughness: 0.34, metalness: 0.16 }),
     accent: new MeshStandardMaterial({ color: new Color('#92764d'), roughness: 0.28, metalness: 0.34 }),
     labelCarrier: new MeshStandardMaterial({ color: new Color('#eee9e0'), roughness: 0.56, metalness: 0.02 }),
     glass: new MeshStandardMaterial({

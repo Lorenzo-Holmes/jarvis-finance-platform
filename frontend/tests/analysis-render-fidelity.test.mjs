@@ -76,7 +76,7 @@ test('render fidelity V3 extraction exposes glass-decrypt stages without moving 
   assert.match(page, /DOCUMENT REVEAL/)
   assert.match(page, /WORKSPACE_REVEAL_HOLD_MS = 180/)
   assert.match(page, /documentRevealAmount \* 1\.55/)
-  assert.match(scene, /focusedLift = 0\.90 \+ extraction \* \(4\.05 - 0\.90\)/)
+  assert.match(scene, /focusedLift = 1\.55 \+ extraction \* \(4\.05 - 1\.55\)/)
   assert.match(scene, /camera\.position\.copy\(cameraBase\)\.lerp\(cameraDetailBase, detail\)/)
   assert.match(transition, /options\.enterDuration \|\| 1080/)
 })
@@ -91,5 +91,19 @@ test('render fidelity V3-G uses an original focused GLB with procedural fallback
   assert.match(scene, /qualityProfile\.name !== 'MOBILE'/)
   assert.match(scene, /disposeFocusedArchiveAsset/)
   assert.match(assetReadme, /original JARVIS archive model/)
+})
+
+test('archive field composition V4 favors a sparse raked field and collapsed module index', () => {
+  const scene = read('components/analysis/AnalysisArchiveScene.vue')
+  const page = read('pages/AnalysisOsPage.vue')
+
+  assert.match(scene, /const ROW_SPACING = 0\.88/)
+  assert.match(scene, /const LANE_ROW_SKEW = 0\.58/)
+  assert.match(scene, /const targetTilt = focused === entry \? 0 : -0\.26/)
+  assert.match(scene, /rowRelative > 0/)
+  assert.match(scene, /showIdentity = isFocused \|\| entry === hoveredEntry/)
+  assert.match(page, /moduleIndexExpanded/)
+  assert.match(page, /module-index-shell\.expanded/)
+  assert.match(page, /FILE NUMBER:/)
 })
 

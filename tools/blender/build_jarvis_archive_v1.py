@@ -77,11 +77,12 @@ def main():
 
     body_m = mat('BodyWarmIvory', (0.68, 0.64, 0.58), metallic=0.08, roughness=0.34)
     inset_m = mat('InsetPaper', (0.88, 0.85, 0.79), metallic=0.02, roughness=0.48)
-    frame_m = mat('FrameGraphite', (0.20, 0.21, 0.19), metallic=0.38, roughness=0.24)
-    rail_m = mat('RailSteel', (0.46, 0.44, 0.40), metallic=0.48, roughness=0.22)
+    frame_m = mat('FrameGraphite', (0.36, 0.36, 0.33), metallic=0.26, roughness=0.32)
+    rail_m = mat('RailSteel', (0.56, 0.54, 0.50), metallic=0.32, roughness=0.30)
     accent_m = mat('ArchiveAmber', (0.43, 0.31, 0.17), metallic=0.34, roughness=0.24)
-    glass_m = mat('GlassCover', (0.91, 0.89, 0.84), metallic=0.0, roughness=0.16, transmission=0.72, alpha=0.82)
-    inner_m = mat('InnerGraphite', (0.14, 0.15, 0.14), metallic=0.22, roughness=0.27)
+    spine_m = mat('ArchiveAmberSpine', (0.72, 0.53, 0.27), metallic=0.08, roughness=0.34, transmission=0.08, alpha=0.58)
+    glass_m = mat('GlassCover', (0.94, 0.92, 0.88), metallic=0.0, roughness=0.22, transmission=0.70, alpha=0.68)
+    inner_m = mat('InnerGraphite', (0.24, 0.25, 0.23), metallic=0.16, roughness=0.32)
 
     root = bpy.data.objects.new('JARVIS_ARCHIVE_ROOT', None)
     bpy.context.collection.objects.link(root)
@@ -100,6 +101,7 @@ def main():
 
     # Front glass and hardware.
     parts.append(cube('Glass', (2.79, 0.025, 4.22), (0, -0.255, -0.02), glass_m, 0.05))
+    parts.append(cube('AmberSpine', (0.095, 0.032, 4.04), (-1.30, -0.335, -0.02), spine_m, 0.018))
     parts.append(cube('Latch', (0.70, 0.10, 0.17), (0, -0.30, 1.95), accent_m, 0.035))
     parts.append(cube('LabelCarrier', (2.64, 0.045, 0.76), (0, -0.305, 1.55), inset_m, 0.028))
 
