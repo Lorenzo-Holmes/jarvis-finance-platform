@@ -36,7 +36,6 @@ import {
   configureArchiveRenderer,
   createArchiveComposer,
   disposeArchiveComposer,
-  focusArchiveComposer,
   probeArchiveComposer,
   resizeArchiveComposer,
 } from '../../analysis-os/render/renderQuality'
@@ -49,6 +48,7 @@ const CENTER_ROW = 12
 const ARCHIVE_ORIGIN_ROW = 15.5
 const FOCUS_Z = (CENTER_ROW - ARCHIVE_ORIGIN_ROW) * ROW_SPACING
 const POOL_OPTIONS = LOOP_POOL
+const IDLE_RENDER_INTERVAL_MS = 1000 / 30
 
 const ANONYMOUS_ARCHIVE = {
   id: 'archive:anonymous',
@@ -92,6 +92,7 @@ let momentum = null
 let wheelTotal = 0
 let wheelTime = 0
 let lastFrameTime = 0
+let lastRenderedAt = 0
 let initializedTrack = false
 let lastReportedRow = CENTER_ROW
 let navigationActive = false
@@ -148,7 +149,7 @@ function setDesktopBrowseCamera(width, height) {
   const span = Math.max(baseSpan, baseSpan * (16 / 9) / aspect)
   const distance = 140
   const yaw = 59 * Math.PI / 180
-  const elevation = 19 * Math.PI / 180
+  const elevation = 14.5 * Math.PI / 180
   const viewX = -Math.sin(yaw) * Math.cos(elevation)
   const viewY = Math.sin(elevation)
   const viewZ = Math.cos(yaw) * Math.cos(elevation)
@@ -678,6 +679,19 @@ function renderFrame(time) {
     animationFrame = 0
     return
   }
+  const extraction = Math.max(0, Math.min(1, Number(props.extractionProgress) || 0))
+  const staticBrowse = !momentum
+    && activePointer === null
+    && !navigationActive
+    && props.retrievalState === 'FOCUSED'
+    && extraction < 0.001
+    && Number(props.sleepAmount || 0) <= 0.001
+  if (staticBrowse && lastRenderedAt && time - lastRenderedAt < IDLE_RENDER_INTERVAL_MS) {
+    animationFrame = requestAnimationFrame(renderFrame)
+    return
+  }
+  lastRenderedAt = time
+
   const dt = Math.min(Math.max((time - lastFrameTime) / 1000, 0.001), 0.05)
   lastFrameTime = time
   renderedFrames += 1
@@ -705,7 +719,6 @@ function renderFrame(time) {
   }
   maybeEmitSettled()
 
-  const extraction = Math.max(0, Math.min(1, Number(props.extractionProgress) || 0))
   const detail = smoothstep(Math.max(0, (extraction - 0.08) / 0.92))
   const sleep = sleepOffsets(time)
   sleep.amount *= (1 - detail)
@@ -730,7 +743,17 @@ function renderFrame(time) {
     cameraAim.y += Math.sin(time / 14_300) * 0.05 * sleep.amount
   }
   camera.lookAt(cameraAim)
-  focusArchiveComposer(composerBundle, camera.position.distanceTo(cameraAim))
+
+  const interactiveMotion = Boolean(
+    momentum
+    || activePointer !== null
+    || navigationActive
+    || props.retrievalState === 'FLOW'
+    || props.retrievalState === 'QUERY'
+    || sleep.amount > 0.01,
+  )
+  if (composerBundle?.ssaoPass) composerBundle.ssaoPass.enabled = !interactiveMotion
+  if (keyLight) keyLight.castShadow = Boolean(qualityProfile?.shadows && !interactiveMotion)
 
   const fog = scene.fog
   if (fog instanceof Fog) {
@@ -790,7 +813,7 @@ function renderFrame(time) {
     }
   })
 
-  if (composerBundle) composerBundle.composer.render()
+  if (composerBundle && !interactiveMotion) composerBundle.composer.render()
   else renderer.render(scene, camera)
   if (!postProbeAttempted && qualityProfile?.postCandidate && renderedFrames > 24) {
     const rect = renderer.domElement.getBoundingClientRect()
@@ -997,8 +1020,8 @@ defineExpose({ getDebugState, shiftRows })
   inset: 0;
   pointer-events: none;
   background:
-    linear-gradient(180deg, rgba(248,246,240,.4), transparent 30%),
-    radial-gradient(ellipse at 43% 48%, transparent 30%, rgba(224,218,207,.2) 88%);
+    linear-gradient(180deg, rgba(248,246,240,.2), transparent 22%, transparent 78%, rgba(234,229,225,.1)),
+    radial-gradient(ellipse at 48% 48%, transparent 56%, rgba(234,229,225,.08) 76%, rgba(234,229,225,.24) 100%);
 }
 .analysis-scene :deep(canvas) { width: 100%; height: 100%; display: block; }
 .scene-fallback {
