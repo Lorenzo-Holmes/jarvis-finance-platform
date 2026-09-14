@@ -102,6 +102,20 @@ test('archive transition is progress-driven and preserves the extracted card for
   assert.match(page, /archiveTransition\.returnToArchive/)
 })
 
+test('keyboard navigation covers archive rows, workspace escape, and focus restoration targets', () => {
+  const page = read('pages/AnalysisOsPage.vue')
+  const shell = read('analysis-os/components/ArchiveWorkspaceShell.vue')
+
+  assert.match(page, /event\.key === 'ArrowUp'/)
+  assert.match(page, /event\.key === 'ArrowDown'/)
+  assert.match(page, /modulesForLane/)
+  assert.match(page, /\.focus\?\.\(\{ preventScroll: true \}\)/)
+  assert.match(shell, /event\.key !== 'Escape'/)
+  assert.match(shell, /requestReturn\(\)/)
+  assert.match(shell, /tabindex="-1"/)
+  assert.match(shell, /moduleTitleRef/)
+})
+
 test('sleep and wake remain a visual layer over the logical archive selection', () => {
   const idle = read('analysis-os/motion/useArchiveIdle.js')
   const scene = read('components/analysis/AnalysisArchiveScene.vue')

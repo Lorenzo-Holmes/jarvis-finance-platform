@@ -1,5 +1,5 @@
 <script setup>
-import { onBeforeUnmount, ref, watch } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { api } from '../../api/client'
 
 const props = defineProps({
@@ -14,6 +14,7 @@ const returning = ref(false)
 const switching = ref(false)
 const editingProfile = ref(false)
 const displayName = ref('')
+const moduleTitleRef = ref(null)
 let returnTimer = 0
 let switchTimer = 0
 
@@ -43,13 +44,38 @@ function requestModule(next) {
   switchTimer = window.setTimeout(() => emit('navigate-module', next.routeKey), reduced ? 20 : 180)
 }
 
+function focusModuleTitle() {
+  nextTick(() => moduleTitleRef.value?.focus?.({ preventScroll: true }))
+}
+
+function onKeydown(event) {
+  if (event.key !== 'Escape' || returning.value) return
+  const target = event.target
+  if (target instanceof HTMLInputElement
+    || target instanceof HTMLTextAreaElement
+    || target instanceof HTMLSelectElement
+    || target?.isContentEditable) return
+  if (document.querySelector('[role="dialog"][aria-modal="true"]')) return
+  event.preventDefault()
+  requestReturn()
+}
+
 watch(() => props.module.key, () => {
-  requestAnimationFrame(() => { switching.value = false })
+  requestAnimationFrame(() => {
+    switching.value = false
+    focusModuleTitle()
+  })
+})
+
+onMounted(() => {
+  window.addEventListener('keydown', onKeydown)
+  focusModuleTitle()
 })
 
 onBeforeUnmount(() => {
   if (returnTimer) window.clearTimeout(returnTimer)
   if (switchTimer) window.clearTimeout(switchTimer)
+  window.removeEventListener('keydown', onKeydown)
 })
 </script>
 
@@ -64,7 +90,7 @@ onBeforeUnmount(() => {
       <div class="workspace-module">
         <span>MODULE {{ String(props.module.no).padStart(2, '0') }} / {{ props.module.category }}</span>
         <div>
-          <h1>{{ props.module.labelEn }}</h1>
+          <h1 ref="moduleTitleRef" tabindex="-1">{{ props.module.labelEn }}</h1>
           <small>{{ props.module.labelZh }}</small>
         </div>
       </div>
@@ -152,6 +178,7 @@ onBeforeUnmount(() => {
   display: grid; grid-template-columns: 220px minmax(260px, 1fr) auto; align-items: end; gap: 28px;
   border-bottom: 1px solid #bdb7ac;
 }
+.workspace-module h1:focus-visible { outline: 1px solid var(--accent-strong); outline-offset: 4px; }
 .workspace-brand { display: grid; gap: 7px; align-self: center; }
 .workspace-brand span { color: #8b867d; font: 600 8px/1 ui-monospace, monospace; letter-spacing: .16em; }
 .workspace-brand strong { color: #34362f; font: 700 12px/1 ui-monospace, monospace; letter-spacing: .08em; }

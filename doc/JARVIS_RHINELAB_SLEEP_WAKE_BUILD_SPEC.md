@@ -2672,7 +2672,9 @@ V1.1 完成不再只判断“档案海是否好看”。必须同时满足：
 - [x] Strategy 已实现 `SEND TO BACKTEST`：只传递真实问卷、风险等级与配置结果；Backtest 显示 Imported Strategy Intent，不自动改写 short_ma / long_ma。
 - [x] 430px / 390px Archive Hub 与 Sim Trade 当前实测无 document 横向溢出。
 - [x] 暴露 `window.__jarvisArchiveDebug` 只读调试状态，便于自动验收 lane/row、惯性、sleep、extraction 和 canvas 生命周期。
-- [x] 当前 P0 自动回归 39 / 39 通过，Vite production build 通过。
+- [x] Archive 键盘路径补齐：←/→ 线性模块浏览，↑/↓ 同 lane row 浏览，Enter 进入 Workspace，Workspace Esc 返回 Archive。
+- [x] Workspace 进入时焦点转到当前模块 H1，返回 Archive 后焦点恢复到对应 Module Index 项。
+- [x] 当前 P0 自动回归 40 / 40 通过，Vite production build 通过。
 
 ### 71.2 本轮实际浏览器验收已完成
 
@@ -2687,13 +2689,18 @@ V1.1 完成不再只判断“档案海是否好看”。必须同时满足：
 - [x] Industry Chain 桌面已实测 6 个结构节点、中央关系画布和右侧 Node File；430px Node File Bottom Sheet 为 fixed bottom sheet，页面无横向溢出。
 - [x] Strategy → Backtest 已实测导入稳健型/期限/最大回撤/目标收益/黄金配置，同时双均线仍保持 5 / 20。
 - [x] 518850 Global Context 已实测跨 Market → Risk / AI Research / Industry / Financial 继承；Risk 自动映射为 gold_etf，Financial 明确提示不会自动生成财务数字。
+- [x] 隐藏 Archive RAF 已重新实测：Archive 激活 450ms 内约 26–28 次 `renderFrame`，Workspace 激活后同时间窗为 0，返回后恢复。
+- [x] 连续 3 轮 Archive ↔ Financial 进出均保持单一 Three.js canvas，最终状态为 FOCUSED，无重复 canvas。
+- [x] Reduced Motion 实测：12.5 秒无操作后仍为 `IDLE_ARMED`，sleepAmount 约 0.014，不进入持续 `SLEEP_DRIFT`。
+- [x] 键盘实测：Archive `↑` 切换同 lane 模块，Enter 后 activeElement 为 Workspace H1，Esc 后 activeElement 恢复到对应 `data-module-key`。
+- [x] 11 个 Workspace × 1440 / 1024 / 430 / 390 共 44 个布局状态完成自动宽度回归，document/body 横向溢出为 0。
 
 ### 71.3 仍未达到 Master DoD 的部分
 
 - [ ] 各模块的 LIVE / STALE / FALLBACK / ERROR / EMPTY 需要逐页统一成最终组件，而不是仅依赖现有页面错误态。
 - [ ] 需要在真实 Java 后端和真实认证会话下重新完成 Market、SSE、Sim Account、Stop Order 等端到端业务验收。
-- [ ] 需要重新进行隐藏 Archive RAF、重复进出 Workspace 和 WebGL context 数量的长循环性能验收。
-- [ ] 需要补全键盘 focus order、ARIA live region 和最终 Reduced Motion 人工验收。
+- [ ] 已完成基础 RAF/canvas 回归；最终发布前仍需追加更长时间（20+ 轮）Workspace 循环与 WebGL context 压力验收。
+- [ ] 键盘焦点与 Reduced Motion 自动验收已通过；仍需逐页补齐/审查 ARIA live region，并做最终人工辅助功能验收。
 - [ ] 需要对 1024 / 1280 / 1440 / 390 / 430 全模块页面完成最终像素级视觉审阅，而非只检查代表页面。
 - [ ] 需要最终用户确认主档案场的相机、档案密度、睡眠幅度和抽取节奏，再允许合并到上游 main。
 

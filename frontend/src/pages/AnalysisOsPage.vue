@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { api } from '../api/client'
 import AnalysisArchiveScene from '../components/analysis/AnalysisArchiveScene.vue'
-import { JARVIS_MODULES, MODULE_LANES, moduleByKey } from '../analysis-os/data/modules'
+import { JARVIS_MODULES, MODULE_LANES, moduleByKey, modulesForLane, wrap } from '../analysis-os/data/modules'
 import { useArchiveIdle } from '../analysis-os/motion/useArchiveIdle'
 import { useArchiveTransition } from '../analysis-os/motion/useArchiveTransition'
 
@@ -108,6 +108,16 @@ function moveLinear(delta) {
   focusModule(modules[next].key)
 }
 
+function moveVertical(delta) {
+  archiveIdle.activity('module-row-step')
+  const current = focusedModule.value
+  if (!current) return
+  const list = modulesForLane(current.lane, modules)
+  const index = Math.max(0, list.findIndex(item => item.key === current.key))
+  const next = list[wrap(index + delta, list.length)]
+  if (next) focusModule(next.key)
+}
+
 function scrollActiveIndexIntoView() {
   nextTick(() => {
     const root = moduleIndexRef.value
@@ -135,6 +145,14 @@ function onKeydown(event) {
     event.preventDefault()
     archiveIdle.activity('key')
     moveLinear(1)
+  } else if (event.key === 'ArrowUp') {
+    event.preventDefault()
+    archiveIdle.activity('key')
+    moveVertical(-1)
+  } else if (event.key === 'ArrowDown') {
+    event.preventDefault()
+    archiveIdle.activity('key')
+    moveVertical(1)
   } else if (event.key === 'Enter') {
     event.preventDefault()
     archiveIdle.activity('key')
@@ -172,6 +190,11 @@ watch(() => props.active, active => {
       }
       archiveIdle.setEnabled(true)
       archiveIdle.activity('return-to-archive')
+      nextTick(() => {
+        moduleIndexRef.value
+          ?.querySelector?.(`[data-module-key="${focusedKey.value}"]`)
+          ?.focus?.({ preventScroll: true })
+      })
     })
     return
   }
