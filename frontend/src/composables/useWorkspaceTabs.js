@@ -1,7 +1,7 @@
 import { computed, ref, watch } from 'vue'
 
 const DEFAULT_TAB = '研究终端'
-const BASE_TABS = [DEFAULT_TAB, '行情', '多市场', '回测', '模拟盘', '研究助手', '多空研报', '财报解析', '产业链图谱', '风险预警', '策略生成', '运维']
+const BASE_TABS = [DEFAULT_TAB, '行情', '多市场', '回测', '模拟盘', '研究助手', '智能报价', '多空研报', '财报解析', '产业链图谱', '风险预警', '策略生成', '运维']
 
 export function useWorkspaceTabs(userRef) {
   const activeTab = ref(DEFAULT_TAB)

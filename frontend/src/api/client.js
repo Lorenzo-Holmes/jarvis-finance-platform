@@ -265,7 +265,14 @@ export const api = {
   aiChatStream: (messages, onEvent, signal) => postSse(
     API_BASE, '/api/ai/chat/stream', { messages }, onEvent, signal,
   ),
-  aiQuote: (priceData) => post(API_BASE, '/api/ai/quote', { price_data: priceData }),
+  // 智能询报价（FR-07）：现价/涨跌 + 未来价格走势趋势区间 + AI 解读。
+  // closes 由 Java 服务端从自营 K 线库注入并覆盖客户端传值，前端只传标的与预测参数。
+  aiQuote: (priceData, options = {}) => post(API_BASE, '/api/ai/quote', {
+    price_data: priceData,
+    market: options.market,
+    horizon_days: options.horizonDays,
+    confidence: options.confidence,
+  }),
   aiFinancialReport: (content) => post(API_BASE, '/api/ai/financial/report', { content }),
   aiChain: (node, context = '') => post(API_BASE, '/api/ai/analyze/chain', { node, context }),
   aiSentiment: (reports) => post(API_BASE, '/api/ai/analyze/sentiment', { reports }),

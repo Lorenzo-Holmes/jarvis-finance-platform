@@ -133,7 +133,7 @@ public class AiController {
     @PostMapping("/quote")
     public Map<String, Object> quote(@RequestBody Map<String, Object> body) {
         consumeAiQuota("AI_QUOTE");
-        return postAndRecord("/api/ai/quote", body);
+        return postAndRecord("/api/ai/quote", enrichQuoteBody(body));
     }
 
     /**
@@ -194,6 +194,50 @@ public class AiController {
             riskPayload.put("portfolio_value", body.get("portfolio_value"));
         }
         // 服务端从自营行情库取日 K 收盘价，强制覆盖客户端可能伪造的 closes/history 字段。
+        riskPayload.put("closes", loadServerOwnedCloses(market, days));
+        return riskPayload;
+    }
+
+    /**
+     * 智能询报价（FR-07）：在报价快照之外，补上服务端自营日 K 收盘价，
+     * 由 Python 确定性层据此外推未来价格走势趋势区间。
+     *
+     * <p>与风险端点一致：收盘价一律由服务端取数并覆盖客户端同名字段，
+     * 客户端只能决定「标的 / 预测天数 / 置信度」这类无副作用参数。
+     */
+    private Map<String, Object> enrichQuoteBody(Map<String, Object> body) {
+        Map<String, Object> quotePayload = new LinkedHashMap<>();
+        if (marketDataService == null || body == null) return body;
+
+        if (body.get("price_data") instanceof Map<?, ?>) {
+            quotePayload.put("price_data", body.get("price_data"));
+        } else {
+            quotePayload.put("price_data", new LinkedHashMap<String, Object>());
+        }
+
+        String market = body.get("market") == null ? "gold_etf" : String.valueOf(body.get("market"));
+        quotePayload.put("symbol", market);
+
+        if (body.get("horizon_days") instanceof Number) {
+            int horizon = ((Number) body.get("horizon_days")).intValue();
+            quotePayload.put("horizon_days", Math.max(1, Math.min(horizon, 60)));
+        }
+        if (body.get("confidence") instanceof Number) {
+            quotePayload.put("confidence", body.get("confidence"));
+        }
+
+        // 样本量多取一些，保证 Python 侧有足够历史做波动率估计；上限与 RiskReq 的 2000 保持一致。
+        quotePayload.put("closes", loadServerOwnedCloses(market, 250));
+        return quotePayload;
+    }
+
+    /**
+     * 从自营行情库读取指定标的的日 K 收盘价序列。
+     *
+     * <p>失败时返回空列表而不是让请求失败：Python 侧会把「样本不足」统一表达为
+     * available=false，前端可据此展示友好提示。绝不允许回退到客户端传入的 closes。
+     */
+    private List<Double> loadServerOwnedCloses(String market, int days) {
         try {
             @SuppressWarnings("unchecked")
             Map<String, Object> kline = (Map<String, Object>) marketDataService.getDailyKline(market, days);
@@ -214,12 +258,10 @@ public class AiController {
                     }
                 }
             }
-            riskPayload.put("closes", closes);
+            return closes;
         } catch (Exception ignored) {
-            // 行情暂不可用时仍透传，Python 返回样本不足；不允许客户端伪造 closes。
-            riskPayload.put("closes", java.util.List.of());
+            return java.util.List.of();
         }
-        return riskPayload;
     }
 
     private void consumeAiQuota(String featureKey) {

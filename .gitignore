@@ -23,6 +23,7 @@ dist/
 # Node dependencies & build output (Vue / React Native)
 node_modules/
 frontend/dist/
+frontend/vite.config.js.timestamp-*
 mobile/.expo/
 mobile/web-build/
 *.tsbuildinfo

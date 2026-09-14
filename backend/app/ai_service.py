@@ -13,7 +13,13 @@ from typing import Iterator, List, Dict, Optional, Any
 
 import requests
 
-from .research_tools import deterministic_context, quote_metrics, risk_metrics, strategy_profile
+from .research_tools import (
+    deterministic_context,
+    quote_metrics,
+    risk_metrics,
+    strategy_profile,
+    trend_forecast,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -340,17 +346,54 @@ def analyze_chain(node: str, context: str = "") -> Dict[str, Any]:
     return _chat_request([{"role": "user", "content": prompt}], temperature=0.4, max_tokens=1500)
 
 
-def smart_quote(price_data: Dict[str, Any]) -> Dict[str, Any]:
-    """智能报价解读：派生数值先由 Python 计算，LLM 只负责文字解释。"""
+def smart_quote(price_data: Dict[str, Any], closes: Optional[List[Any]] = None,
+                horizon_days: Optional[int] = None,
+                confidence: Optional[float] = None,
+                symbol: Optional[str] = None) -> Dict[str, Any]:
+    """智能报价解读（FR-07）：派生数值与趋势区间先由 Python 计算，LLM 只负责文字解释。
+
+    返回 {available, metrics, forecast?, content}。
+    - metrics：来自 quote_metrics 的确定性派生指标（现价/涨跌/振幅等）
+    - forecast：提供历史收盘价（closes）时计算的未来价格走势趋势区间；样本不足时省略该字段
+    - content：模型原文（语义与既有调用方兼容，不因新增 forecast 而改变）
+
+    调用方（Java）应以自身业务数据层注入的收盘价为准，不信任客户端传入。
+    """
     metrics = quote_metrics(price_data)
-    prompt = (
-        "你是黄金投资助手。以下【确定性计算结果】由程序生成，禁止自行修改其中数值；"
-        "请基于这些结果给出简洁的行情解读与操作参考。\n"
-        f"确定性计算结果: {json.dumps(metrics, ensure_ascii=False, default=str)}\n"
-        f"原始行情: {json.dumps(price_data, ensure_ascii=False, default=str)}\n"
-        "要求: 3-5 条要点, 含趋势判断/风险提示, 200字内。"
+    sections = [
+        "你是黄金投资助手。以下【确定性计算结果】由程序生成，禁止自行修改其中数值；",
+        "请基于这些结果给出简洁的行情解读与操作参考。",
+        f"确定性计算结果: {json.dumps(metrics, ensure_ascii=False, default=str)}",
+    ]
+
+    forecast = None
+    if closes is not None:
+        forecast = trend_forecast(closes, horizon_days=horizon_days,
+                                  confidence=confidence, symbol=symbol)
+        if not forecast.get("available"):
+            # Java 即使行情库暂时没有样本也会传入空列表；此时必须向调用方
+            # 明确返回不可用，不能误报 available=True 并继续调用 LLM。
+            return {
+                "available": False,
+                "reason": forecast.get("reason", "insufficient_closes"),
+                "bars": forecast.get("bars", 0),
+                "metrics": metrics,
+            }
+        sections.append(
+            f"未来 {forecast['horizon_days']} 个交易日趋势区间（统计基线外推，"
+            f"非投资建议）: {json.dumps(forecast, ensure_ascii=False, default=str)}"
+        )
+
+    sections.append(f"原始行情: {json.dumps(price_data, ensure_ascii=False, default=str)}")
+    sections.append("要求: 3-5 条要点, 含趋势判断/风险提示, 200字内。")
+    content = _chat_request(
+        [{"role": "user", "content": "\n".join(sections)}], temperature=0.5, max_tokens=600,
     )
-    return _chat_request([{"role": "user", "content": prompt}], temperature=0.5, max_tokens=600)
+
+    result: Dict[str, Any] = {"available": True, "metrics": metrics, "content": content}
+    if forecast is not None:
+        result["forecast"] = forecast
+    return result
 
 
 def analyze_risk(closes: List[Any], confidence: float = 0.95,

@@ -61,7 +61,17 @@ class ChainReq(BaseModel):
 
 
 class QuoteReq(BaseModel):
+    """智能询报价（FR-07）：price_data 为行情快照，closes 为历史收盘价序列。
+
+    closes 由 Java 主后端从自营 K 线库注入并覆盖客户端传值；缺失时只返回报价解读，
+    不输出趋势区间（forecast 字段省略），保持既有调用方兼容。
+    样本量是否足够由确定性计算层判断，统一返回 available=False 而非 422。
+    """
     price_data: Dict[str, Any] = Field(default_factory=dict)
+    closes: Optional[List[float]] = Field(default=None, max_length=2000)
+    horizon_days: Optional[int] = Field(default=None, ge=1, le=60)
+    confidence: Optional[float] = Field(default=None, ge=0.5, le=0.99)
+    symbol: Optional[str] = Field(default=None, max_length=32)
 
 
 class RiskReq(BaseModel):
@@ -181,4 +191,10 @@ def analyze_strategy(req: StrategyReq):
 
 @router.post("/quote")
 def smart_quote(req: QuoteReq):
-    return {"code": 200, "message": "ok", "data": _guard(ai_service.smart_quote, price_data=req.price_data)}
+    return {"code": 200, "message": "ok",
+            "data": _guard(ai_service.smart_quote,
+                           price_data=req.price_data,
+                           closes=req.closes,
+                           horizon_days=req.horizon_days,
+                           confidence=req.confidence,
+                           symbol=req.symbol)}

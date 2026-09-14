@@ -19,6 +19,7 @@ const FinancialReportPage = defineAsyncComponent(() => import('./pages/Financial
 const ChainPage = defineAsyncComponent(() => import('./pages/ChainPage.vue'))
 const RiskPage = defineAsyncComponent(() => import('./pages/RiskPage.vue'))
 const StrategyPage = defineAsyncComponent(() => import('./pages/StrategyPage.vue'))
+const QuotePage = defineAsyncComponent(() => import('./pages/QuotePage.vue'))
 const OpsView = defineAsyncComponent(() => import('./components/OpsView.vue'))
 const AdminView = defineAsyncComponent(() => import('./components/AdminView.vue'))
 
@@ -127,6 +128,7 @@ onMounted(() => {
       <AiCenter />
     </section>
 
+    <QuotePage v-if="visitedTabs.has('智能报价')" v-show="activeTab === '智能报价'" />
     <SentimentPage v-if="visitedTabs.has('多空研报')" v-show="activeTab === '多空研报'" />
     <FinancialReportPage v-if="visitedTabs.has('财报解析')" v-show="activeTab === '财报解析'" />
     <ChainPage v-if="visitedTabs.has('产业链图谱')" v-show="activeTab === '产业链图谱'" />
