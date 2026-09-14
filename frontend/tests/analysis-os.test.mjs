@@ -24,21 +24,35 @@ test('analysis OS is the authenticated workspace entry without replacing existin
   assert.match(app, /<SimTradeView :user="user"/)
 })
 
-test('analysis OS keeps the product brand original and exposes research routing', () => {
+test('analysis OS uses Three.js while preserving original JARVIS branding', () => {
   const page = read('pages/AnalysisOsPage.vue')
+  const scene = read('components/analysis/AnalysisArchiveScene.vue')
 
   assert.match(page, /JARVIS \/ ANALYSIS OS/)
   assert.match(page, /市场研究档案终端/)
-  assert.match(page, /AI 深度研究/)
-  assert.match(page, /财报解析/)
-  assert.match(page, /产业链/)
-  assert.match(page, /风险预警/)
-  assert.match(page, /模拟交易/)
+  assert.match(page, /AnalysisArchiveScene/)
+  assert.match(scene, /from 'three'/)
+  assert.match(scene, /THREE\.WebGLRenderer/)
+  assert.match(scene, /Raycaster/)
+  assert.match(scene, /ResizeObserver/)
   assert.doesNotMatch(page, /莱茵生命|明日方舟|RHINE LAB/i)
+  assert.doesNotMatch(scene, /莱茵生命|明日方舟|RHINE LAB/i)
 })
 
-test('analysis OS labels PoC numbers as non-real-time placeholders', () => {
+test('analysis OS consumes existing market APIs and keeps a labeled fallback', () => {
   const page = read('pages/AnalysisOsPage.vue')
-  assert.match(page, /行情数字用于界面占位，不作为实时价格或投资依据/)
+
+  assert.match(page, /api\.marketInstruments\(\)/)
+  assert.match(page, /api\.marketPreferences\(\)/)
+  assert.match(page, /api\.marketAssetQuote/)
+  assert.match(page, /已进入降级模式/)
+  assert.match(page, /不包含实时价格或投资结论/)
   assert.match(page, /prefers-reduced-motion/)
+})
+
+test('analysis OS exposes existing research and trading routes', () => {
+  const page = read('pages/AnalysisOsPage.vue')
+  for (const route of ['多市场', '研究助手', '财报解析', '产业链图谱', '风险预警', '模拟盘']) {
+    assert.match(page, new RegExp(route))
+  }
 })

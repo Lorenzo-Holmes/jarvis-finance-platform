@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "echarts": "^5.5.0",
+    "three": "^0.183.0",
     "vue": "^3.4.0"
   },
   "devDependencies": {

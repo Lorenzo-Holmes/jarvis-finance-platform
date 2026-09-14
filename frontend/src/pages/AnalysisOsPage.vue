@@ -1,89 +1,197 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { api } from '../api/client'
+import AnalysisArchiveScene from '../components/analysis/AnalysisArchiveScene.vue'
 
 const emit = defineEmits(['navigate'])
 
-const assets = [
-  { id: 'XAU', symbol: 'XAU', name: '伦敦金', market: 'GLOBAL', sector: 'METALS', price: '2,614.28', change: '+0.84%', direction: 'up', confidence: '82', risk: 'MEDIUM', summary: '避险资产保持高位震荡，美元与实际利率仍是主要驱动。' },
-  { id: '518850', symbol: '518850', name: '黄金 ETF', market: 'CN · SSE', sector: 'COMMODITY', price: '6.382', change: '+0.31%', direction: 'up', confidence: '77', risk: 'LOW', summary: '境内黄金资产延续跟随国际金价，流动性与跟踪误差处于可观察区间。' },
-  { id: 'NVDA', symbol: 'NVDA', name: 'NVIDIA', market: 'US · NASDAQ', sector: 'AI COMPUTE', price: '184.62', change: '+1.92%', direction: 'up', confidence: '88', risk: 'HIGH', summary: 'AI 算力需求仍是核心变量，关注估值敏感度、供给扩张与大型客户资本开支。' },
-  { id: 'AAPL', symbol: 'AAPL', name: 'Apple', market: 'US · NASDAQ', sector: 'CONSUMER TECH', price: '231.08', change: '-0.18%', direction: 'down', confidence: '69', risk: 'MEDIUM', summary: '硬件周期稳定，服务业务与端侧 AI 渗透率决定中期预期差。' },
-  { id: 'BTC', symbol: 'BTC', name: 'Bitcoin', market: 'CRYPTO', sector: 'DIGITAL ASSET', price: '116,482', change: '+2.26%', direction: 'up', confidence: '71', risk: 'HIGH', summary: '高波动资产继续受流动性与机构资金流影响，短期趋势与风险偏好相关性偏高。' },
-  { id: 'MSFT', symbol: 'MSFT', name: 'Microsoft', market: 'US · NASDAQ', sector: 'CLOUD / AI', price: '512.34', change: '+0.46%', direction: 'up', confidence: '84', risk: 'MEDIUM', summary: '云业务与 AI 商业化共同支撑基本面，资本开支效率是后续关键验证点。' },
-  { id: '600519', symbol: '600519', name: '贵州茅台', market: 'CN · SSE', sector: 'CONSUMER', price: '1,476.20', change: '-0.42%', direction: 'down', confidence: '73', risk: 'MEDIUM', summary: '高端消费需求与渠道库存仍需持续跟踪，现金流质量维持较强韧性。' },
-  { id: 'ETH', symbol: 'ETH', name: 'Ethereum', market: 'CRYPTO', sector: 'SMART CONTRACT', price: '4,638', change: '+1.14%', direction: 'up', confidence: '66', risk: 'HIGH', summary: '链上活跃度、资金费率与生态应用增长共同决定风险收益结构。' },
-  { id: 'TSLA', symbol: 'TSLA', name: 'Tesla', market: 'US · NASDAQ', sector: 'MOBILITY / AI', price: '398.76', change: '-1.07%', direction: 'down', confidence: '63', risk: 'HIGH', summary: '车辆业务与自动驾驶预期交织，价格弹性和交付质量使波动保持较高水平。' },
-  { id: '000001', symbol: '000001', name: '平安银行', market: 'CN · SZSE', sector: 'FINANCIALS', price: '12.44', change: '+0.08%', direction: 'up', confidence: '72', risk: 'LOW', summary: '净息差、资产质量和零售业务修复是银行板块的主要观察指标。' },
-  { id: 'META', symbol: 'META', name: 'Meta', market: 'US · NASDAQ', sector: 'PLATFORM / AI', price: '742.55', change: '+0.67%', direction: 'up', confidence: '81', risk: 'MEDIUM', summary: '广告现金流为 AI 基础设施投入提供支撑，关注算力投资的边际回报。' },
-  { id: 'JD_GOLD', symbol: '积存金', name: '银行积存金', market: 'CN · OTC', sector: 'GOLD SAVING', price: '836.40', change: '+0.24%', direction: 'up', confidence: '74', risk: 'LOW', summary: '适合作为黄金价格映射观察项，需同时关注点差、交易时间和流动性约束。' },
-  { id: 'AMD', symbol: 'AMD', name: 'AMD', market: 'US · NASDAQ', sector: 'SEMICONDUCTOR', price: '211.36', change: '+0.95%', direction: 'up', confidence: '76', risk: 'HIGH', summary: '数据中心产品份额与 AI 加速卡放量决定增长斜率，竞争格局仍然激烈。' },
-  { id: '0700', symbol: '0700.HK', name: '腾讯控股', market: 'HK · HKEX', sector: 'INTERNET', price: '641.50', change: '+0.39%', direction: 'up', confidence: '79', risk: 'MEDIUM', summary: '游戏、广告与金融科技形成多元现金流，AI 投入进入产品化验证阶段。' },
-  { id: 'SPY', symbol: 'SPY', name: 'S&P 500 ETF', market: 'US · NYSE', sector: 'INDEX', price: '681.22', change: '+0.22%', direction: 'up', confidence: '80', risk: 'MEDIUM', summary: '宽基指数保持高位，盈利扩散与利率预期将决定后续风险溢价。' },
-]
-
-const selectedId = ref(null)
-const query = ref('')
-const booting = ref(true)
-const tiltX = ref(0)
-const tiltY = ref(0)
-let bootTimer = null
-
-const selectedAsset = computed(() => assets.find((item) => item.id === selectedId.value) || null)
-const normalizedQuery = computed(() => query.value.trim().toLowerCase())
-const stageStyle = computed(() => ({
-  '--tilt-x': `${tiltX.value}deg`,
-  '--tilt-y': `${tiltY.value}deg`,
+const FALLBACK_ASSETS = [
+  { id: 'fallback:XAU', symbol: 'XAU', name: '伦敦金', market: 'global', marketLabel: 'GLOBAL', sector: 'METALS', price: '—', change: '—', direction: 'up', risk: 'MEDIUM', confidence: 72 },
+  { id: 'fallback:518850', symbol: '518850', name: '黄金 ETF', market: 'a_share', marketLabel: 'CN · SSE', sector: 'COMMODITY', price: '—', change: '—', direction: 'up', risk: 'LOW', confidence: 76 },
+  { id: 'fallback:NVDA', symbol: 'NVDA', name: 'NVIDIA', market: 'us_stock', marketLabel: 'US · NASDAQ', sector: 'AI COMPUTE', price: '—', change: '—', direction: 'up', risk: 'HIGH', confidence: 82 },
+  { id: 'fallback:AAPL', symbol: 'AAPL', name: 'Apple', market: 'us_stock', marketLabel: 'US · NASDAQ', sector: 'CONSUMER TECH', price: '—', change: '—', direction: 'up', risk: 'MEDIUM', confidence: 78 },
+  { id: 'fallback:BTC', symbol: 'BTC', name: 'Bitcoin', market: 'crypto', marketLabel: 'CRYPTO', sector: 'DIGITAL ASSET', price: '—', change: '—', direction: 'up', risk: 'HIGH', confidence: 68 },
+  { id: 'fallback:MSFT', symbol: 'MSFT', name: 'Microsoft', market: 'us_stock', marketLabel: 'US · NASDAQ', sector: 'CLOUD / AI', price: '—', change: '—', direction: 'up', risk: 'MEDIUM', confidence: 80 },
+  { id: 'fallback:600519', symbol: '600519', name: '贵州茅台', market: 'a_share', marketLabel: 'CN · SSE', sector: 'CONSUMER', price: '—', change: '—', direction: 'up', risk: 'MEDIUM', confidence: 74 },
+  { id: 'fallback:ETH', symbol: 'ETH', name: 'Ethereum', market: 'crypto', marketLabel: 'CRYPTO', sector: 'SMART CONTRACT', price: '—', change: '—', direction: 'up', risk: 'HIGH', confidence: 66 },
+  { id: 'fallback:TSLA', symbol: 'TSLA', name: 'Tesla', market: 'us_stock', marketLabel: 'US · NASDAQ', sector: 'MOBILITY / AI', price: '—', change: '—', direction: 'up', risk: 'HIGH', confidence: 64 },
+  { id: 'fallback:000001', symbol: '000001', name: '平安银行', market: 'a_share', marketLabel: 'CN · SZSE', sector: 'FINANCIALS', price: '—', change: '—', direction: 'up', risk: 'LOW', confidence: 70 },
+  { id: 'fallback:META', symbol: 'META', name: 'Meta', market: 'us_stock', marketLabel: 'US · NASDAQ', sector: 'PLATFORM / AI', price: '—', change: '—', direction: 'up', risk: 'MEDIUM', confidence: 79 },
+  { id: 'fallback:JD_GOLD', symbol: '积存金', name: '银行积存金', market: 'a_share', marketLabel: 'CN · OTC', sector: 'GOLD SAVING', price: '—', change: '—', direction: 'up', risk: 'LOW', confidence: 72 },
+  { id: 'fallback:AMD', symbol: 'AMD', name: 'AMD', market: 'us_stock', marketLabel: 'US · NASDAQ', sector: 'SEMICONDUCTOR', price: '—', change: '—', direction: 'up', risk: 'HIGH', confidence: 75 },
+  { id: 'fallback:0700', symbol: '0700.HK', name: '腾讯控股', market: 'a_share', marketLabel: 'HK · HKEX', sector: 'INTERNET', price: '—', change: '—', direction: 'up', risk: 'MEDIUM', confidence: 77 },
+  { id: 'fallback:SPY', symbol: 'SPY', name: 'S&P 500 ETF', market: 'us_stock', marketLabel: 'US · NYSE', sector: 'INDEX', price: '—', change: '—', direction: 'up', risk: 'MEDIUM', confidence: 78 },
+].map(item => ({
+  ...item,
+  dataState: 'fallback',
+  summary: '实时研究数据暂不可用；当前对象仅作为导航与空间终端降级展示，不提供价格或投资结论。',
 }))
 
-function matchesQuery(asset) {
-  if (!normalizedQuery.value) return true
-  return [asset.symbol, asset.name, asset.market, asset.sector]
-    .some((value) => value.toLowerCase().includes(normalizedQuery.value))
+const assets = ref(FALLBACK_ASSETS)
+const selectedId = ref('')
+const query = ref('')
+const booting = ref(true)
+const dataState = ref('loading')
+const dataError = ref('')
+const lastUpdated = ref('')
+let bootTimer = 0
+let loadVersion = 0
+
+const selectedAsset = computed(() => assets.value.find(item => item.id === selectedId.value) || null)
+const normalizedQuery = computed(() => query.value.trim().toLowerCase())
+const filteredAssets = computed(() => assets.value.filter(matchesQuery))
+const dataStateLabel = computed(() => ({
+  loading: 'SYNCING',
+  live: 'LIVE API',
+  catalog: 'CATALOG',
+  fallback: 'FALLBACK',
+}[dataState.value] || 'UNKNOWN'))
+
+function marketLabel(market) {
+  return {
+    a_share: 'CN · A SHARE',
+    us_stock: 'US · STOCK',
+    crypto: 'CRYPTO',
+  }[market] || String(market || 'MARKET').toUpperCase()
 }
 
-function cardStyle(index) {
-  const col = index % 5
-  const row = Math.floor(index / 5)
-  const x = (col - 2) * 174
-  const y = (row - 1) * 158
-  const z = -Math.abs(col - 2) * 26 - Math.abs(row - 1) * 18
-  const rotate = (2 - col) * 3.2
+function inferSector(item) {
+  return item.sector || item.industry || item.type || item.category || 'RESEARCH OBJECT'
+}
+
+function inferRisk(market) {
+  if (market === 'crypto') return 'HIGH'
+  if (market === 'a_share') return 'MEDIUM'
+  return 'MEDIUM'
+}
+
+function confidenceFor(item, quote) {
+  if (!quote) return 60
+  let score = 72
+  if (quote.stale) score -= 12
+  if (item.market === 'crypto') score -= 4
+  return Math.max(45, Math.min(88, score))
+}
+
+function formatPrice(value) {
+  if (value == null || value === '' || Number.isNaN(Number(value))) return '—'
+  return Number(value).toLocaleString('zh-CN', { maximumFractionDigits: 4 })
+}
+
+function formatChangePct(value) {
+  if (value == null || value === '' || Number.isNaN(Number(value))) return '—'
+  const n = Number(value)
+  return `${n >= 0 ? '+' : ''}${n.toFixed(2)}%`
+}
+
+function buildLiveAsset(item, quote) {
+  const changePct = Number(quote?.change_pct)
+  const hasChange = Number.isFinite(changePct)
+  const id = `${item.market}:${item.symbol}`
   return {
-    '--x': `${x}px`,
-    '--y': `${y}px`,
-    '--z': `${z}px`,
-    '--card-rotate': `${rotate}deg`,
-    '--card-delay': `${index * 34}ms`,
+    id,
+    symbol: item.symbol,
+    name: item.name || item.symbol,
+    market: item.market,
+    marketLabel: marketLabel(item.market),
+    sector: inferSector(item),
+    price: formatPrice(quote?.price),
+    change: hasChange ? formatChangePct(changePct) : '—',
+    direction: hasChange && changePct < 0 ? 'down' : 'up',
+    confidence: confidenceFor(item, quote),
+    risk: inferRisk(item.market),
+    dataState: quote ? (quote.stale ? 'stale' : 'live') : 'catalog',
+    summary: quote
+      ? `${item.name || item.symbol} 的市场报价已由 JARVIS Java API 载入。进一步判断请进入行情、财报、产业链、风险或 AI 研究页面查看可复现数据与分析。`
+      : `${item.name || item.symbol} 已从 JARVIS 市场目录载入；当前报价暂不可用，可继续进入对应研究页面。`,
   }
 }
 
-function selectAsset(asset) {
-  selectedId.value = selectedId.value === asset.id ? null : asset.id
+function uniqueInstruments(items) {
+  const seen = new Set()
+  return items.filter(item => {
+    if (!item?.market || !item?.symbol) return false
+    const key = `${item.market}:${item.symbol}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+function matchesQuery(asset) {
+  if (!normalizedQuery.value) return true
+  return [asset.symbol, asset.name, asset.marketLabel, asset.sector]
+    .filter(Boolean)
+    .some(value => String(value).toLowerCase().includes(normalizedQuery.value))
+}
+
+async function loadArchiveData() {
+  const version = ++loadVersion
+  dataState.value = 'loading'
+  dataError.value = ''
+  try {
+    const [instrumentResult, preferenceResult] = await Promise.allSettled([
+      api.marketInstruments(),
+      api.marketPreferences(),
+    ])
+    const instrumentResponse = instrumentResult.status === 'fulfilled' ? instrumentResult.value : null
+    if (instrumentResponse?.code !== 200 || !Array.isArray(instrumentResponse?.data)) {
+      throw new Error(instrumentResponse?.message || '市场标的目录加载失败')
+    }
+
+    const serverWatchlist = preferenceResult.status === 'fulfilled'
+      && preferenceResult.value?.code === 200
+      && Array.isArray(preferenceResult.value?.data?.watchlist)
+      ? preferenceResult.value.data.watchlist
+      : []
+
+    const candidates = uniqueInstruments([
+      ...serverWatchlist,
+      ...instrumentResponse.data,
+    ]).slice(0, 15)
+
+    if (!candidates.length) throw new Error('市场标的目录为空')
+
+    const quoteResults = await Promise.allSettled(
+      candidates.map(item => api.marketAssetQuote(item.market, item.symbol))
+    )
+    if (version !== loadVersion) return
+
+    let liveCount = 0
+    const nextAssets = candidates.map((item, index) => {
+      const result = quoteResults[index]
+      const response = result?.status === 'fulfilled' ? result.value : null
+      const quote = response?.code === 200 && response?.data ? response.data : null
+      if (quote) liveCount += 1
+      return buildLiveAsset(item, quote)
+    })
+
+    assets.value = nextAssets
+    dataState.value = liveCount ? 'live' : 'catalog'
+    lastUpdated.value = new Date().toLocaleTimeString('zh-CN', { hour12: false })
+    if (selectedId.value && !nextAssets.some(item => item.id === selectedId.value)) {
+      selectedId.value = ''
+    }
+  } catch (error) {
+    if (version !== loadVersion) return
+    assets.value = FALLBACK_ASSETS
+    dataState.value = 'fallback'
+    dataError.value = error?.message || '研究终端数据同步失败'
+    lastUpdated.value = ''
+  }
+}
+
+function selectAsset(id) {
+  selectedId.value = selectedId.value === id ? '' : id
 }
 
 function clearSelection() {
-  selectedId.value = null
+  selectedId.value = ''
 }
 
 function resetView() {
   query.value = ''
-  selectedId.value = null
-  tiltX.value = 0
-  tiltY.value = 0
-}
-
-function onStagePointerMove(event) {
-  if (window.matchMedia?.('(pointer: coarse)').matches) return
-  const bounds = event.currentTarget.getBoundingClientRect()
-  const x = (event.clientX - bounds.left) / bounds.width - 0.5
-  const y = (event.clientY - bounds.top) / bounds.height - 0.5
-  tiltY.value = x * 4.5
-  tiltX.value = y * -3.4
-}
-
-function onStagePointerLeave() {
-  tiltX.value = 0
-  tiltY.value = 0
+  selectedId.value = ''
 }
 
 function skipBoot() {
@@ -94,10 +202,12 @@ onMounted(() => {
   const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
   bootTimer = window.setTimeout(() => {
     booting.value = false
-  }, reduced ? 120 : 1380)
+  }, reduced ? 80 : 1100)
+  loadArchiveData()
 })
 
 onBeforeUnmount(() => {
+  loadVersion += 1
   if (bootTimer) window.clearTimeout(bootTimer)
 })
 </script>
@@ -105,29 +215,24 @@ onBeforeUnmount(() => {
 <template>
   <section class="analysis-os" aria-label="JARVIS 研究终端">
     <div v-if="booting" class="boot-layer" @click="skipBoot">
-      <div class="boot-mark" aria-hidden="true">
-        <span></span><span></span><span></span>
-      </div>
-      <p class="boot-kicker">JARVIS SYSTEM / RESEARCH ACCESS</p>
+      <div class="boot-mark" aria-hidden="true"><span></span><span></span><span></span></div>
+      <p>JARVIS SYSTEM / RESEARCH ACCESS</p>
       <h1>ANALYSIS OS</h1>
       <div class="boot-line"><i></i></div>
-      <p class="boot-state">WORKSPACE AUTHENTICATED · LOADING MARKET ARCHIVES</p>
-      <button type="button" class="boot-skip" @click.stop="skipBoot">SKIP</button>
+      <small>AUTHENTICATED WORKSPACE · INITIALIZING SPATIAL MARKET ARCHIVE</small>
+      <button type="button" @click.stop="skipBoot">SKIP</button>
     </div>
 
     <header class="os-header">
       <div>
         <p class="eyebrow">JARVIS / ANALYSIS OS</p>
         <h1>市场研究档案终端</h1>
-        <p class="os-subtitle">将行情、AI 研究、财报、产业链、风险与模拟交易组织成同一研究入口。</p>
+        <p class="os-subtitle">Three.js 空间化研究入口，将真实市场目录、报价与现有 JARVIS 研究模块组织到同一工作流。</p>
       </div>
       <div class="system-strip" aria-label="系统状态">
-        <span><i class="status-dot"></i>DATA LINK</span>
-        <strong>ONLINE</strong>
-        <span>SESSION</span>
-        <strong>LOCAL</strong>
-        <span>MODE</span>
-        <strong>POC</strong>
+        <span>DATA</span><strong>{{ dataStateLabel }}</strong>
+        <span>OBJECTS</span><strong>{{ assets.length }}</strong>
+        <span>UPDATED</span><strong>{{ lastUpdated || '—' }}</strong>
       </div>
     </header>
 
@@ -137,61 +242,32 @@ onBeforeUnmount(() => {
         <input v-model="query" type="search" placeholder="代码 / 名称 / 市场 / 行业" autocomplete="off" />
       </label>
       <div class="toolbar-actions">
-        <button type="button" @click="resetView">RESET ARRAY</button>
+        <button type="button" @click="resetView">RESET</button>
+        <button type="button" :disabled="dataState === 'loading'" @click="loadArchiveData">SYNC DATA</button>
         <button type="button" @click="emit('navigate', '行情')">MARKET</button>
         <button type="button" @click="emit('navigate', '模拟盘')">SIM TRADE</button>
       </div>
     </div>
 
-    <div class="os-workspace">
-      <div
-        class="archive-stage"
-        :style="stageStyle"
-        @pointermove="onStagePointerMove"
-        @pointerleave="onStagePointerLeave"
-      >
-        <div class="stage-grid" aria-hidden="true"></div>
-        <div class="stage-axis stage-axis--x" aria-hidden="true"></div>
-        <div class="stage-axis stage-axis--y" aria-hidden="true"></div>
+    <p v-if="dataError" class="data-warning">
+      {{ dataError }}。已进入降级模式；占位对象不包含实时价格或投资结论。
+    </p>
 
-        <div class="archive-plane" :class="{ 'has-selection': selectedAsset }">
-          <button
-            v-for="(asset, index) in assets"
-            :key="asset.id"
-            type="button"
-            class="asset-archive"
-            :class="{
-              selected: selectedId === asset.id,
-              muted: selectedAsset && selectedId !== asset.id,
-              'query-muted': !matchesQuery(asset),
-            }"
-            :style="cardStyle(index)"
-            :aria-pressed="selectedId === asset.id"
-            @click="selectAsset(asset)"
-          >
-            <span class="archive-glass" aria-hidden="true"></span>
-            <span class="archive-corner archive-corner--a" aria-hidden="true"></span>
-            <span class="archive-corner archive-corner--b" aria-hidden="true"></span>
-            <span class="archive-index">{{ String(index + 1).padStart(2, '0') }}</span>
-            <span class="archive-sector">{{ asset.sector }}</span>
-            <strong>{{ asset.symbol }}</strong>
-            <span class="archive-name">{{ asset.name }}</span>
-            <span class="archive-market">{{ asset.market }}</span>
-            <span class="archive-price">{{ asset.price }}</span>
-            <span class="archive-change" :class="asset.direction">{{ asset.change }}</span>
-            <span class="archive-bars" aria-hidden="true">
-              <i v-for="n in 7" :key="n" :style="{ height: `${18 + ((index + n * 3) % 7) * 6}%` }"></i>
-            </span>
-            <span class="archive-scan" aria-hidden="true"></span>
-          </button>
-        </div>
+    <div class="os-workspace">
+      <div class="archive-stage">
+        <AnalysisArchiveScene
+          :assets="assets"
+          :selected-id="selectedId"
+          :query="query"
+          @select="selectAsset"
+        />
 
         <div class="stage-caption stage-caption--top">
-          <span>MARKET ARCHIVE ARRAY</span>
-          <strong>15 OBJECTS</strong>
+          <span>THREE.JS MARKET ARCHIVE ARRAY</span>
+          <strong>{{ filteredAssets.length }} VISIBLE</strong>
         </div>
         <div class="stage-caption stage-caption--bottom">
-          <span>SELECT AN OBJECT TO DECRYPT RESEARCH CONTEXT</span>
+          <span>SELECT A GLASS OBJECT TO OPEN RESEARCH CONTEXT</span>
           <strong>{{ selectedAsset ? 'OBJECT LOCKED' : 'ARRAY READY' }}</strong>
         </div>
       </div>
@@ -199,8 +275,7 @@ onBeforeUnmount(() => {
       <aside class="research-panel" :class="{ active: selectedAsset }">
         <template v-if="selectedAsset">
           <button type="button" class="panel-close" aria-label="关闭资产详情" @click="clearSelection">×</button>
-          <div class="panel-scanline" aria-hidden="true"></div>
-          <p class="panel-overline">OBJECT / {{ selectedAsset.market }}</p>
+          <p class="panel-overline">OBJECT / {{ selectedAsset.marketLabel }}</p>
           <div class="panel-title-row">
             <div>
               <h2>{{ selectedAsset.symbol }}</h2>
@@ -217,380 +292,195 @@ onBeforeUnmount(() => {
           <div class="detail-grid">
             <div><span>SECTOR</span><strong>{{ selectedAsset.sector }}</strong></div>
             <div><span>RISK</span><strong>{{ selectedAsset.risk }}</strong></div>
-            <div><span>AI CONF.</span><strong>{{ selectedAsset.confidence }}%</strong></div>
-            <div><span>STATE</span><strong>TRACKING</strong></div>
+            <div><span>DATA</span><strong>{{ selectedAsset.dataState.toUpperCase() }}</strong></div>
+            <div><span>AI ROUTE</span><strong>READY</strong></div>
           </div>
 
           <div class="decrypt-block">
-            <p class="decrypt-label">AI RESEARCH SNAPSHOT</p>
-            <p>{{ selectedAsset.summary }}</p>
+            <p>RESEARCH CONTEXT</p>
+            <span>{{ selectedAsset.summary }}</span>
           </div>
 
-          <div class="signal-list">
-            <div><span>TECHNICAL</span><i style="--score: 74%"></i><strong>74</strong></div>
-            <div><span>FUNDAMENTAL</span><i style="--score: 81%"></i><strong>81</strong></div>
-            <div><span>SENTIMENT</span><i style="--score: 68%"></i><strong>68</strong></div>
-          </div>
-
-          <div class="panel-actions">
-            <button type="button" class="primary" @click="emit('navigate', '研究助手')">AI 深度研究</button>
-            <button type="button" @click="emit('navigate', '行情')">打开行情</button>
-            <button type="button" @click="emit('navigate', '财报解析')">财报解析</button>
-            <button type="button" @click="emit('navigate', '产业链图谱')">产业链</button>
-            <button type="button" @click="emit('navigate', '风险预警')">风险预警</button>
-            <button type="button" @click="emit('navigate', '模拟盘')">模拟交易</button>
+          <div class="research-actions">
+            <button type="button" @click="emit('navigate', '多市场')"><span>01</span>行情与技术分析</button>
+            <button type="button" @click="emit('navigate', '研究助手')"><span>02</span>AI 深度研究</button>
+            <button type="button" @click="emit('navigate', '财报解析')"><span>03</span>财报解析</button>
+            <button type="button" @click="emit('navigate', '产业链图谱')"><span>04</span>产业链</button>
+            <button type="button" @click="emit('navigate', '风险预警')"><span>05</span>风险预警</button>
+            <button type="button" class="primary-action" @click="emit('navigate', '模拟盘')"><span>06</span>模拟交易</button>
           </div>
         </template>
 
-        <template v-else>
-          <div class="panel-idle-mark" aria-hidden="true">
-            <span></span><span></span><span></span>
-          </div>
-          <p class="panel-overline">RESEARCH WORKSPACE / READY</p>
-          <h2 class="idle-title">选择一份市场档案</h2>
-          <p class="idle-copy">从左侧阵列选择标的。终端会将该资产的行情、AI 摘要、技术分析、财报、产业链和风险入口集中到同一上下文。</p>
-          <div class="idle-protocol">
-            <span>01</span><p><strong>SELECT</strong> 选择标的与市场对象</p>
-            <span>02</span><p><strong>DECRYPT</strong> 展开研究摘要与信号</p>
-            <span>03</span><p><strong>ROUTE</strong> 进入现有业务工作区</p>
-          </div>
-          <p class="poc-note">当前为交互与信息架构 PoC。行情数字用于界面占位，不作为实时价格或投资依据。</p>
-        </template>
+        <div v-else class="panel-empty">
+          <span class="empty-reticle" aria-hidden="true"></span>
+          <p>RESEARCH OBJECT</p>
+          <h2>等待选择资产</h2>
+          <span>点击三维档案对象，或使用下方可访问资产列表。当前终端只负责研究导航，不直接给出交易建议。</span>
+        </div>
       </aside>
     </div>
+
+    <div class="asset-access-list" aria-label="资产列表">
+      <button
+        v-for="asset in filteredAssets"
+        :key="asset.id"
+        type="button"
+        :class="{ active: selectedId === asset.id }"
+        @click="selectAsset(asset.id)"
+      >
+        <strong>{{ asset.symbol }}</strong>
+        <span>{{ asset.name }}</span>
+        <small>{{ asset.price }} · {{ asset.change }}</small>
+      </button>
+    </div>
+
+    <footer class="os-footer">
+      <span>WEBGL / THREE.JS · DOM RESEARCH CONTROLS · JARVIS JAVA API</span>
+      <strong>研究与模拟交易用途，不构成投资建议</strong>
+    </footer>
   </section>
 </template>
 
 <style scoped>
 .analysis-os {
-  --os-bg: #e9e9e5;
-  --os-ink: #111313;
-  --os-muted: #666b68;
-  --os-line: rgba(20, 24, 22, .15);
-  --os-accent: #df5d24;
-  --os-positive: #278d64;
-  --os-negative: #b9483d;
-  position: relative;
-  min-height: calc(100vh - 154px);
-  margin-top: 8px;
-  overflow: hidden;
-  color: var(--os-ink);
-  border: 1px solid rgba(255, 255, 255, .18);
-  border-radius: 4px;
+  --os-bg: #070a09;
+  --os-panel: rgba(12, 18, 16, .91);
+  --os-line: rgba(167, 210, 193, .18);
+  --os-text: #e8f3ee;
+  --os-muted: #7f928b;
+  --os-accent: #91ffc8;
+  min-height: calc(100vh - 126px);
+  margin-top: 4px;
+  border: 1px solid var(--os-line);
   background:
-    radial-gradient(circle at 31% 24%, rgba(255,255,255,.94), transparent 31%),
-    linear-gradient(135deg, #f2f2ee 0%, #e4e5e0 48%, #d7d9d4 100%);
-  box-shadow: 0 18px 70px rgba(0, 0, 0, .2);
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-}
-.analysis-os::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  opacity: .34;
-  background-image:
-    linear-gradient(rgba(18, 22, 20, .035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(18, 22, 20, .035) 1px, transparent 1px);
-  background-size: 32px 32px;
-}
-.os-header,
-.os-toolbar,
-.os-workspace { position: relative; z-index: 1; }
-.os-header {
-  display: flex;
-  justify-content: space-between;
-  gap: 32px;
-  padding: 24px 28px 18px;
-  border-bottom: 1px solid var(--os-line);
-}
-.eyebrow,
-.panel-overline,
-.boot-kicker,
-.decrypt-label {
-  margin: 0 0 7px;
-  font-size: 10px;
-  letter-spacing: .18em;
-  font-weight: 760;
-  color: var(--os-muted);
-}
-.os-header h1 { margin: 0; font-size: clamp(24px, 2.2vw, 36px); letter-spacing: -.035em; font-weight: 640; }
-.os-subtitle { margin: 7px 0 0; max-width: 670px; color: var(--os-muted); font-size: 12px; }
-.system-strip {
-  display: grid;
-  grid-template-columns: auto auto;
-  gap: 4px 12px;
-  align-content: center;
-  min-width: 220px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 9px;
-  letter-spacing: .08em;
-}
-.system-strip span { color: #737875; }
-.system-strip strong { font-weight: 700; text-align: right; }
-.status-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 7px; background: var(--os-positive); box-shadow: 0 0 0 3px rgba(39,141,100,.12); }
-.os-toolbar {
-  display: flex;
-  align-items: end;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 11px 28px;
-  border-bottom: 1px solid var(--os-line);
-  background: rgba(255,255,255,.28);
-  backdrop-filter: blur(10px);
-}
-.terminal-search { display: grid; grid-template-columns: auto minmax(180px, 340px); align-items: center; gap: 12px; }
-.terminal-search span { font-family: ui-monospace, monospace; font-size: 9px; font-weight: 750; letter-spacing: .12em; }
-.terminal-search input {
-  width: min(38vw, 360px);
-  border: 0;
-  border-bottom: 1px solid rgba(17,19,19,.38);
-  outline: 0;
-  padding: 7px 2px;
-  color: var(--os-ink);
-  background: transparent;
-  font: 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-}
-.terminal-search input:focus { border-color: var(--os-accent); }
-.toolbar-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
-.toolbar-actions button,
-.panel-actions button,
-.boot-skip {
-  border: 1px solid rgba(17,19,19,.2);
-  background: rgba(255,255,255,.38);
-  color: var(--os-ink);
-  padding: 7px 10px;
-  font: 700 9px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  letter-spacing: .07em;
-  cursor: pointer;
-  transition: background .18s ease, border-color .18s ease, transform .18s ease;
-}
-.toolbar-actions button:hover,
-.panel-actions button:hover { background: rgba(255,255,255,.8); border-color: rgba(17,19,19,.5); transform: translateY(-1px); }
-.os-workspace {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 350px;
-  min-height: 620px;
-}
-.archive-stage {
-  --tilt-x: 0deg;
-  --tilt-y: 0deg;
+    linear-gradient(rgba(145, 255, 200, .018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(145, 255, 200, .018) 1px, transparent 1px),
+    var(--os-bg);
+  background-size: 36px 36px;
+  color: var(--os-text);
+  overflow: hidden;
   position: relative;
-  min-width: 0;
-  min-height: 620px;
-  overflow: hidden;
-  perspective: 1200px;
-  border-right: 1px solid var(--os-line);
 }
-.stage-grid {
-  position: absolute;
-  inset: 9% 7%;
-  transform: perspective(700px) rotateX(68deg) translateY(36%);
-  transform-origin: center bottom;
-  background-image:
-    linear-gradient(rgba(15,18,17,.12) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(15,18,17,.12) 1px, transparent 1px);
-  background-size: 46px 46px;
-  mask-image: linear-gradient(to top, black, transparent 78%);
-  opacity: .4;
-}
-.stage-axis { position: absolute; background: rgba(16,18,17,.14); pointer-events: none; }
-.stage-axis--x { left: 6%; right: 6%; top: 50%; height: 1px; }
-.stage-axis--y { top: 8%; bottom: 8%; left: 50%; width: 1px; }
-.archive-plane {
-  position: absolute;
-  inset: 0;
-  transform-style: preserve-3d;
-  transform: rotateX(var(--tilt-x)) rotateY(var(--tilt-y));
-  transition: transform .18s ease-out;
-}
-.asset-archive {
-  --x: 0px; --y: 0px; --z: 0px; --card-rotate: 0deg; --card-delay: 0ms;
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 146px;
-  height: 126px;
-  padding: 12px 12px 10px;
-  overflow: hidden;
-  text-align: left;
-  border: 1px solid rgba(27,31,29,.24);
-  border-radius: 3px;
-  color: #171a18;
-  background: linear-gradient(145deg, rgba(255,255,255,.58), rgba(233,236,231,.24));
-  box-shadow: 0 14px 32px rgba(36,40,37,.11), inset 0 0 0 1px rgba(255,255,255,.32);
-  backdrop-filter: blur(8px) saturate(.8);
-  cursor: pointer;
-  transform-style: preserve-3d;
-  transform: translate(-50%, -50%) translate3d(var(--x), var(--y), var(--z)) rotateY(var(--card-rotate));
-  transition:
-    transform .62s cubic-bezier(.2,.76,.18,1),
-    opacity .3s ease,
-    filter .3s ease,
-    border-color .25s ease,
-    box-shadow .3s ease;
-  transition-delay: var(--card-delay);
-}
-.asset-archive:hover { border-color: rgba(223,93,36,.62); box-shadow: 0 20px 46px rgba(36,40,37,.18), inset 0 0 0 1px rgba(255,255,255,.55); }
-.asset-archive.selected {
-  z-index: 9;
-  transform: translate(-50%, -50%) translate3d(0, 0, 240px) rotateY(0deg) scale(1.24);
-  border-color: rgba(223,93,36,.72);
-  box-shadow: 0 30px 70px rgba(28,32,29,.27), 0 0 0 1px rgba(223,93,36,.16);
-}
-.asset-archive.muted { opacity: .24; filter: grayscale(.8) blur(.35px); }
-.asset-archive.query-muted { opacity: .10; filter: grayscale(1); pointer-events: none; }
-.archive-glass { position: absolute; inset: 0; pointer-events: none; background: linear-gradient(120deg, rgba(255,255,255,.52), transparent 34%, rgba(255,255,255,.18) 66%, transparent); transform: translateZ(3px); }
-.archive-corner { position: absolute; width: 12px; height: 12px; border-color: var(--os-accent); opacity: .75; }
-.archive-corner--a { left: 7px; top: 7px; border-left: 1px solid; border-top: 1px solid; }
-.archive-corner--b { right: 7px; bottom: 7px; border-right: 1px solid; border-bottom: 1px solid; }
-.archive-index { position: absolute; top: 9px; right: 10px; font: 600 8px ui-monospace, monospace; color: #858a87; }
-.archive-sector { display: block; max-width: 98px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font: 700 7px ui-monospace, monospace; letter-spacing: .08em; color: #717673; }
-.asset-archive strong { display: block; margin-top: 7px; font: 720 22px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: -.06em; }
-.archive-name { display: block; margin-top: 4px; font-size: 9px; font-weight: 650; }
-.archive-market { display: block; margin-top: 2px; color: #777c79; font: 7px ui-monospace, monospace; }
-.archive-price { position: absolute; left: 12px; bottom: 12px; font: 700 9px ui-monospace, monospace; }
-.archive-change { position: absolute; right: 10px; bottom: 12px; font: 700 8px ui-monospace, monospace; }
-.up { color: var(--os-positive) !important; }
-.down { color: var(--os-negative) !important; }
-.archive-bars { position: absolute; right: 10px; top: 39px; width: 38px; height: 30px; display: flex; align-items: end; gap: 2px; opacity: .38; }
-.archive-bars i { flex: 1; min-height: 3px; background: #535957; }
-.archive-scan { position: absolute; left: 0; right: 0; top: -18%; height: 16%; opacity: 0; background: linear-gradient(to bottom, transparent, rgba(223,93,36,.24), transparent); }
-.asset-archive.selected .archive-scan { opacity: 1; animation: scan-card 1.1s ease-in-out .22s 1 both; }
-.stage-caption { position: absolute; left: 18px; right: 18px; display: flex; justify-content: space-between; gap: 12px; color: #777c79; font: 8px ui-monospace, monospace; letter-spacing: .08em; pointer-events: none; }
-.stage-caption strong { color: #252927; }
-.stage-caption--top { top: 14px; }
-.stage-caption--bottom { bottom: 14px; }
-.research-panel {
-  position: relative;
-  padding: 24px 22px 22px;
-  overflow: hidden;
-  background: linear-gradient(180deg, rgba(248,248,244,.72), rgba(224,226,220,.82));
-}
-.research-panel::before { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(90deg, rgba(16,19,18,.035) 1px, transparent 1px); background-size: 12px 100%; }
-.panel-close { position: absolute; right: 15px; top: 13px; z-index: 4; width: 28px; height: 28px; border: 0; background: transparent; color: #676c69; font-size: 22px; cursor: pointer; }
-.panel-scanline { position: absolute; left: 0; right: 0; height: 34px; top: -40px; background: linear-gradient(transparent, rgba(223,93,36,.11), transparent); pointer-events: none; }
-.research-panel.active .panel-scanline { animation: scan-panel 1.15s ease-out .12s 1 both; }
-.panel-title-row { display: flex; justify-content: space-between; align-items: start; gap: 18px; padding-bottom: 16px; border-bottom: 1px solid var(--os-line); }
-.panel-title-row h2 { margin: 0; font: 750 34px/1 ui-monospace, monospace; letter-spacing: -.07em; }
-.panel-title-row p { margin: 6px 0 0; color: var(--os-muted); font-size: 12px; }
-.confidence-ring { display: grid; place-items: center; width: 58px; height: 58px; border: 1px solid rgba(223,93,36,.48); border-radius: 50%; font: 700 17px ui-monospace, monospace; box-shadow: inset 0 0 0 5px rgba(223,93,36,.05); }
-.confidence-ring small { font-size: 7px; margin-top: -15px; }
-.quote-row { display: flex; align-items: baseline; justify-content: space-between; padding: 16px 0; border-bottom: 1px solid var(--os-line); }
-.quote-row strong { font: 650 25px ui-monospace, monospace; }
-.quote-row span { font: 700 10px ui-monospace, monospace; }
-.detail-grid { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid var(--os-line); }
-.detail-grid div { display: grid; gap: 4px; padding: 11px 0; }
-.detail-grid div:nth-child(odd) { border-right: 1px solid var(--os-line); padding-right: 10px; }
-.detail-grid div:nth-child(even) { padding-left: 10px; }
-.detail-grid span { color: var(--os-muted); font: 7px ui-monospace, monospace; letter-spacing: .1em; }
-.detail-grid strong { font: 700 9px ui-monospace, monospace; }
-.decrypt-block { margin: 16px 0 14px; padding: 13px; border-left: 2px solid var(--os-accent); background: rgba(255,255,255,.34); }
-.decrypt-block p:last-child { margin: 0; font-size: 11px; line-height: 1.7; color: #454a47; }
-.signal-list { display: grid; gap: 8px; margin: 15px 0 18px; }
-.signal-list div { display: grid; grid-template-columns: 82px 1fr 24px; align-items: center; gap: 9px; font: 7px ui-monospace, monospace; color: var(--os-muted); }
-.signal-list i { position: relative; height: 2px; background: rgba(15,18,17,.12); }
-.signal-list i::after { content: ""; position: absolute; inset: 0 auto 0 0; width: var(--score); background: var(--os-accent); }
-.signal-list strong { color: var(--os-ink); text-align: right; }
-.panel-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-.panel-actions .primary { grid-column: 1 / -1; color: white; border-color: #161918; background: #161918; }
-.panel-actions .primary:hover { color: white; background: #2a2e2c; }
-.panel-idle-mark { position: relative; width: 94px; height: 94px; margin: 48px auto 34px; }
-.panel-idle-mark span { position: absolute; inset: 0; border: 1px solid rgba(30,34,32,.24); border-radius: 50%; }
-.panel-idle-mark span:nth-child(2) { inset: 15px; border-color: rgba(223,93,36,.4); }
-.panel-idle-mark span:nth-child(3) { inset: 32px; background: var(--os-accent); border: 0; box-shadow: 0 0 0 8px rgba(223,93,36,.08); }
-.idle-title { margin: 0 0 12px; font-size: 25px; letter-spacing: -.04em; }
-.idle-copy { margin: 0; color: var(--os-muted); font-size: 11px; line-height: 1.75; }
-.idle-protocol { display: grid; grid-template-columns: 28px 1fr; gap: 0 10px; margin-top: 28px; border-top: 1px solid var(--os-line); }
-.idle-protocol > span { padding-top: 11px; color: var(--os-accent); font: 700 8px ui-monospace, monospace; }
-.idle-protocol p { margin: 0; padding: 10px 0; border-bottom: 1px solid var(--os-line); color: var(--os-muted); font-size: 9px; }
-.idle-protocol strong { color: var(--os-ink); margin-right: 7px; font: 700 8px ui-monospace, monospace; }
-.poc-note { margin: 22px 0 0; color: #858a87; font-size: 8px; line-height: 1.6; }
 .boot-layer {
-  position: absolute;
-  inset: 0;
-  z-index: 30;
-  display: grid;
-  place-content: center;
-  justify-items: center;
-  color: #171a18;
-  background: #f4f4f0;
-  cursor: pointer;
-  animation: boot-out .48s ease 1.05s forwards;
+  position: fixed; inset: 0; z-index: 200;
+  display: grid; place-content: center; justify-items: center;
+  background: #f2f5f2; color: #101613; cursor: pointer;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
-.boot-mark { position: relative; width: 78px; height: 78px; margin-bottom: 24px; }
-.boot-mark span { position: absolute; inset: 0; border: 1px solid rgba(24,28,26,.24); border-radius: 50%; animation: boot-ring .8s ease both; }
-.boot-mark span:nth-child(2) { inset: 14px; border-color: rgba(223,93,36,.56); animation-delay: .12s; }
-.boot-mark span:nth-child(3) { inset: 29px; border: 0; background: var(--os-accent); animation-delay: .2s; }
-.boot-layer h1 { margin: 0; font: 700 clamp(38px,6vw,78px)/.95 ui-monospace, monospace; letter-spacing: -.08em; }
-.boot-kicker { margin-bottom: 10px; }
-.boot-line { width: min(480px, 60vw); height: 1px; margin: 24px 0 12px; background: rgba(22,25,24,.12); overflow: hidden; }
-.boot-line i { display: block; height: 100%; width: 0; background: var(--os-accent); animation: boot-progress .86s cubic-bezier(.3,.8,.3,1) .1s forwards; }
-.boot-state { margin: 0; color: #787d7a; font: 8px ui-monospace, monospace; letter-spacing: .11em; }
-.boot-skip { position: absolute; right: 20px; bottom: 18px; }
-@keyframes scan-card { from { transform: translateY(0); } to { transform: translateY(730%); } }
-@keyframes scan-panel { from { transform: translateY(0); } to { transform: translateY(650px); } }
-@keyframes boot-progress { to { width: 100%; } }
-@keyframes boot-ring { from { transform: scale(.72); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-@keyframes boot-out { to { opacity: 0; visibility: hidden; } }
-@media (max-width: 1180px) {
-  .os-workspace { grid-template-columns: minmax(0, 1fr) 310px; }
-  .asset-archive { width: 132px; }
+.boot-layer p { margin: 18px 0 6px; font-size: 11px; letter-spacing: .24em; }
+.boot-layer h1 { margin: 0; font: 300 clamp(40px, 7vw, 88px)/1 system-ui, sans-serif; letter-spacing: .08em; }
+.boot-layer small { margin-top: 10px; font-size: 9px; letter-spacing: .14em; color: #5c6862; }
+.boot-layer button { margin-top: 30px; border: 0; background: transparent; font: inherit; font-size: 10px; letter-spacing: .2em; cursor: pointer; }
+.boot-mark { display: flex; gap: 8px; }
+.boot-mark span { display: block; width: 34px; height: 2px; background: #151d19; transform-origin: left; animation: boot-mark .75s ease both; }
+.boot-mark span:nth-child(2) { transform: rotate(60deg); }
+.boot-mark span:nth-child(3) { transform: rotate(-60deg); }
+.boot-line { width: min(440px, 62vw); height: 1px; background: #cfd5d1; margin-top: 24px; overflow: hidden; }
+.boot-line i { display: block; width: 100%; height: 100%; background: #131a16; animation: boot-line 1s ease both; }
+.os-header, .os-toolbar, .os-footer { position: relative; z-index: 3; }
+.os-header {
+  display: flex; justify-content: space-between; gap: 24px; align-items: flex-start;
+  padding: 24px 28px 18px; border-bottom: 1px solid var(--os-line);
 }
-@media (max-width: 980px) {
-  .os-header { align-items: start; }
-  .system-strip { min-width: 180px; }
+.eyebrow { margin: 0 0 7px; color: var(--os-accent); font: 600 10px/1 ui-monospace, monospace; letter-spacing: .18em; }
+.os-header h1 { margin: 0; font: 500 clamp(22px, 3vw, 36px)/1.05 system-ui, sans-serif; letter-spacing: -.035em; }
+.os-subtitle { margin: 9px 0 0; max-width: 720px; color: var(--os-muted); font-size: 12px; line-height: 1.6; }
+.system-strip { display: grid; grid-template-columns: auto auto; gap: 5px 14px; min-width: 190px; font: 9px/1.3 ui-monospace, monospace; letter-spacing: .09em; }
+.system-strip span { color: #65756f; }
+.system-strip strong { color: #cfe5dc; text-align: right; font-weight: 600; }
+.os-toolbar { display: flex; align-items: stretch; justify-content: space-between; border-bottom: 1px solid var(--os-line); }
+.terminal-search { display: flex; align-items: center; flex: 1; min-width: 0; padding-left: 28px; }
+.terminal-search span { margin-right: 14px; color: #60716a; font: 9px/1 ui-monospace, monospace; letter-spacing: .14em; }
+.terminal-search input { width: min(520px, 65%); border: 0; outline: 0; color: #d9ebe4; background: transparent; padding: 14px 0; font: 12px/1.2 ui-monospace, monospace; }
+.terminal-search input::placeholder { color: #43514c; }
+.toolbar-actions { display: flex; }
+.toolbar-actions button, .research-actions button {
+  border: 0; border-left: 1px solid var(--os-line); color: #849990; background: rgba(255,255,255,.012);
+  cursor: pointer; transition: .16s ease;
+}
+.toolbar-actions button { padding: 0 18px; font: 9px/1 ui-monospace, monospace; letter-spacing: .1em; }
+.toolbar-actions button:hover:not(:disabled), .research-actions button:hover { color: #e8fff5; background: rgba(145,255,200,.07); }
+.toolbar-actions button:disabled { opacity: .45; cursor: default; }
+.data-warning { position: relative; z-index: 4; margin: 0; padding: 8px 28px; color: #e7c787; background: rgba(126, 92, 28, .13); border-bottom: 1px solid rgba(231,199,135,.16); font-size: 11px; }
+.os-workspace { display: grid; grid-template-columns: minmax(0, 1fr) 340px; min-height: 610px; }
+.archive-stage { position: relative; min-height: 610px; overflow: hidden; border-right: 1px solid var(--os-line); }
+.stage-caption { position: absolute; z-index: 3; left: 18px; right: 18px; display: flex; justify-content: space-between; pointer-events: none; color: #52615b; font: 9px/1 ui-monospace, monospace; letter-spacing: .1em; }
+.stage-caption strong { color: #91bca9; font-weight: 600; }
+.stage-caption--top { top: 16px; }
+.stage-caption--bottom { bottom: 14px; }
+.research-panel { position: relative; min-height: 610px; padding: 24px; background: var(--os-panel); overflow: hidden; }
+.panel-close { position: absolute; right: 14px; top: 12px; border: 0; color: #809189; background: transparent; font-size: 22px; cursor: pointer; }
+.panel-overline { margin: 0 0 16px; color: #688077; font: 9px/1 ui-monospace, monospace; letter-spacing: .15em; }
+.panel-title-row { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.panel-title-row h2 { margin: 0; font: 400 42px/1 ui-monospace, monospace; letter-spacing: -.05em; }
+.panel-title-row p { margin: 7px 0 0; color: #9db1a9; font-size: 13px; }
+.confidence-ring { display: grid; place-items: center; width: 60px; height: 60px; border: 1px solid rgba(145,255,200,.28); border-radius: 50%; color: var(--os-accent); font: 600 17px/1 ui-monospace, monospace; box-shadow: inset 0 0 24px rgba(145,255,200,.04); }
+.confidence-ring small { font-size: 8px; color: #60766d; }
+.quote-row { display: flex; align-items: baseline; gap: 14px; margin: 20px 0; padding: 16px 0; border-top: 1px solid var(--os-line); border-bottom: 1px solid var(--os-line); }
+.quote-row strong { font: 500 28px/1 ui-monospace, monospace; }
+.quote-row span { font: 600 12px/1 ui-monospace, monospace; }
+.up { color: #8affbd; } .down { color: #ff8c90; }
+.detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--os-line); border: 1px solid var(--os-line); }
+.detail-grid div { padding: 11px; background: #0b100e; }
+.detail-grid span { display: block; color: #52625c; font: 8px/1 ui-monospace, monospace; letter-spacing: .12em; }
+.detail-grid strong { display: block; margin-top: 6px; color: #b7c9c2; font: 500 10px/1.25 ui-monospace, monospace; }
+.decrypt-block { margin-top: 18px; padding: 15px; border: 1px solid var(--os-line); background: linear-gradient(120deg, rgba(145,255,200,.04), transparent 55%); }
+.decrypt-block p { margin: 0 0 9px; color: var(--os-accent); font: 8px/1 ui-monospace, monospace; letter-spacing: .14em; }
+.decrypt-block span { color: #a9bbb4; font-size: 11px; line-height: 1.65; }
+.research-actions { display: grid; grid-template-columns: 1fr 1fr; margin-top: 18px; border-top: 1px solid var(--os-line); border-left: 1px solid var(--os-line); }
+.research-actions button { min-height: 54px; padding: 9px 10px; border-right: 1px solid var(--os-line); border-bottom: 1px solid var(--os-line); text-align: left; font-size: 11px; }
+.research-actions button span { display: block; margin-bottom: 4px; color: #52645c; font: 8px/1 ui-monospace, monospace; }
+.research-actions .primary-action { color: #dfffee; background: rgba(145,255,200,.06); }
+.panel-empty { min-height: 520px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; color: #64746e; }
+.empty-reticle { width: 74px; height: 74px; border: 1px solid #2d4239; border-radius: 50%; box-shadow: inset 0 0 0 12px #0a0e0d, inset 0 0 0 13px #24362f; }
+.panel-empty p { margin: 22px 0 7px; font: 9px/1 ui-monospace, monospace; letter-spacing: .16em; }
+.panel-empty h2 { margin: 0; color: #a8bab3; font-size: 18px; font-weight: 500; }
+.panel-empty > span:last-child { margin-top: 10px; max-width: 230px; font-size: 11px; line-height: 1.6; }
+.asset-access-list {
+  position: relative; z-index: 3; display: grid; grid-template-columns: repeat(5, 1fr);
+  border-top: 1px solid var(--os-line); background: #080c0b;
+}
+.asset-access-list button {
+  min-width: 0; padding: 12px 14px; border: 0; border-right: 1px solid var(--os-line); border-bottom: 1px solid var(--os-line);
+  color: #84958e; background: transparent; text-align: left; cursor: pointer;
+}
+.asset-access-list button:hover, .asset-access-list button.active { background: rgba(145,255,200,.06); color: #dfffee; }
+.asset-access-list strong, .asset-access-list span, .asset-access-list small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.asset-access-list strong { font: 600 12px/1.2 ui-monospace, monospace; }
+.asset-access-list span { margin-top: 4px; font-size: 10px; }
+.asset-access-list small { margin-top: 6px; color: #5d6f67; font: 8px/1 ui-monospace, monospace; }
+.os-footer { display: flex; justify-content: space-between; gap: 16px; padding: 11px 18px; border-top: 1px solid var(--os-line); color: #4e5c57; font: 8px/1.3 ui-monospace, monospace; letter-spacing: .08em; }
+.os-footer strong { color: #6c7e76; font-weight: 500; }
+@keyframes boot-line { from { transform: translateX(-100%); } to { transform: translateX(0); } }
+@keyframes boot-mark { from { opacity: 0; transform: scaleX(0); } to { opacity: 1; } }
+@media (max-width: 1080px) {
+  .system-strip { display: none; }
   .os-workspace { grid-template-columns: 1fr; }
   .archive-stage { min-height: 560px; border-right: 0; border-bottom: 1px solid var(--os-line); }
-  .research-panel { min-height: 360px; }
+  .research-panel { min-height: 0; }
+  .panel-empty { min-height: 220px; }
+  .asset-access-list { grid-template-columns: repeat(3, 1fr); }
 }
-@media (max-width: 720px) {
-  .analysis-os { min-height: auto; }
-  .os-header { display: block; padding: 20px 18px 14px; }
-  .system-strip { margin-top: 16px; grid-template-columns: auto 1fr auto 1fr auto 1fr; min-width: 0; }
-  .system-strip strong { text-align: left; }
-  .os-toolbar { align-items: stretch; flex-direction: column; padding: 10px 18px; }
-  .terminal-search { grid-template-columns: 54px 1fr; }
+@media (max-width: 700px) {
+  .analysis-os { min-height: calc(100vh - 112px); }
+  .os-header { padding: 18px 16px 14px; }
+  .os-subtitle { font-size: 11px; }
+  .os-toolbar { align-items: stretch; flex-direction: column; }
+  .terminal-search { padding: 0 16px; border-bottom: 1px solid var(--os-line); }
   .terminal-search input { width: 100%; }
-  .toolbar-actions { justify-content: flex-start; }
-  .archive-stage { min-height: 680px; overflow-y: auto; perspective: none; padding: 50px 14px; }
-  .stage-grid, .stage-axis { display: none; }
-  .archive-plane { position: relative; inset: auto; display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; transform: none !important; }
-  .asset-archive,
-  .asset-archive.selected,
-  .asset-archive.muted {
-    position: relative;
-    left: auto;
-    top: auto;
-    width: 100%;
-    height: 126px;
-    opacity: 1;
-    filter: none;
-    transform: none;
-    transition-delay: 0ms;
-  }
-  .asset-archive.muted { opacity: .38; }
-  .asset-archive.query-muted { display: none; }
-  .stage-caption--top { top: 17px; }
-  .stage-caption--bottom { bottom: 15px; }
-  .research-panel { padding: 22px 18px; }
+  .toolbar-actions { min-height: 42px; overflow-x: auto; }
+  .toolbar-actions button { flex: 1 0 auto; border-left: 0; border-right: 1px solid var(--os-line); }
+  .archive-stage { min-height: 480px; }
+  .research-panel { padding: 18px 16px; }
+  .asset-access-list { grid-template-columns: repeat(2, 1fr); }
+  .os-footer { flex-direction: column; }
 }
 @media (max-width: 430px) {
-  .archive-plane { grid-template-columns: 1fr; }
-  .archive-stage { min-height: 820px; }
-  .system-strip { grid-template-columns: auto 1fr; }
-  .panel-actions { grid-template-columns: 1fr; }
-  .panel-actions .primary { grid-column: auto; }
+  .archive-stage { min-height: 430px; }
+  .asset-access-list { grid-template-columns: 1fr 1fr; }
+  .panel-title-row h2 { font-size: 34px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .asset-archive,
-  .archive-plane,
-  .toolbar-actions button,
-  .panel-actions button { transition: none; }
-  .asset-archive.selected .archive-scan,
-  .research-panel.active .panel-scanline,
-  .boot-mark span,
-  .boot-line i,
-  .boot-layer { animation: none; }
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
 </style>
