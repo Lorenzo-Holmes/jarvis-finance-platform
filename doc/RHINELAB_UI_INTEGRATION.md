@@ -15,9 +15,11 @@ For JARVIS:
 - Interaction ideas such as spatial archive browsing, glass-like panels, scan/decrypt transitions, object focus, and layered research drill-down may be reinterpreted for financial research.
 - If substantial source code is copied from the MIT-licensed upstream in a later implementation, preserve its copyright and MIT permission notice with the copied/substantial portions.
 
+The current JARVIS implementation is original code and does not copy Rhine Lab / Arknights branded assets or source modules.
+
 ## Phase 1: information-architecture PoC
 
-The first PoC is intentionally dependency-free and uses Vue + CSS 3D only. This proves the product flow before adding a heavyweight scene renderer:
+Phase 1 established the product flow with Vue + CSS 3D:
 
 1. Authenticated users land on `研究终端`.
 2. The terminal presents a spatial market archive array.
@@ -25,27 +27,36 @@ The first PoC is intentionally dependency-free and uses Vue + CSS 3D only. This 
 4. Actions route into the existing JARVIS pages: market, AI research, financial report, industry chain, risk warning, and simulation trading.
 5. Existing backend, authentication, CSRF, trading, and API behavior remain untouched.
 
-The displayed quote values in the PoC are placeholders and are explicitly labeled as non-real-time.
+That PoC passed the repository CI before the renderer was replaced.
 
-## Phase 2: real scene renderer
+## Phase 2: Three.js + existing market APIs
 
-After local DevSpace execution is available, replace the CSS scene layer with a Three.js implementation while keeping the same Vue page contract and business routing. Recommended work:
+Phase 2 is implemented in this draft branch and is awaiting local visual/lifecycle acceptance:
 
-- Isolate renderer lifecycle from Vue DOM state.
-- Build reusable archive-card meshes and instanced background elements.
-- Use raycasting for object selection and keyboard-accessible DOM mirrors for accessibility.
-- Add camera focus/return motion, glass materials, subtle depth, scan/decryption transitions, and quality presets.
-- Feed objects from existing JARVIS market/watchlist APIs instead of static PoC data.
-- Keep K-line charts, tables, order entry, and AI chat as DOM/ECharts UI rather than rendering dense financial text into WebGL.
-- Dispose geometries, materials, textures, listeners, RAF loops, and observers when leaving the tab.
+- The CSS-only archive layer has been replaced by an isolated Three.js WebGL scene.
+- Archive cards use original JARVIS glass/terminal styling, CanvasTexture labels, depth, lighting, subtle idle motion, pointer parallax, and selected-object focus.
+- Raycasting selects 3D objects; an equivalent DOM asset list remains available for keyboard/accessibility paths.
+- The page reads the existing `marketInstruments`, `marketPreferences`, and `marketAssetQuote` APIs. Server watchlist objects are prioritized before default market instruments.
+- Quotes are marked as live, stale/catalog, or fallback. If the API cannot provide data, fallback objects display no fabricated price and explicitly state that they are navigation-only placeholders.
+- K-line charts, order entry, tables, AI chat, and other dense financial controls remain DOM/ECharts views instead of being rendered into WebGL.
+- Scene teardown cancels RAF, disconnects `ResizeObserver`, removes listeners, disposes textures/materials/geometries, disposes the renderer, and releases the WebGL context.
+- Three.js is lazy-loaded with the `AnalysisOsPage` async route, so it is not part of the initial unauthenticated landing bundle.
 
-## Acceptance boundary
+## CI evidence
 
-This integration should be considered ready for wider rollout only after:
+Repository CI has already verified the Phase 2 source compiles and the existing frontend behavior remains covered. The dependency lock is synchronized to Three.js `0.183.2`; final CI should use a clean `npm ci` rather than the earlier `npm install` fallback.
 
+## Remaining acceptance boundary
+
+Keep this PR in Draft until all of the following are complete:
+
+- `npm ci` succeeds directly with the synchronized lockfile.
 - `npm run test:p0` passes.
 - `npm run build` passes.
-- Desktop widths around 1440/1280/1024 and mobile widths around 430/390 are visually checked.
-- Reduced-motion behavior is verified.
-- Entering/leaving the research terminal repeatedly does not leak render loops or event listeners.
+- Desktop widths around 1440/1280/1024 and mobile widths around 430/390 are visually checked in the real local application.
+- Reduced-motion behavior is visually verified.
+- Entering/leaving the research terminal repeatedly is checked for render-loop, listener, and WebGL resource leaks.
+- Real authenticated market/watchlist data is verified in the browser, including fallback behavior when quote calls fail.
 - Existing simulation-trading and authentication flows remain unchanged.
+
+The local visual/lifecycle checks require the DevSpace/Browser execution channel and must not be inferred from GitHub CI alone.
