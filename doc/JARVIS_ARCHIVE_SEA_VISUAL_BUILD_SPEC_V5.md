@@ -1132,7 +1132,7 @@ V5 实现不得破坏：
 - [x] HIGH 档可选 DOF 的焦点距离不再写死为 34，而是每帧跟随 `camera.position.distanceTo(cameraAim)`。
 - [x] HIGH 档 `maxBlur` 收紧，避免真实 Edge 把整片档案海糊掉。
 - [x] 自动化浏览器仍允许跳过可选后处理；核心构图不得依赖 DOF 才成立。
-- [x] 桌面 Browse 镜头俯角由约 `19°` 下调到约 `14.5°`，减少俯视文件柜感，让视线更贴近参考视频中的档案海层次。
+- [x] 桌面 Browse 镜头俯角由约 `19°` 继续下调到约 `12.5°`，并把实际 Browse 距离收紧到 `112`；FOV 仍按 140 world-unit reference distance 计算，减少一次可见档案数量并增加档案正面高度。
 - [x] 移除主页 BokehPass；边缘柔化改为轻量 CSS 渐变，不再为景深额外下载/创建 post-processing pass。
 - [x] 运动期间临时关闭 SSAO 与实时阴影更新，停稳后恢复，降低交互时 GPU 峰值。
 - [x] 桌面 HIGH 最大 DPR 从 `1.65` 收紧到 `1.5`，SSAO kernel 从 `16` 降至 `12`；静止 Browse 约 `30 FPS`，交互与转场保持高帧率。

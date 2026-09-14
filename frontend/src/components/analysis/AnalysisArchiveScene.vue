@@ -147,10 +147,10 @@ function setDesktopBrowseCamera(width, height) {
   const aspect = Math.max(0.25, width / Math.max(1, height))
   const baseSpan = 7.33
   const span = Math.max(baseSpan, baseSpan * (16 / 9) / aspect)
-  const distance = 124
+  const distance = 112
   const referenceDistance = 140
   const yaw = 59 * Math.PI / 180
-  const elevation = 14.5 * Math.PI / 180
+  const elevation = 12.5 * Math.PI / 180
   const viewX = -Math.sin(yaw) * Math.cos(elevation)
   const viewY = Math.sin(elevation)
   const viewZ = Math.cos(yaw) * Math.cos(elevation)
