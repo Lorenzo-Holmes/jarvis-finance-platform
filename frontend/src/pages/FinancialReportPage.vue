@@ -3,6 +3,10 @@ import { computed, ref } from 'vue'
 import { api } from '../api/client'
 import DataState from '../components/common/DataState.vue'
 
+const props = defineProps({
+  researchContext: { type: Object, default: null },
+})
+
 // 后端约束: content 最大 50000 字符 (backend/app/ai_routes.py ReportReq)
 const MAX_CONTENT_CHARS = 50_000
 
@@ -16,6 +20,7 @@ const validation = computed(() => {
   if (content.value.length > MAX_CONTENT_CHARS) return `财报文本不能超过 ${MAX_CONTENT_CHARS.toLocaleString()} 字符`
   return ''
 })
+const companyContextLabel = computed(() => props.researchContext?.name || props.researchContext?.symbol || '')
 
 async function analyze() {
   if (validation.value || analyzing.value) return
@@ -50,6 +55,13 @@ function clearAll() {
       <span class="section-status"><i :class="{ ok: !validation }"></i>{{ validation ? 'SOURCE REQUIRED' : 'SOURCE READY' }}</span>
     </div>
 
+    <div v-if="props.researchContext" class="context-target">
+      <span>COMPANY CONTEXT</span>
+      <strong>{{ props.researchContext.symbol || props.researchContext.name }}</strong>
+      <small>{{ props.researchContext.name || props.researchContext.market || '—' }}</small>
+      <em>仅作为 Company File 标识；仍需提供真实财报原文，不自动生成财务数字。</em>
+    </div>
+
     <div class="filing-index" aria-label="财报解析流程">
       <span class="active"><b>01</b>SOURCE DOCUMENT</span>
       <span :class="{ active: analyzing }"><b>02</b>PROCESSING</span>
@@ -81,7 +93,7 @@ function clearAll() {
         <template v-if="result">
           <div class="panel fr-result-panel">
             <div class="fr-result-head">
-              <div><b>ANALYSIS DOSSIER</b><span>基于输入文本的财务解读，仅供研究参考，请以原始财报为准</span></div>
+              <div><b>ANALYSIS DOSSIER{{ companyContextLabel ? ` / ${companyContextLabel}` : '' }}</b><span>基于输入文本的财务解读，仅供研究参考，请以原始财报为准</span></div>
               <span class="result-state">AI / COMPLETE</span>
             </div>
             <div class="fr-output">{{ result }}</div>
@@ -104,6 +116,11 @@ function clearAll() {
 
 <style scoped>
 .fr-workspace { display: flex; flex-direction: column; gap: 12px; margin: 0; }
+.context-target { min-height: 38px; display: flex; align-items: center; gap: 12px; padding: 0 12px; border: 1px solid var(--line); background: rgba(161,132,88,.045); }
+.context-target span { color: var(--subtle); font: 600 7px/1 ui-monospace, monospace; letter-spacing: .1em; }
+.context-target strong { color: var(--text); font: 650 10px/1 ui-monospace, monospace; }
+.context-target small { color: var(--muted); font-size: 9px; }
+.context-target em { margin-left: auto; max-width: 520px; color: var(--subtle); font-size: 9px; line-height: 1.4; font-style: normal; text-align: right; }
 .section-bar { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; min-height: 52px; padding: 0 2px 10px; border-bottom: 1px solid var(--line); }
 .section-bar h1 { margin: 0; color: var(--text); font: 650 13px/1 ui-monospace, monospace; letter-spacing: .11em; }
 .section-bar > div > span { display: block; margin-top: 7px; color: var(--subtle); font-size: 10px; }

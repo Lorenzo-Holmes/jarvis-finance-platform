@@ -4,7 +4,11 @@ import { api } from '../api/client'
 import { useEcharts } from '../composables/useEcharts'
 import { formatNumber, formatPercent } from '../utils/formatters'
 
-const props = defineProps({ active: { type: Boolean, default: false } })
+const props = defineProps({
+  active: { type: Boolean, default: false },
+  handoff: { type: Object, default: null },
+})
+const emit = defineEmits(['clear-handoff'])
 
 const bt = reactive({ short_ma: 5, long_ma: 20, initial_cash: 100000, as_of: '', running: false })
 const historyLimit = ref(120)
@@ -24,6 +28,12 @@ const validation = computed(() => {
 const excessReturn = computed(() => result.value
   ? Number(result.value.total_return_pct || 0) - Number(result.value.buy_hold_return_pct || 0)
   : null)
+const handoffGoldAllocation = computed(() => props.handoff?.profile?.allocation?.find?.(item => item.id === 'gold_etf') || null)
+
+function applyHandoffCapital() {
+  const capital = Number(props.handoff?.questionnaire?.capital)
+  if (Number.isFinite(capital) && capital >= 1000) bt.initial_cash = capital
+}
 
 async function runBacktest() {
   if (invalid.value) {
@@ -84,6 +94,28 @@ watch(() => props.active, async active => {
         <span>黄金ETF · 双均线实验 · 参数冻结 · 收益 / 风险 / 回撤复现</span>
       </div>
       <span class="section-status"><i :class="{ ok: !invalid }"></i>{{ invalid ? 'PARAMETERS INVALID' : 'EXPERIMENT READY' }}</span>
+    </div>
+
+    <div v-if="props.handoff" class="bt-handoff">
+      <div>
+        <span>IMPORTED STRATEGY INTENT</span>
+        <strong>{{ props.handoff.profile?.levelLabel || props.handoff.profile?.level || '—' }}</strong>
+      </div>
+      <dl>
+        <div><dt>HORIZON</dt><dd>{{ props.handoff.questionnaire?.horizonYears || '—' }}Y</dd></div>
+        <div><dt>MAX DRAWDOWN</dt><dd>{{ props.handoff.questionnaire?.maxDrawdownPct ?? '—' }}%</dd></div>
+        <div><dt>TARGET RETURN</dt><dd>{{ props.handoff.questionnaire?.targetReturnPct ?? '—' }}%</dd></div>
+        <div><dt>GOLD ALLOCATION</dt><dd>{{ handoffGoldAllocation?.pct ?? '—' }}%</dd></div>
+      </dl>
+      <button
+        v-if="Number(props.handoff.questionnaire?.capital) >= 1000"
+        type="button"
+        @click="applyHandoffCapital"
+      >
+        APPLY CAPITAL {{ formatNumber(props.handoff.questionnaire.capital, 0) }}
+      </button>
+      <button type="button" class="handoff-dismiss" @click="emit('clear-handoff')">DISMISS</button>
+      <p>策略问卷不会自动改写双均线参数；请明确确认实验参数后再运行回测。</p>
     </div>
 
     <div class="backtest-layout">
@@ -187,6 +219,17 @@ watch(() => props.active, async active => {
 
 <style scoped>
 .backtest-workspace { display: flex; flex-direction: column; gap: 12px; margin: 0; }
+.bt-handoff { display: grid; grid-template-columns: 180px minmax(0,1fr) auto; gap: 18px; align-items: center; padding: 11px 13px; border: 1px solid var(--accent); background: rgba(161,132,88,.055); }
+.bt-handoff > div:first-child { display: grid; gap: 6px; }
+.bt-handoff > div:first-child span { color: var(--subtle); font: 600 8px/1 ui-monospace, monospace; letter-spacing: .1em; }
+.bt-handoff > div:first-child strong { color: var(--text); font-size: 12px; font-weight: 650; }
+.bt-handoff dl { margin: 0; display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); border-left: 1px solid var(--line); }
+.bt-handoff dl > div { padding: 0 11px; border-right: 1px solid var(--line); }
+.bt-handoff dt { color: var(--subtle); font: 600 7px/1 ui-monospace, monospace; letter-spacing: .08em; }
+.bt-handoff dd { margin: 6px 0 0; color: var(--text); font: 650 10px/1 ui-monospace, monospace; }
+.bt-handoff button { min-height: 32px; border: 1px solid #383b33; background: #383b33; color: #f2eee6; padding: 0 10px; cursor: pointer; font: 650 8px/1 ui-monospace, monospace; letter-spacing: .07em; }
+.bt-handoff .handoff-dismiss { border-color: var(--line-strong); background: transparent; color: var(--muted); }
+.bt-handoff p { grid-column: 2 / -1; margin: -5px 0 0; color: var(--subtle); font-size: 9px; line-height: 1.45; }
 .section-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 38px; }
 .section-bar h1 { margin: 0; color: var(--text); font-size: 16px; font-weight: 680; letter-spacing: .01em; }
 .section-bar > div > span { display: block; margin-top: 3px; color: var(--subtle); font-size: 10px; }
@@ -229,6 +272,7 @@ watch(() => props.active, async active => {
 .pos { color: var(--ok); }
 .neg { color: var(--bad); }
 @media (max-width: 1180px) { .bt-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 900px) { .bt-handoff { grid-template-columns: 1fr; } .bt-handoff dl { grid-template-columns: 1fr 1fr; border-left: 0; border-top: 1px solid var(--line); padding-top: 9px; } .bt-handoff dl > div { padding: 7px 8px; border-right: 0; border-bottom: 1px solid var(--line); } .bt-handoff p { grid-column: auto; margin-top: 0; } }
 @media (max-width: 820px) { .backtest-layout { grid-template-columns: 1fr; } .bt-parameter-panel { position: static; } .bt-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 620px) { .section-bar { align-items: flex-start; flex-direction: column; } }
 @media (max-width: 520px) { .bt-metrics { grid-template-columns: 1fr 1fr; } .bt-equity-chart { height: 320px !important; } }

@@ -10,6 +10,7 @@ import { useWorkspaceTabs } from './composables/useWorkspaceTabs'
 import ArchiveWorkspaceShell from './analysis-os/components/ArchiveWorkspaceShell.vue'
 import { JARVIS_MODULES } from './analysis-os/data/modules'
 import { useResearchContext } from './analysis-os/state/researchContext'
+import { useWorkflowHandoff } from './analysis-os/state/workflowHandoff'
 
 const AnalysisOsPage = defineAsyncComponent(() => import('./pages/AnalysisOsPage.vue'))
 const MarketPage = defineAsyncComponent(() => import('./pages/MarketPage.vue'))
@@ -34,6 +35,8 @@ const activeModule = computed(() => JARVIS_MODULES.find(module => module.routeKe
 const archiveModuleKey = ref('market')
 const research = useResearchContext()
 const { context: researchContext, setContext: setResearchContext, clearContext: clearResearchContext } = research
+const workflow = useWorkflowHandoff()
+const { backtestHandoff, setBacktestHandoff, clearBacktestHandoff } = workflow
 
 function replacePublicQuery(mutator) {
   const url = new URL(window.location.href)
@@ -67,6 +70,7 @@ async function logout() {
   await session.logout()
   workspace.reset()
   clearResearchContext()
+  clearBacktestHandoff()
   publicView.value = 'landing'
   replacePublicQuery((params) => params.delete('view'))
 }
@@ -89,6 +93,11 @@ function navigateWorkspace(routeKey) {
 function returnToArchive() {
   if (activeModule.value) archiveModuleKey.value = activeModule.value.key
   switchTab('研究终端')
+}
+
+function sendStrategyToBacktest(handoff) {
+  setBacktestHandoff(handoff)
+  navigateWorkspace('回测')
 }
 
 watch(sessionState, (state) => {
@@ -154,21 +163,26 @@ onMounted(() => {
         <CrossMarketView :user="user" @context-change="setResearchContext" />
       </section>
 
-      <BacktestPage v-else-if="activeTab === '回测'" :active="true" />
+      <BacktestPage
+        v-else-if="activeTab === '回测'"
+        :active="true"
+        :handoff="backtestHandoff"
+        @clear-handoff="clearBacktestHandoff"
+      />
 
       <section v-else-if="activeTab === '模拟盘'">
         <SimTradeView :user="user" @context-change="setResearchContext" />
       </section>
 
       <section v-else-if="activeTab === '研究助手'" class="panel-wrap">
-        <AiCenter />
+        <AiCenter :research-context="researchContext" />
       </section>
 
       <SentimentPage v-else-if="activeTab === '多空研报'" />
-      <FinancialReportPage v-else-if="activeTab === '财报解析'" />
-      <ChainPage v-else-if="activeTab === '产业链图谱'" />
-      <RiskPage v-else-if="activeTab === '风险预警'" />
-      <StrategyPage v-else-if="activeTab === '策略生成'" />
+      <FinancialReportPage v-else-if="activeTab === '财报解析'" :research-context="researchContext" />
+      <ChainPage v-else-if="activeTab === '产业链图谱'" :research-context="researchContext" />
+      <RiskPage v-else-if="activeTab === '风险预警'" :research-context="researchContext" />
+      <StrategyPage v-else-if="activeTab === '策略生成'" @send-backtest="sendStrategyToBacktest" />
 
       <section v-else-if="activeTab === '运维'" class="panel-wrap">
         <OpsView />

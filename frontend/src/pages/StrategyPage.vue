@@ -3,6 +3,8 @@ import { computed, ref } from 'vue'
 import { api } from '../api/client'
 import DataState from '../components/common/DataState.vue'
 
+const emit = defineEmits(['send-backtest'])
+
 // ---- 风险偏好问卷（FR-11）：全部为固定选项，保证问卷口径可复现 ----
 const horizonYears = ref(3)
 const maxDrawdownPct = ref(10)
@@ -74,6 +76,26 @@ function fmtMoney(value) {
 function barWidth(value) {
   const numeric = Number(value)
   return Number.isFinite(numeric) ? `${Math.max(0, Math.min(numeric, 100))}%` : '0%'
+}
+
+function sendToBacktest() {
+  if (!result.value?.profile) return
+  emit('send-backtest', {
+    source: 'strategy',
+    questionnaire: {
+      horizonYears: Number(horizonYears.value),
+      maxDrawdownPct: Number(maxDrawdownPct.value),
+      targetReturnPct: Number(targetReturnPct.value),
+      experience: experience.value,
+      capital: capital.value && Number(capital.value) > 0 ? Number(capital.value) : null,
+    },
+    profile: {
+      level: result.value.profile.level,
+      levelLabel: levelLabel.value,
+      score: result.value.profile.score,
+      allocation: allocation.value.map(item => ({ id: item.id, label: item.label, pct: item.pct })),
+    },
+  })
 }
 </script>
 
@@ -204,6 +226,9 @@ function barWidth(value) {
               <div><b>STRATEGY DOSSIER / AI 策略说明</b><span>基于确定性等级与配置比例生成，数值口径以配置区为准</span></div>
             </div>
             <div class="sg-output">{{ result.content?.content || result.content || '（暂无策略说明）' }}</div>
+            <button type="button" class="sg-backtest-action" @click="sendToBacktest">
+              SEND TO BACKTEST <span>→</span>
+            </button>
           </div>
         </template>
 
@@ -281,6 +306,8 @@ function barWidth(value) {
 .sg-report-head b { color: var(--text); font-size: 12px; font-weight: 680; }
 .sg-report-head span { display: block; margin-top: 3px; color: var(--subtle); font-size: 9px; }
 .sg-output { margin-top: 10px; max-height: 420px; overflow: auto; background: transparent; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); border-radius: 0; padding: 14px 2px; color: var(--text); font-size: 11px; line-height: 1.78; white-space: pre-wrap; overflow-wrap: anywhere; }
+.sg-backtest-action { margin-top: 14px; min-height: 38px; padding: 0 14px; border: 1px solid #383b33; background: #383b33; color: #f2eee6; cursor: pointer; font: 700 8px/1 ui-monospace, monospace; letter-spacing: .09em; }
+.sg-backtest-action span { margin-left: 30px; font-size: 15px; vertical-align: -1px; }
 .sg-empty { display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 46px 20px; text-align: center; }
 .sg-empty-mark { color: var(--accent-strong); border: 1px solid var(--line-strong); border-radius: 0; width: 58px; height: 40px; display: grid; place-items: center; font: 650 9px/1 ui-monospace, monospace; letter-spacing: .08em; }
 .sg-empty b { color: var(--text); font-size: 12px; font-weight: 650; }

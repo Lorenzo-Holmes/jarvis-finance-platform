@@ -1,7 +1,11 @@
 <script setup>
-import { ref, onMounted, nextTick } from 'vue'
+import { computed, ref, onMounted, nextTick, watch } from 'vue'
 import { api } from '../api/client'
 import DataState from './common/DataState.vue'
+
+const props = defineProps({
+  researchContext: { type: Object, default: null },
+})
 
 // ---- 对话 ----
 const messages = ref([])
@@ -31,11 +35,25 @@ const chainLoading = ref(false)
 const chainResult = ref('')
 const chainError = ref('')
 
-const sugg = [
-  '当前黄金ETF适合定投吗？',
-  '分析一下黄金的产业链逻辑',
-  '金价处于什么位置，风险如何？',
-]
+const contextTarget = computed(() => props.researchContext?.name || props.researchContext?.symbol || '')
+const sugg = computed(() => {
+  const target = contextTarget.value
+  if (!target) return [
+    '当前黄金ETF适合定投吗？',
+    '分析一下黄金的产业链逻辑',
+    '金价处于什么位置，风险如何？',
+  ]
+  return [
+    `围绕 ${target} 给出研究假设、证据和主要风险。`,
+    `分析 ${target} 的产业链位置与关键上下游。`,
+    `列出 ${target} 当前最需要验证的三个反方证据。`,
+  ]
+})
+
+watch(contextTarget, value => {
+  if (!value) return
+  if (!chainNode.value.trim() || chainNode.value === '黄金') chainNode.value = value
+}, { immediate: true })
 
 async function loadStatus() {
   statusLoading.value = true
@@ -114,6 +132,11 @@ async function sendChat() {
 
 function useSuggestion(s) { input.value = s }
 
+function useResearchContext() {
+  if (!contextTarget.value) return
+  input.value = `围绕 ${contextTarget.value}，按 THESIS / EVIDENCE / COUNTER EVIDENCE / RISK / CONCLUSION 结构进行研究。`
+}
+
 // 智能报价解读
 async function runQuote() {
   quoteLoading.value = true
@@ -185,6 +208,13 @@ onMounted(() => {
       </div>
     </div>
 
+    <div v-if="props.researchContext" class="context-target">
+      <span>GLOBAL RESEARCH CONTEXT</span>
+      <strong>{{ props.researchContext.symbol || props.researchContext.name }}</strong>
+      <small>{{ props.researchContext.name || props.researchContext.market || '—' }}</small>
+      <button type="button" @click="useResearchContext">USE IN RESEARCH TASK</button>
+    </div>
+
     <div class="research-layout">
       <aside class="toolbox">
         <section class="tool-section">
@@ -247,6 +277,11 @@ onMounted(() => {
 
 <style scoped>
 .ai { display: flex; flex-direction: column; gap: 12px; }
+.context-target { min-height: 38px; display: flex; align-items: center; gap: 12px; padding: 0 12px; border: 1px solid var(--line); background: rgba(161,132,88,.045); }
+.context-target span { color: var(--subtle); font: 600 7px/1 ui-monospace, monospace; letter-spacing: .1em; }
+.context-target strong { color: var(--text); font: 650 10px/1 ui-monospace, monospace; }
+.context-target small { color: var(--muted); font-size: 9px; }
+.context-target button { margin-left: auto; min-height: 28px; border: 1px solid var(--line-strong); background: transparent; color: var(--text); cursor: pointer; font: 650 7px/1 ui-monospace, monospace; letter-spacing: .07em; }
 .research-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 14px; min-height: 50px; padding: 0 2px 10px; border-bottom: 1px solid var(--line); }
 .research-head h2 { margin: 0; color: var(--text); font: 650 13px/1 ui-monospace, monospace; letter-spacing: .1em; }
 .research-head > div:first-child > span { display: block; margin-top: 7px; color: var(--subtle); font-size: 10px; }

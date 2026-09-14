@@ -2666,9 +2666,13 @@ V1.1 完成不再只判断“档案海是否好看”。必须同时满足：
 - [x] Sim Trade 采用浅色 Archive Shell + 深色专业交易核心，保留 Buy/Sell 金融语义色。
 - [x] Financial 采用 Source Document → Processing → Analysis Dossier 流程，未伪造后端没有提供的结构化财务数字。
 - [x] Global Research Context 已接通 Market / Cross Market / Sim Trade，并显示在 Workspace Shell。
+- [x] Global Research Context 已被 AI Research / Financial / Industry / Risk 主动消费：AI 生成 Context 研究任务，Financial 用作 Company File 标识，Industry 默认定位研究节点，Risk 仅对服务端支持的 gold_etf / london_gold 自动映射。
+- [x] Industry Chain 已升级为 Graph-first Workspace：中央结构图谱 + Node File；图谱明确标记为研究结构索引，不把模板边伪装成已验证供应关系。
+- [x] Industry Chain 在 ≤760px 下使用 Node File Bottom Sheet，点击图谱节点打开，支持关闭与 Reduced Motion。
+- [x] Strategy 已实现 `SEND TO BACKTEST`：只传递真实问卷、风险等级与配置结果；Backtest 显示 Imported Strategy Intent，不自动改写 short_ma / long_ma。
 - [x] 430px / 390px Archive Hub 与 Sim Trade 当前实测无 document 横向溢出。
 - [x] 暴露 `window.__jarvisArchiveDebug` 只读调试状态，便于自动验收 lane/row、惯性、sleep、extraction 和 canvas 生命周期。
-- [x] 当前 P0 自动回归 37 / 37 通过，Vite production build 通过。
+- [x] 当前 P0 自动回归 39 / 39 通过，Vite production build 通过。
 
 ### 71.2 本轮实际浏览器验收已完成
 
@@ -2680,12 +2684,12 @@ V1.1 完成不再只判断“档案海是否好看”。必须同时满足：
 - [x] `SIM TRADE Workspace → FINANCIAL Workspace → RETURN` 后 Archive 正确聚焦 07 FINANCIAL。
 - [x] 代表截图检查了 Archive 1440、抽取中间态、Market、Financial、Sim Trade、Archive 430、Sim Trade 430。
 - [x] Playwright 验收用模拟交易数据只存在浏览器 route 层，没有写入项目、数据库或生产逻辑。
+- [x] Industry Chain 桌面已实测 6 个结构节点、中央关系画布和右侧 Node File；430px Node File Bottom Sheet 为 fixed bottom sheet，页面无横向溢出。
+- [x] Strategy → Backtest 已实测导入稳健型/期限/最大回撤/目标收益/黄金配置，同时双均线仍保持 5 / 20。
+- [x] 518850 Global Context 已实测跨 Market → Risk / AI Research / Industry / Financial 继承；Risk 自动映射为 gold_etf，Financial 明确提示不会自动生成财务数字。
 
 ### 71.3 仍未达到 Master DoD 的部分
 
-- [ ] Industry Chain 仍需从文本分析页升级为真正以关系图谱为主的交互画布，并实现 Node Detail Drawer / Bottom Sheet。
-- [ ] Strategy 仍需实现明确的 `SEND TO BACKTEST` 参数交接闭环。
-- [ ] Global Research Context 需继续让 Financial / Industry / Risk / AI Research 等页面主动消费，而不只是由 Shell 展示。
 - [ ] 各模块的 LIVE / STALE / FALLBACK / ERROR / EMPTY 需要逐页统一成最终组件，而不是仅依赖现有页面错误态。
 - [ ] 需要在真实 Java 后端和真实认证会话下重新完成 Market、SSE、Sim Account、Stop Order 等端到端业务验收。
 - [ ] 需要重新进行隐藏 Archive RAF、重复进出 Workspace 和 WebGL context 数量的长循环性能验收。

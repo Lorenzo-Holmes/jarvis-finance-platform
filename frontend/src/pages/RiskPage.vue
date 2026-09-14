@@ -1,7 +1,11 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { api } from '../api/client'
 import DataState from '../components/common/DataState.vue'
+
+const props = defineProps({
+  researchContext: { type: Object, default: null },
+})
 
 // ---- 风险分析参数 ----
 const market = ref('gold_etf')
@@ -16,6 +20,20 @@ const validation = computed(() => {
   if (!market.value.trim()) return '请填写标的代码'
   return ''
 })
+const compatibleRiskContext = computed(() => {
+  const context = props.researchContext
+  if (!context) return null
+  const symbol = String(context.symbol || '').toLowerCase()
+  const marketKey = String(context.market || '').toLowerCase()
+  if (['gold_etf', 'london_gold'].includes(marketKey)) return marketKey
+  if (['sh518850', '518850'].includes(symbol)) return 'gold_etf'
+  if (['hf_xau', 'xau', 'xauusd'].includes(symbol)) return 'london_gold'
+  return null
+})
+
+watch(compatibleRiskContext, value => {
+  if (value) market.value = value
+}, { immediate: true })
 
 const levelRank = { high: 3, medium: 2, low: 1 }
 const riskLevel = computed(() => {
@@ -78,6 +96,14 @@ function clearAll() {
         <span>VaR · Expected Shortfall · 波动率 · 最大回撤 · 阈值触发与解释</span>
       </div>
       <span class="section-status"><i :class="{ ok: !validation }"></i>{{ validation ? 'TARGET REQUIRED' : 'SURVEILLANCE READY' }}</span>
+    </div>
+
+    <div v-if="props.researchContext" class="context-target" :class="{ incompatible: !compatibleRiskContext }">
+      <span>GLOBAL RESEARCH CONTEXT</span>
+      <strong>{{ props.researchContext.symbol || props.researchContext.name }}</strong>
+      <small v-if="compatibleRiskContext">RISK DATASET / {{ compatibleRiskContext }}</small>
+      <small v-else>当前确定性风险历史库仅支持 gold_etf / london_gold，保留上下文但不自动伪造风险样本。</small>
+      <button v-if="compatibleRiskContext" type="button" @click="market = compatibleRiskContext">USE CONTEXT</button>
     </div>
 
     <div class="rk-layout">
@@ -194,6 +220,12 @@ function clearAll() {
 
 <style scoped>
 .rk-workspace { display: flex; flex-direction: column; gap: 12px; margin: 0; }
+.context-target { min-height: 38px; display: flex; align-items: center; gap: 12px; padding: 0 12px; border: 1px solid var(--line); background: rgba(161,132,88,.045); }
+.context-target.incompatible { background: transparent; }
+.context-target span { color: var(--subtle); font: 600 7px/1 ui-monospace, monospace; letter-spacing: .1em; }
+.context-target strong { color: var(--text); font: 650 10px/1 ui-monospace, monospace; }
+.context-target small { min-width: 0; color: var(--muted); font-size: 9px; line-height: 1.4; }
+.context-target button { margin-left: auto; min-height: 28px; border: 1px solid var(--line-strong); background: transparent; color: var(--text); cursor: pointer; font: 650 7px/1 ui-monospace, monospace; letter-spacing: .07em; }
 .section-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 38px; }
 .section-bar h1 { margin: 0; color: var(--text); font-size: 16px; font-weight: 680; letter-spacing: .01em; }
 .section-bar > div > span { display: block; margin-top: 3px; color: var(--subtle); font-size: 10px; }
