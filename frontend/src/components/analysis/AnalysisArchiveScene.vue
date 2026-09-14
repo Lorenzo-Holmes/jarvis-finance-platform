@@ -147,7 +147,8 @@ function setDesktopBrowseCamera(width, height) {
   const aspect = Math.max(0.25, width / Math.max(1, height))
   const baseSpan = 7.33
   const span = Math.max(baseSpan, baseSpan * (16 / 9) / aspect)
-  const distance = 140
+  const distance = 124
+  const referenceDistance = 140
   const yaw = 59 * Math.PI / 180
   const elevation = 14.5 * Math.PI / 180
   const viewX = -Math.sin(yaw) * Math.cos(elevation)
@@ -159,7 +160,7 @@ function setDesktopBrowseCamera(width, height) {
     cameraAimBase.y + viewY * distance,
     cameraAimBase.z + viewZ * distance,
   )
-  cameraBaseFov = 2 * Math.atan(span / (2 * distance)) * 180 / Math.PI
+  cameraBaseFov = 2 * Math.atan(span / (2 * referenceDistance)) * 180 / Math.PI
 }
 
 function makeLabelTexture(module) {

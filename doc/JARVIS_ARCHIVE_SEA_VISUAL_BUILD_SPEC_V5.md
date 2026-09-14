@@ -1091,7 +1091,7 @@ V5 实现不得破坏：
 
 - [x] `yaw ≈ 59°`。
 - [x] `elevation ≈ 19°`。
-- [x] `distance ≈ 140`。
+- [x] Browse 实际相机距离收近到 `≈124`，但 FOV 继续按 `referenceDistance ≈ 140` 计算，保持原有长焦压缩感的同时让当前档案与中央 HUD 放大约 13%。
 - [x] 基准纵向 span `≈ 7.33`。
 - [x] `cameraAim ≈ (-1.091, -0.045, 0.481)`。
 - [x] FOV 根据 viewport aspect 由 span / distance 动态计算；16:9 约 3°。
