@@ -119,9 +119,9 @@ const entriesByPoolKey = new Map()
 const textureCache = new Map()
 const materialCache = new Map()
 const sceneDisposables = []
-const cameraAim = new Vector3(-1.091, -0.045, 0.481)
-const cameraBase = new Vector3(-114.556, 45.535, 68.658)
-const cameraAimBase = new Vector3(-1.091, -0.045, 0.481)
+const cameraAim = new Vector3(-5.13, -2.03, 0.481)
+const cameraBase = new Vector3(-101.635, 11.023, 23.205)
+const cameraAimBase = new Vector3(-5.13, -2.03, 0.481)
 const cameraDetailBase = new Vector3(-14.8, 7.5, 22.3)
 const cameraDetailAim = new Vector3(3.25, 0.3, -0.2)
 let cameraBaseFov = 3.0
@@ -151,12 +151,16 @@ function setDesktopBrowseCamera(width, height) {
   const referenceDistance = 140
   // Calibrated from the supplied Rhine terminal reference: the dominant
   // archive long-edge projects at roughly 29deg on screen in Browse mode.
+  // The browse/slide keyframes keep this camera orientation fixed while the
+  // archive field moves; only the later file-open transition rotates away.
   const yaw = 76.75 * Math.PI / 180
   const elevation = 7.5 * Math.PI / 180
   const viewX = -Math.sin(yaw) * Math.cos(elevation)
   const viewY = Math.sin(elevation)
   const viewZ = Math.cos(yaw) * Math.cos(elevation)
-  cameraAimBase.set(-1.091, -0.045, 0.481)
+  // 55s keyframe alignment: keep the selected file in the left-middle
+  // reading zone instead of leaving the aim point above the archive sea.
+  cameraAimBase.set(-5.13, -2.03, 0.481)
   cameraBase.set(
     cameraAimBase.x + viewX * distance,
     cameraAimBase.y + viewY * distance,
@@ -315,7 +319,12 @@ function updateFocusVisuals() {
       ? 0.40 + extraction * (4.05 - 0.40)
       : previewLift
     entry.group.userData.targetY = entry.group.userData.baseY + (isFocused ? focusedLift : isHovered ? 0.16 : 0)
-    entry.group.userData.targetScale = isFocused && identified ? 1.028 + extraction * 0.028 : isHovered ? 0.985 : 0.965
+    // Reference browse keyframes show the selected file translating/lifting,
+    // not scaling up. Keep one physical archive scale through FLOW/QUERY/
+    // MATCH/FOCUSED; only the actual file-open extraction may add scale.
+    entry.group.userData.targetScale = isFocused && extraction > 0.001
+      ? 0.965 + extraction * 0.091
+      : isHovered ? 0.985 : 0.965
     if (entry.glass) {
       entry.glass.material = isFocused && extraction > 0.32
         ? focusedGlassMaterial
@@ -761,8 +770,11 @@ function renderFrame(time) {
   const fog = scene.fog
   if (fog instanceof Fog) {
     const renderedDistance = camera.position.distanceTo(cameraAim)
-    fog.near = renderedDistance + (5 - 6 * detail)
-    fog.far = renderedDistance + (25 - 13 * detail)
+    // Reference keyframes keep edge/card detail much crisper than our old
+    // washed vignette. Let distance fog start later and fall off more gently
+    // in Browse, while the close-up transition can still tighten it.
+    fog.near = renderedDistance + (8 - 7 * detail)
+    fog.far = renderedDistance + (34 - 18 * detail)
   }
 
   const easing = reducedMotion ? 1 : 1 - Math.exp(-dt * 10)
@@ -1023,8 +1035,8 @@ defineExpose({ getDebugState, shiftRows })
   inset: 0;
   pointer-events: none;
   background:
-    linear-gradient(180deg, rgba(248,246,240,.2), transparent 22%, transparent 78%, rgba(234,229,225,.1)),
-    radial-gradient(ellipse at 48% 48%, transparent 56%, rgba(234,229,225,.08) 76%, rgba(234,229,225,.24) 100%);
+    linear-gradient(180deg, rgba(248,246,240,.08), transparent 20%, transparent 82%, rgba(234,229,225,.03)),
+    radial-gradient(ellipse at 48% 48%, transparent 62%, rgba(234,229,225,.025) 82%, rgba(234,229,225,.08) 100%);
 }
 .analysis-scene :deep(canvas) { width: 100%; height: 100%; display: block; }
 .scene-fallback {

@@ -1133,6 +1133,10 @@ V5 实现不得破坏：
 - [x] HIGH 档 `maxBlur` 收紧，避免真实 Edge 把整片档案海糊掉。
 - [x] 自动化浏览器仍允许跳过可选后处理；核心构图不得依赖 DOF 才成立。
 - [x] 桌面 Browse 镜头按目标截图的实际投影重新标定：档案长边主斜率约为 `29°`，对应 `yaw ≈ 76.75° / elevation ≈ 7.5° / distance = 100`；FOV 仍按 140 world-unit reference distance 计算，避免继续用主观试角度逼近参考。
+- [x] 重新下载并截取 B 站参考视频 `52s–68s`。逐帧分析确认：约 `54.0s–57.2s` 的 Browse / 滑动阶段主档案长边始终稳定在 `-28° ~ -30°`，约 `57.4s` 后才进入开档案镜头转场。因此正常 Wheel / Drag / 模块翻页期间摄像机姿态必须冻结，只允许 Archive Sea 自身运动。
+- [x] 55.0s 附近关键帧中，当前档案黄色定位边约落在 `x≈29% / y≈43%`，可见高度约 `26% viewport`。据此将桌面 `cameraAimBase` 从旧高位 `(-1.091, -0.045, 0.481)` 下移/侧移至约 `(-5.13, -2.03, 0.481)`，把 Focus File 放回左中阅读区；后续不再通过继续降低 elevation 来补偿错误的 aim point。
+- [x] 对 55.0s 参考关键帧与本地 1920×1080 截图做边缘清晰度对照后确认：旧版顶部/底部 wash 明显过重。Browse Fog 改为约 `cameraDistance+8 → +34` 的更长衰减，CSS 顶部/径向柔化显著减弱；继续禁止主页 Bokeh，以真实几何边缘和距离雾形成层次。
+- [x] 54.8s–55.4s 连续关键帧中，当前档案黄色定位边可见高度稳定在约 `25%–27% viewport`，变化主要来自 Y 轴抬升而非缩放。因此 Browse / QUERY / MATCH / FOCUSED 取消 Focus 卡片的额外 scale-up；只有 ACCESS FILE 后的 Extraction 才允许尺度变化。
 - [x] 移除主页 BokehPass；边缘柔化改为轻量 CSS 渐变，不再为景深额外下载/创建 post-processing pass。
 - [x] 运动期间临时关闭 SSAO 与实时阴影更新，停稳后恢复，降低交互时 GPU 峰值。
 - [x] 桌面 HIGH 最大 DPR 从 `1.65` 收紧到 `1.5`，SSAO kernel 从 `16` 降至 `12`；静止 Browse 约 `30 FPS`，交互与转场保持高帧率。
