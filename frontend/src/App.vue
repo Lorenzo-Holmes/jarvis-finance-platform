@@ -105,7 +105,7 @@ onMounted(() => {
     <BacktestPage v-if="visitedTabs.has('回测')" v-show="activeTab === '回测'" :active="activeTab === '回测'" />
 
     <section v-if="activeTab === '模拟盘'">
-      <SimTradeView />
+      <SimTradeView :user="user" />
     </section>
 
     <section v-if="activeTab === '研究助手'" class="panel-wrap">

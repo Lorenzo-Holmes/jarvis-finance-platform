@@ -1,6 +1,7 @@
 package com.jarvis.research.service;
 
 import com.jarvis.research.audit.AuditService;
+import com.jarvis.research.market.ExtendedMarketDataService;
 import com.jarvis.research.market.MarketDataService;
 import com.jarvis.research.market.PriceSnapshotRepository;
 import com.jarvis.research.user.SimAccount;
@@ -46,6 +47,8 @@ public class SimRiskService {
 
     @Autowired(required = false)
     private MarketDataService marketDataService;
+    @Autowired(required = false)
+    private ExtendedMarketDataService extendedMarketDataService;
     @Autowired(required = false)
     private JdGoldService jdGoldService;
     @Autowired(required = false)
@@ -170,14 +173,29 @@ public class SimRiskService {
     }
 
     private QuotePoint latestQuote(String symbol) {
-        String market = switch (symbol) {
-            case "sh518850" -> "gold_etf";
-            case "hf_XAU" -> "london_gold";
-            case "jd_zheshang" -> "jd_zheshang";
-            case "jd_minsheng" -> "jd_minsheng";
-            default -> null;
-        };
+        String legacyMarket = SimMarketSupport.legacyMarket(symbol);
+        String market = legacyMarket != null ? legacyMarket : SimMarketSupport.market(symbol);
         if (market == null) return null;
+
+        if (legacyMarket == null) {
+            if (extendedMarketDataService == null) return null;
+            try {
+                Map<String, Object> quote = extendedMarketDataService.quote(market, symbol);
+                BigDecimal price = quote.get("price") == null
+                        ? null : new BigDecimal(String.valueOf(quote.get("price")));
+                if (price == null || price.signum() <= 0) return null;
+                LocalDateTime ts = SimMarketSupport.quoteTime(quote.get("quote_time"));
+                boolean stale = Boolean.TRUE.equals(quote.get("stale"))
+                        || ts == null
+                        || ts.isBefore(LocalDateTime.now().minusSeconds(SimMarketSupport.maxAgeSeconds(market)));
+                return new QuotePoint(value(price), stale);
+            } catch (Exception e) {
+                log.debug("自选标的风控行情不可用: market={}, symbol={}, message={}",
+                        market, symbol, e.getMessage());
+                return null;
+            }
+        }
+
         QuotePoint live = liveQuote(symbol, market);
         if (live != null) return live;
         return snapshotRepository.findTopByMarketOrderByTsDesc(market)

@@ -3,6 +3,7 @@ package com.jarvis.research.service;
 import com.jarvis.research.audit.AuditService;
 import com.jarvis.research.market.MarketDataService;
 import com.jarvis.research.market.PriceSnapshotRepository;
+import com.jarvis.research.market.ExtendedMarketDataService;
 import com.jarvis.research.user.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -46,6 +47,8 @@ public class SimTradeService {
     /** Spring 运行时优先使用秒级内存行情；普通单元测试不注入时自动回退数据库快照。 */
     @Autowired(required = false)
     private MarketDataService marketDataService;
+    @Autowired(required = false)
+    private ExtendedMarketDataService extendedMarketDataService;
     @Autowired(required = false)
     private JdGoldService jdGoldService;
     @Autowired(required = false)
@@ -260,6 +263,9 @@ public class SimTradeService {
 
             Map<String, Object> detail = new LinkedHashMap<>();
             detail.put("symbol", pos.getSymbol());
+            String positionMarket = SimMarketSupport.legacyMarket(pos.getSymbol());
+            if (positionMarket == null) positionMarket = SimMarketSupport.market(pos.getSymbol());
+            detail.put("market", positionMarket);
             detail.put("quantity", pos.getQuantity());
             detail.put("avgCost", pos.getAvgCost());
             detail.put("currentPrice", currentPrice);
@@ -342,14 +348,18 @@ public class SimTradeService {
     }
 
     private QuoteValue quoteValue(String symbol, boolean requireFresh) {
-        String market = switch (symbol) {
-            case "sh518850" -> "gold_etf";
-            case "hf_XAU" -> "london_gold";
-            case "jd_zheshang" -> "jd_zheshang";
-            case "jd_minsheng" -> "jd_minsheng";
-            default -> null;
-        };
+        String market = SimMarketSupport.legacyMarket(symbol);
         if (market == null) {
+            market = SimMarketSupport.market(symbol);
+            if (market == null) {
+                throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                        "无法识别 " + symbol + " 的市场， 请先从多市场解析标的");
+            }
+            if (requireFresh) ensureTradingSession(market);
+            return extendedQuote(symbol, market, requireFresh);
+        }
+
+        if (market.isBlank()) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
                     "无法获取 " + symbol + " 的有效行情");
         }
@@ -382,6 +392,39 @@ public class SimTradeService {
                     "行情已过期，暂停成交: " + symbol);
         }
         return new QuoteValue(value(price), snapshot.getTs(), stale);
+    }
+
+    private QuoteValue extendedQuote(String symbol, String market, boolean requireFresh) {
+        if (extendedMarketDataService == null) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "多市场行情服务暂不可用: " + symbol);
+        }
+        Map<String, Object> quote = extendedMarketDataService.quote(market, symbol);
+        BigDecimal price = asDecimal(quote.get("price"));
+        if (price == null || price.signum() <= 0) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "无法获取 " + symbol + " 的有效行情");
+        }
+        LocalDateTime ts = SimMarketSupport.quoteTime(quote.get("quote_time"));
+        boolean stale = Boolean.TRUE.equals(quote.get("stale"))
+                || ts == null
+                || ts.isBefore(LocalDateTime.now().minusSeconds(SimMarketSupport.maxAgeSeconds(market)));
+        if (requireFresh && stale) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "行情已过期，暂停成交: " + symbol);
+        }
+        return new QuoteValue(value(price), ts, stale);
+    }
+
+    private void ensureTradingSession(String market) {
+        Map<String, Object> state = extendedMarketDataService == null
+                ? Map.of()
+                : extendedMarketDataService.session(market);
+        if (!Boolean.TRUE.equals(state.get("is_open"))) {
+            String label = String.valueOf(state.getOrDefault("label", "非交易时段"));
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    label + "，模拟盘仅允许在开市时间成交（加密货币全天开放）");
+        }
     }
 
     private QuoteValue liveQuote(String symbol, String market) {

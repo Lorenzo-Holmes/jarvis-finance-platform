@@ -1,8 +1,10 @@
 <script setup>
+import { computed } from 'vue'
 import { formatNumber, formatPercent } from '../../utils/formatters'
 
 const props = defineProps({
   symbol: { type: String, required: true },
+  instruments: { type: Array, default: () => [] },
   type: { type: String, required: true },
   quantity: { type: Number, required: true },
   leverage: { type: Number, required: true },
@@ -21,6 +23,12 @@ const emit = defineEmits([
 
 const fmt = value => formatNumber(value)
 const fmtPct = value => formatPercent(value)
+const fallbackInstruments = [
+  { market: 'a_share', symbol: 'sh518850', name: '黄金ETF华夏' },
+]
+const instrumentOptions = computed(() => props.instruments.length
+  ? props.instruments
+  : fallbackInstruments)
 </script>
 
 <template>
@@ -33,10 +41,9 @@ const fmtPct = value => formatPercent(value)
     <label class="ticket-field">
       <span>交易标的</span>
       <select :value="symbol" class="select" @change="emit('update:symbol', $event.target.value)">
-        <option value="sh518850">黄金ETF华夏 · sh518850</option>
-        <option value="hf_XAU">伦敦金 · hf_XAU</option>
-        <option value="jd_zheshang">浙商积存金 · jd_zheshang</option>
-        <option value="jd_minsheng">民生积存金 · jd_minsheng</option>
+        <option v-for="item in instrumentOptions" :key="`${item.market}:${item.symbol}`" :value="item.symbol">
+          {{ item.name }} · {{ item.symbol }}
+        </option>
       </select>
     </label>
 

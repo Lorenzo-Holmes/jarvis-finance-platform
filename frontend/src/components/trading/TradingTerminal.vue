@@ -8,14 +8,17 @@ const props = defineProps({
   realtimePrices: { type: Object, default: null },
   jdPrices: { type: Object, default: null },
   openOrders: { type: Array, default: () => [] },
+  instruments: { type: Array, default: () => [] },
+  selectedSymbol: { type: String, default: '' },
+  sessionOpen: { type: Boolean, default: true },
   submitting: { type: Boolean, default: false },
   message: { type: String, default: '' },
   messageType: { type: String, default: 'info' },
 })
 
-const emit = defineEmits(['submit', 'update-order', 'cancel-order'])
+const emit = defineEmits(['submit', 'update-order', 'cancel-order', 'select-symbol'])
 
-const instruments = [
+const DEFAULT_INSTRUMENTS = [
   { symbol: 'sh518850', ticker: '518850', name: '黄金ETF华夏', market: 'gold_etf', quoteKey: 'gold_etf', kind: 'market', currency: '¥' },
   { symbol: 'hf_XAU', ticker: 'XAU', name: '伦敦金', market: 'london_gold', quoteKey: 'london_gold', kind: 'market', currency: '$' },
   { symbol: 'jd_zheshang', ticker: 'JD-ZS', name: '浙商积存金', market: 'zheshang', quoteKey: 'zheshang', kind: 'jd', currency: '¥' },
@@ -41,8 +44,17 @@ const intervalOptions = [
   { value: '60', label: '1h' },
   { value: 'day', label: '1D' },
 ]
+const extendedIntervalOptions = [
+  { value: '1d', label: '1D' },
+  { value: '5m', label: '5m' },
+  { value: '10m', label: '10m' },
+  { value: '15m', label: '15m' },
+  { value: '30m', label: '30m' },
+  { value: '1h', label: '1h' },
+]
 
-const activeSymbol = ref('sh518850')
+const extendedQuote = ref(null)
+const activeSymbol = ref(props.selectedSymbol || 'sh518850')
 const selectedRange = ref('1D')
 const selectedInterval = ref('15')
 const klineData = ref([])
@@ -64,8 +76,27 @@ const orderState = reactive({
 const marketChart = useMarketChart()
 const chartRef = marketChart.elementRef
 
-const activeInstrument = computed(() => instruments.find(item => item.symbol === activeSymbol.value) || instruments[0])
-const currentQuote = computed(() => activeInstrument.value.kind === 'jd'
+const terminalInstruments = computed(() => {
+  const source = props.instruments.length ? props.instruments : DEFAULT_INSTRUMENTS
+  return source.map(item => {
+    const legacyMarket = item.legacyMarket || (!['a_share', 'us_stock', 'crypto'].includes(item.market) ? item.market : null)
+    const kind = item.kind || (legacyMarket ? (legacyMarket.startsWith('jd_') ? 'jd' : 'market') : 'extended')
+    const currency = item.currency === 'CNY' ? '¥' : item.currency === 'USD' ? '$' : item.currency || '·'
+    return {
+      ...item,
+      ticker: item.ticker || item.symbol,
+      market: legacyMarket || item.market,
+      quoteKey: item.quoteKey || legacyMarket || item.symbol,
+      kind,
+      currency,
+    }
+  })
+})
+const activeInstrument = computed(() => terminalInstruments.value.find(item => item.symbol === activeSymbol.value)
+  || terminalInstruments.value[0] || DEFAULT_INSTRUMENTS[0])
+const currentQuote = computed(() => activeInstrument.value.kind === 'extended'
+  ? extendedQuote.value
+  : activeInstrument.value.kind === 'jd'
   ? props.jdPrices?.[activeInstrument.value.quoteKey] || null
   : props.realtimePrices?.[activeInstrument.value.quoteKey] || null)
 const currentPrice = computed(() => Number(currentQuote.value?.price || 0))
@@ -75,9 +106,11 @@ const availableQuantity = computed(() => Number(activePosition.value?.quantity |
 const activeOpenOrder = computed(() => props.openOrders.find(order =>
   order?.symbol === activeSymbol.value && ['OPEN', 'TRIGGERING'].includes(String(order?.status || '').toUpperCase())) || null)
 const activeRange = computed(() => rangeOptions.find(item => item.key === selectedRange.value) || rangeOptions[0])
-const visibleIntervals = computed(() => activeInstrument.value.kind === 'jd'
-  ? intervalOptions.filter(item => item.value !== 'day')
-  : intervalOptions)
+const visibleIntervals = computed(() => activeInstrument.value.kind === 'extended'
+  ? extendedIntervalOptions
+  : activeInstrument.value.kind === 'jd'
+    ? intervalOptions.filter(item => item.value !== 'day')
+    : intervalOptions)
 const latestBar = computed(() => klineData.value.at(-1) || {})
 const livePnl = computed(() => {
   const position = activePosition.value
@@ -100,7 +133,7 @@ const stopRelationError = computed(() => {
 })
 const canSubmit = computed(() => {
   const qty = Number(orderState.quantity || 0)
-  if (props.submitting || qty <= 0 || currentPrice.value <= 0 || quoteStale.value) return false
+  if (props.submitting || !props.sessionOpen || qty <= 0 || currentPrice.value <= 0 || quoteStale.value) return false
   if (orderState.side === 'SELL' && qty > availableQuantity.value) return false
   if (orderState.orderType === 'STOP_MARKET' && (Number(orderState.stopPrice || 0) <= 0 || stopRelationError.value)) return false
   return true
@@ -135,8 +168,20 @@ function signedMoney(value) {
 }
 
 function cycleSymbol() {
-  const index = instruments.findIndex(item => item.symbol === activeSymbol.value)
-  activeSymbol.value = instruments[(index + 1) % instruments.length].symbol
+  const list = terminalInstruments.value
+  const index = list.findIndex(item => item.symbol === activeSymbol.value)
+  const next = list[(index + 1) % list.length]
+  if (next) {
+    activeSymbol.value = next.symbol
+    emit('select-symbol', next.symbol)
+  }
+}
+
+function normalizeExtendedInterval() {
+  if (activeInstrument.value.kind !== 'extended') return selectedInterval.value
+  if (extendedIntervalOptions.some(item => item.value === selectedInterval.value)) return selectedInterval.value
+  selectedInterval.value = '15m'
+  return selectedInterval.value
 }
 
 function setRange(key) {
@@ -150,7 +195,17 @@ async function loadKline() {
     let rows = []
     const instrument = activeInstrument.value
     const limit = activeRange.value.limit
-    if (instrument.kind === 'jd') {
+    if (instrument.kind === 'extended') {
+      const interval = normalizeExtendedInterval()
+      const [quoteResponse, klineResponse] = await Promise.all([
+        api.marketAssetQuote(instrument.market, instrument.symbol),
+        api.marketAssetKline(instrument.market, instrument.symbol, interval, Math.min(limit, 500)),
+      ])
+      if (quoteResponse?.code !== 200) throw new Error(quoteResponse?.message || '报价加载失败')
+      if (klineResponse?.code !== 200) throw new Error(klineResponse?.message || 'K线加载失败')
+      extendedQuote.value = quoteResponse.data
+      rows = klineResponse.data?.data || []
+    } else if (instrument.kind === 'jd') {
       const response = await api.jdKline(instrument.market, Number(selectedInterval.value), Math.min(limit, 500))
       const body = response?.data?.data ? response.data : response
       rows = body?.data || []
@@ -337,6 +392,12 @@ function submitOrder() {
   })
 }
 
+function selectSymbol(symbol) {
+  if (!terminalInstruments.value.some(item => item.symbol === symbol)) return
+  activeSymbol.value = symbol
+  emit('select-symbol', symbol)
+}
+
 function cancelEditingOrder() {
   if (!editingOrderId.value) return
   emit('cancel-order', editingOrderId.value)
@@ -349,6 +410,23 @@ watch([activeSymbol, selectedInterval, selectedRange], async ([, interval]) => {
   }
   await loadKline()
 })
+
+watch(() => props.selectedSymbol, value => {
+  if (value && value !== activeSymbol.value && terminalInstruments.value.some(item => item.symbol === value)) {
+    activeSymbol.value = value
+  }
+})
+
+watch(() => props.instruments, list => {
+  if (!list.length) return
+  if (!terminalInstruments.value.some(item => item.symbol === activeSymbol.value)) {
+    const next = terminalInstruments.value[0]
+    if (next) {
+      activeSymbol.value = next.symbol
+      emit('select-symbol', next.symbol)
+    }
+  }
+}, { deep: true })
 
 watch(() => [props.account, props.openOrders, currentQuote.value?.price, modalOpen.value, orderState.stopPrice], () => {
   renderAnnotations()

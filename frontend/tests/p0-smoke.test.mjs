@@ -312,6 +312,22 @@ test('cross-market view persists through the authenticated backend and exposes e
   assert.match(listSource, /修改自选标的/)
 })
 
+test('simulation view reuses multi-market instruments and enforces the trading window', async () => {
+  const source = await readFile(join(frontendRoot, 'src/components/SimTradeView.vue'), 'utf8')
+  const ticketSource = await readFile(join(frontendRoot, 'src/components/trading/OrderTicket.vue'), 'utf8')
+  const terminalSource = await readFile(join(frontendRoot, 'src/components/trading/TradingTerminal.vue'), 'utf8')
+  assert.match(source, /<InstrumentList/)
+  assert.match(source, /api\.resolveMarketInstrument\(market\.value, query\)/)
+  assert.match(source, /api\.saveMarketPreferences\(preferences\)/)
+  assert.match(source, /const marketOpen = computed/)
+  assert.match(source, /模拟盘仅允许在开市时间成交/)
+  assert.match(source, /<TradingTerminal/)
+  assert.match(terminalSource, /sessionOpen: \{ type: Boolean/)
+  assert.match(terminalSource, /!props\.sessionOpen/)
+  assert.match(ticketSource, /instruments: \{ type: Array/)
+  assert.match(ticketSource, /v-for="item in instrumentOptions"/)
+})
+
 async function sourceFiles(dir) {
   const entries = await readdir(dir, { withFileTypes: true })
   const output = []

@@ -36,7 +36,7 @@ const posClass = value => Number(value || 0) >= 0 ? 'pos' : 'neg'
             <td :class="position.loan > 0 ? 'warn' : ''">{{ position.loan > 0 ? fmt(position.loan) : '-' }}</td>
             <td :class="posClass(position.profit)">{{ fmt(position.profit) }}</td>
             <td :class="posClass(position.profitPct)">{{ fmtPct(position.profitPct) }}</td>
-            <td><button type="button" class="flat-action" :aria-label="`全平 ${symbol}`" @click="emit('quick-sell', symbol, position.quantity)">全平</button></td>
+            <td><button type="button" class="flat-action" :aria-label="`全平 ${symbol}`" @click="emit('quick-sell', symbol, position.quantity, position.market)">全平</button></td>
           </tr>
         </tbody>
       </table>
