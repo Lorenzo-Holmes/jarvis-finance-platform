@@ -10,6 +10,7 @@ const chart = fs.readFileSync(new URL('../src/composables/useMarketChart.js', im
 test('simulated trading uses the chart-first terminal layout', () => {
   assert.match(simView, /TradingTerminal/)
   assert.match(terminal, /terminal-chart/)
+  assert.doesNotMatch(terminal, /chart-toolbar/)
   assert.match(terminal, /Order type/)
   assert.match(terminal, /Stop market/)
   assert.match(terminal, /Estimated credit/)
@@ -35,6 +36,16 @@ test('simulation terminal reuses the multi-market chart configuration', () => {
   assert.match(terminal, /getMultiMarketChartOptions\(\{[\s\S]*visibleCount: activeRange\.value\.limit/)
   assert.doesNotMatch(terminal, /riseColor: '#b9ff22'/)
   assert.doesNotMatch(terminal, /withVolume: true/)
+})
+
+test('trade terminal and order modal use the multi-market semantic text palette', () => {
+  assert.match(terminal, /--trade-text: var\(--text\)/)
+  assert.match(terminal, /--trade-muted: var\(--muted\)/)
+  assert.match(terminal, /--trade-subtle: var\(--subtle\)/)
+  assert.match(terminal, /--trade-buy: #27c46b/)
+  assert.match(terminal, /--trade-sell: #ef5350/)
+  assert.match(terminal, /\.order-grid > label, \.field-label > label \{ color: var\(--muted\)/)
+  assert.match(terminal, /\.order-summary p \{[^}]*color: var\(--subtle\)/)
 })
 
 test('reference terminal renders separate position and stop labels on the chart', () => {
