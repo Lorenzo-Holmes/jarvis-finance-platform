@@ -1119,8 +1119,11 @@ V5 实现不得破坏：
 
 ## 28.6 下一批仍需继续
 
-- [ ] V5-D：继续收敛前景裁切、远景虚化、DOF 与 Fog，让“进入档案海”的摄影效果进一步接近参考视频。
-- [ ] V5-D：对 Sleep → Wake 后的双向接管做长时间手感回归。
+- [x] V5-D 代码侧：HIGH 档可选 post-processing 已加入轻量 `BokehPass`，BALANCED / MOBILE 保持关闭；仍沿用 GPU probe 与失败回退，不增加 WebGL context。
+- [x] V5-D 自动回归：加入 DOF 后 P0 仍为 `49 / 49`，production build 通过，BokehPass 独立 lazy chunk 输出。
+- [ ] V5-D 视觉侧：宿主安全检查阻止了本轮自动浏览器视觉复核，因此真实日常 Edge 下的 DOF / 玻璃层次仍需用户预览确认，不标记为完成。
+- [ ] V5-D：继续收敛前景裁切与 Fog，让“进入档案海”的摄影效果进一步接近参考视频。
+- [x] V5-D：Sleep → Wake 双向接管已做实际等待验收；`01 MARKET / SLEEP_DRIFT` 直接 `ArrowLeft` 可立即醒来并循环到 `11 OPS`，最终为 `AWAKE / FOCUSED · PREVIOUS`，没有先回固定档案。
 - [ ] V5-E：继续校准 QUERY / MATCH 在真实日常 Edge 下的可感知时长，避免过快不可见或过慢影响操作。
 - [ ] 在用户确认首页整体方向后，才进入上游 PR / merge。
 

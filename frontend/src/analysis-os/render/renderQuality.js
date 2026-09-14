@@ -11,6 +11,7 @@ export function archiveQualityProfile(width, dpr = 1) {
       maxDpr: 1.15,
       shadows: false,
       post: false,
+      dof: false,
       aoKernel: 8,
       aoRadius: 4,
       aoMinDistance: 0.004,
@@ -24,6 +25,7 @@ export function archiveQualityProfile(width, dpr = 1) {
       shadows: true,
       post: false,
       postCandidate: true,
+      dof: false,
       aoKernel: 12,
       aoRadius: 4,
       aoMinDistance: 0.004,
@@ -36,6 +38,10 @@ export function archiveQualityProfile(width, dpr = 1) {
     shadows: true,
     post: false,
     postCandidate: true,
+    dof: true,
+    dofFocus: 34,
+    dofAperture: 0.000018,
+    dofMaxBlur: 0.0032,
     aoKernel: 16,
     aoRadius: 5,
     aoMinDistance: 0.003,
@@ -71,8 +77,20 @@ export async function createArchiveComposer({ renderer, scene, camera, width, he
   ssaoPass.minDistance = profile.aoMinDistance
   ssaoPass.maxDistance = profile.aoMaxDistance
   composer.addPass(ssaoPass)
+  let bokehPass = null
+  if (profile.dof) {
+    const { BokehPass } = await import('three/addons/postprocessing/BokehPass.js')
+    bokehPass = new BokehPass(scene, camera, {
+      focus: profile.dofFocus,
+      aperture: profile.dofAperture,
+      maxblur: profile.dofMaxBlur,
+      width,
+      height,
+    })
+    composer.addPass(bokehPass)
+  }
   composer.addPass(new OutputPass())
-  return { composer, ssaoPass }
+  return { composer, ssaoPass, bokehPass }
 }
 
 export async function probeArchiveComposer({ renderer, scene, camera, width, height, profile }) {
@@ -120,11 +138,13 @@ export function resizeArchiveComposer(bundle, width, height) {
   if (!bundle) return
   bundle.composer.setSize(width, height)
   bundle.ssaoPass.setSize(width, height)
+  bundle.bokehPass?.setSize?.(width, height)
 }
 
 export function disposeArchiveComposer(bundle) {
   if (!bundle) return
   bundle.ssaoPass?.dispose?.()
+  bundle.bokehPass?.dispose?.()
   bundle.composer?.dispose?.()
 }
 
