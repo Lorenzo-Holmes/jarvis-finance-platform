@@ -139,3 +139,19 @@ test('archive sea V5 uses bidirectional cyclic flow and a lightweight retrieval 
   assert.doesNotMatch(page, /PseudoRandomArchiveResolver|candidateScore|randomCandidate/i)
 })
 
+test('archive sea V5 has no visible physical edge because the finite pool is periodically remapped', () => {
+  const scene = read('components/analysis/AnalysisArchiveScene.vue')
+  const loop = read('analysis-os/motion/archiveLoop.js')
+
+  assert.match(scene, /POOL_LANE_COUNT/)
+  assert.match(scene, /POOL_ROW_COUNT/)
+  assert.match(scene, /updateWrappedArchivePositions/)
+  assert.match(scene, /entry\.virtualLane/)
+  assert.match(scene, /entry\.virtualRow/)
+  assert.match(scene, /poolKeyForCell/)
+  assert.match(loop, /nearestPeriodicCoordinate/)
+  assert.match(loop, /canonicalPoolCoordinate/)
+  assert.doesNotMatch(scene, /root\.position\.x = -\(laneTrack/)
+  assert.doesNotMatch(scene, /root\.position\.z = -\(rowTrack/)
+})
+

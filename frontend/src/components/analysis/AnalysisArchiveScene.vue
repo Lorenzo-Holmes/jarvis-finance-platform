@@ -20,8 +20,11 @@ import {
   WebGLRenderer,
 } from 'three'
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { wrap } from '../../analysis-os/data/modules'
 import { ArchiveDrag, ArchivePlaneMomentum, dampSpring } from '../../analysis-os/motion/archiveMomentum'
+import {
+  nearestPeriodicCoordinate,
+  poolKeyForCell,
+} from '../../analysis-os/motion/archiveLoop'
 import {
   createArchiveAssembly,
   createArchiveAssetLibrary,
@@ -43,7 +46,19 @@ const LANE_ROW_SKEW = 0
 const CENTER_LANE = 2
 const CENTER_ROW = 12
 const ARCHIVE_ORIGIN_ROW = 15.5
-const ROW_PERIOD = 8
+const FOCUS_Z = (CENTER_ROW - ARCHIVE_ORIGIN_ROW) * ROW_SPACING
+const POOL_LANE_MIN = -2
+const POOL_LANE_MAX = 6
+const POOL_LANE_COUNT = POOL_LANE_MAX - POOL_LANE_MIN + 1
+const POOL_ROW_MIN = 0
+const POOL_ROW_MAX = 24
+const POOL_ROW_COUNT = POOL_ROW_MAX - POOL_ROW_MIN + 1
+const POOL_OPTIONS = {
+  laneMin: POOL_LANE_MIN,
+  laneCount: POOL_LANE_COUNT,
+  rowMin: POOL_ROW_MIN,
+  rowCount: POOL_ROW_COUNT,
+}
 
 const ANONYMOUS_ARCHIVE = {
   id: 'archive:anonymous',
@@ -109,6 +124,7 @@ const drag = new ArchiveDrag()
 const laneTrack = { value: CENTER_LANE, velocity: 0, target: CENTER_LANE }
 const rowTrack = { value: CENTER_ROW, velocity: 0, target: CENTER_ROW }
 const entries = []
+const entriesByPoolKey = new Map()
 const textureCache = new Map()
 const materialCache = new Map()
 const sceneDisposables = []
@@ -205,6 +221,7 @@ function labelMaterial(module) {
 function clearArchive() {
   while (root?.children?.length) root.remove(root.children[0])
   entries.splice(0, entries.length)
+  entriesByPoolKey.clear()
   hoveredEntry = null
   for (const material of materialCache.values()) material.dispose()
   for (const texture of textureCache.values()) texture.dispose()
@@ -216,23 +233,37 @@ function createCard(physicalLane, physicalRow) {
   const assembly = createArchiveAssembly(ANONYMOUS_ARCHIVE, labelMaterial(ANONYMOUS_ARCHIVE), archiveLibrary)
   const group = assembly.group
 
-  const baseX = (physicalLane - CENTER_LANE) * LANE_SPACING
-  const laneOffset = physicalLane - CENTER_LANE
   const baseY = -4.60
-  const baseZ = (physicalRow - ARCHIVE_ORIGIN_ROW) * ROW_SPACING + laneOffset * LANE_ROW_SKEW
+  const baseX = (physicalLane - CENTER_LANE) * LANE_SPACING
+  const baseZ = FOCUS_Z + (physicalRow - CENTER_ROW) * ROW_SPACING
   group.position.set(baseX, baseY, baseZ)
-  group.rotation.y = (CENTER_LANE - physicalLane) * 0.014
-  group.userData = { baseY, targetY: baseY, physicalLane, physicalRow, slotKey: `slot:${physicalLane}:${physicalRow}` }
+  group.rotation.y = 0
+  group.userData = {
+    baseY,
+    targetY: baseY,
+    physicalLane,
+    physicalRow,
+    slotKey: `slot:${physicalLane}:${physicalRow}`,
+  }
   root.add(group)
-  entries.push({ ...assembly, group, physicalLane, physicalRow })
+  const entry = {
+    ...assembly,
+    group,
+    physicalLane,
+    physicalRow,
+    virtualLane: physicalLane,
+    virtualRow: physicalRow,
+  }
+  entries.push(entry)
+  entriesByPoolKey.set(`${physicalLane}:${physicalRow}`, entry)
 }
 
 function buildArchiveArray() {
   if (!root || !renderer || !archiveLibrary) return
   clearArchive()
 
-  for (let physicalRow = 0; physicalRow <= 24; physicalRow += 1) {
-    for (let physicalLane = -2; physicalLane <= 6; physicalLane += 1) {
+  for (let physicalRow = POOL_ROW_MIN; physicalRow <= POOL_ROW_MAX; physicalRow += 1) {
+    for (let physicalLane = POOL_LANE_MIN; physicalLane <= POOL_LANE_MAX; physicalLane += 1) {
       createCard(physicalLane, physicalRow)
     }
   }
@@ -256,7 +287,18 @@ function currentCell() {
 
 function focusedEntry() {
   const cell = currentCell()
-  return entries.find(entry => entry.physicalLane === cell.lane && entry.physicalRow === cell.row) || null
+  return entriesByPoolKey.get(poolKeyForCell(cell.lane, cell.row, POOL_OPTIONS)) || null
+}
+
+function updateWrappedArchivePositions(centerLane, centerRow) {
+  for (const entry of entries) {
+    const virtualLane = nearestPeriodicCoordinate(entry.physicalLane, centerLane, POOL_LANE_COUNT)
+    const virtualRow = nearestPeriodicCoordinate(entry.physicalRow, centerRow, POOL_ROW_COUNT)
+    entry.virtualLane = virtualLane
+    entry.virtualRow = virtualRow
+    entry.group.position.x = (virtualLane - centerLane) * LANE_SPACING
+    entry.group.position.z = FOCUS_Z + (virtualRow - centerRow) * ROW_SPACING
+  }
 }
 
 function updateFocusVisuals() {
@@ -364,10 +406,8 @@ function shiftRows(steps, source = 'index') {
 }
 
 function rebaseTracksIfNeeded() {
-  const laneRounded = Math.round(laneTrack.value)
-  const canonicalLane = wrap(laneRounded, 5)
-  const laneShift = laneRounded - canonicalLane
-  if (Math.abs(laneShift) >= 5) {
+  const laneShift = Math.round((laneTrack.value - CENTER_LANE) / POOL_LANE_COUNT) * POOL_LANE_COUNT
+  if (Math.abs(laneShift) >= POOL_LANE_COUNT) {
     laneTrack.value -= laneShift
     laneTrack.target -= laneShift
     if (momentum) {
@@ -375,9 +415,8 @@ function rebaseTracksIfNeeded() {
       momentum.lane.target -= laneShift
     }
   }
-  const rowRounded = Math.round(rowTrack.value)
-  const rowShift = Math.round((rowRounded - CENTER_ROW) / ROW_PERIOD) * ROW_PERIOD
-  if (Math.abs(rowShift) >= ROW_PERIOD) {
+  const rowShift = Math.round((rowTrack.value - CENTER_ROW) / POOL_ROW_COUNT) * POOL_ROW_COUNT
+  if (Math.abs(rowShift) >= POOL_ROW_COUNT) {
     rowTrack.value -= rowShift
     rowTrack.target -= rowShift
     lastReportedRow -= rowShift
@@ -506,9 +545,10 @@ function finishPointer(event, cancelled = false) {
       if (current && current.physicalLane === entry.physicalLane && current.physicalRow === entry.physicalRow) {
         emit('activate', props.focusedKey)
       } else {
-        beginFlow(entry.physicalRow - currentCell().row)
-        laneTrack.target = entry.physicalLane
-        rowTrack.target = entry.physicalRow
+        const cell = currentCell()
+        beginFlow(entry.virtualRow - cell.row)
+        laneTrack.target = entry.virtualLane
+        rowTrack.target = entry.virtualRow
       }
     }
   }
@@ -681,9 +721,10 @@ function renderFrame(time) {
   sleep.amount *= (1 - detail)
   sleep.lane *= (1 - detail)
   sleep.row *= (1 - detail)
-  root.position.x = -(laneTrack.value + sleep.lane - CENTER_LANE) * LANE_SPACING
-  root.position.z = -(rowTrack.value + sleep.row - CENTER_ROW) * ROW_SPACING
-    - (laneTrack.value + sleep.lane - CENTER_LANE) * LANE_ROW_SKEW
+  root.position.set(0, 0, 0)
+  const visualLane = laneTrack.value + sleep.lane
+  const visualRow = rowTrack.value + sleep.row
+  updateWrappedArchivePositions(visualLane, visualRow)
 
   camera.position.copy(cameraBase).lerp(cameraDetailBase, detail)
   cameraAim.copy(cameraAimBase).lerp(cameraDetailAim, detail)
@@ -721,15 +762,15 @@ function renderFrame(time) {
   entries.forEach((entry, index) => {
     const data = entry.group.userData
     const idle = !reducedMotion && !momentum && activePointer === null
-      ? Math.sin(time * 0.00034 + entry.physicalRow * 0.32 + entry.physicalLane * 0.41) * 0.045
+      ? Math.sin(time * 0.00034 + entry.virtualRow * 0.32 + entry.virtualLane * 0.41) * 0.045
       : 0
     const sleepWave = sleep.amount
-      ? (Math.sin(time * 0.00055 + entry.physicalRow * 0.22 - entry.physicalLane * 0.35) * 0.11
-        + Math.sin(time * 0.00029 - entry.physicalRow * 0.11 + entry.physicalLane * 0.27) * 0.05) * sleep.amount
+      ? (Math.sin(time * 0.00055 + entry.virtualRow * 0.22 - entry.virtualLane * 0.35) * 0.11
+        + Math.sin(time * 0.00029 - entry.virtualRow * 0.11 + entry.virtualLane * 0.27) * 0.05) * sleep.amount
       : 0
-    const laneRelative = entry.physicalLane - (laneTrack.value + sleep.lane)
+    const laneRelative = entry.virtualLane - visualLane
     const laneDistance = Math.abs(laneRelative)
-    const rowRelative = entry.physicalRow - (rowTrack.value + sleep.row)
+    const rowRelative = entry.virtualRow - visualRow
     const rowDistance = Math.abs(rowRelative)
     const isFocused = entry === focused
     const isNear = isFocused || (laneDistance <= 2.2 && rowDistance <= 4.6)
