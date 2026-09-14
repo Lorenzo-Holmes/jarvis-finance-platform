@@ -149,8 +149,10 @@ function setDesktopBrowseCamera(width, height) {
   const span = Math.max(baseSpan, baseSpan * (16 / 9) / aspect)
   const distance = 100
   const referenceDistance = 140
-  const yaw = 72.5 * Math.PI / 180
-  const elevation = 8.5 * Math.PI / 180
+  // Calibrated from the supplied Rhine terminal reference: the dominant
+  // archive long-edge projects at roughly 29deg on screen in Browse mode.
+  const yaw = 76.75 * Math.PI / 180
+  const elevation = 7.5 * Math.PI / 180
   const viewX = -Math.sin(yaw) * Math.cos(elevation)
   const viewY = Math.sin(elevation)
   const viewZ = Math.cos(yaw) * Math.cos(elevation)
