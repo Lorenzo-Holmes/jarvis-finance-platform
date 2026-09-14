@@ -1,5 +1,28 @@
 <script setup>
-import * as THREE from 'three'
+import {
+  ACESFilmicToneMapping,
+  BoxGeometry,
+  CanvasTexture,
+  DirectionalLight,
+  EdgesGeometry,
+  FogExp2,
+  GridHelper,
+  Group,
+  HemisphereLight,
+  LineBasicMaterial,
+  LineSegments,
+  Mesh,
+  MeshBasicMaterial,
+  MeshPhysicalMaterial,
+  PerspectiveCamera,
+  PlaneGeometry,
+  PointLight,
+  Raycaster,
+  Scene,
+  SRGBColorSpace,
+  Vector2,
+  WebGLRenderer,
+} from 'three'
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 const props = defineProps({
@@ -76,8 +99,8 @@ function makeLabelTexture(asset) {
   ctx.font = '500 19px ui-monospace, SFMono-Regular, Menlo, monospace'
   ctx.fillText(`JARVIS / ${String(asset.dataState || 'catalog').toUpperCase()}`, 44, 574)
 
-  const texture = new THREE.CanvasTexture(canvas)
-  texture.colorSpace = THREE.SRGBColorSpace
+  const texture = new CanvasTexture(canvas)
+  texture.colorSpace = SRGBColorSpace
   texture.anisotropy = Math.min(renderer?.capabilities?.getMaxAnisotropy?.() || 1, 8)
   disposables.push(texture)
   return texture
@@ -94,14 +117,14 @@ function buildArchiveArray() {
   if (!root || !renderer) return
   clearSceneObjects()
 
-  const cardGeometry = new THREE.BoxGeometry(2.34, 3.18, 0.16)
-  const labelGeometry = new THREE.PlaneGeometry(2.12, 2.66)
-  const edgeGeometry = new THREE.EdgesGeometry(cardGeometry)
+  const cardGeometry = new BoxGeometry(2.34, 3.18, 0.16)
+  const labelGeometry = new PlaneGeometry(2.12, 2.66)
+  const edgeGeometry = new EdgesGeometry(cardGeometry)
   sharedGeometries.push(cardGeometry, labelGeometry, edgeGeometry)
 
   const cards = props.assets.slice(0, 15)
   cards.forEach((asset, index) => {
-    const group = new THREE.Group()
+    const group = new Group()
     const col = index % 5
     const row = Math.floor(index / 5)
     const baseX = (col - 2) * 2.95
@@ -110,7 +133,7 @@ function buildArchiveArray() {
     group.position.set(baseX, baseY, baseZ)
     group.rotation.y = (2 - col) * 0.035
 
-    const bodyMaterial = new THREE.MeshPhysicalMaterial({
+    const bodyMaterial = new MeshPhysicalMaterial({
       color: 0x101b19,
       metalness: 0.14,
       roughness: 0.28,
@@ -122,39 +145,39 @@ function buildArchiveArray() {
       thickness: 0.34,
     })
     disposables.push(bodyMaterial)
-    const body = new THREE.Mesh(cardGeometry, bodyMaterial)
+    const body = new Mesh(cardGeometry, bodyMaterial)
     body.userData.assetId = asset.id
     group.add(body)
 
-    const edgesMaterial = new THREE.LineBasicMaterial({
+    const edgesMaterial = new LineBasicMaterial({
       color: 0x8fffc8,
       transparent: true,
       opacity: 0.34,
     })
     disposables.push(edgesMaterial)
-    group.add(new THREE.LineSegments(edgeGeometry, edgesMaterial))
+    group.add(new LineSegments(edgeGeometry, edgesMaterial))
 
-    const labelMaterial = new THREE.MeshBasicMaterial({
+    const labelMaterial = new MeshBasicMaterial({
       map: makeLabelTexture(asset),
       transparent: true,
       opacity: 0.96,
       toneMapped: false,
     })
     disposables.push(labelMaterial)
-    const label = new THREE.Mesh(labelGeometry, labelMaterial)
+    const label = new Mesh(labelGeometry, labelMaterial)
     label.position.z = 0.088
     label.userData.assetId = asset.id
     group.add(label)
 
-    const accentGeometry = new THREE.BoxGeometry(0.12, 0.6, 0.06)
+    const accentGeometry = new BoxGeometry(0.12, 0.6, 0.06)
     sharedGeometries.push(accentGeometry)
-    const accentMaterial = new THREE.MeshBasicMaterial({
+    const accentMaterial = new MeshBasicMaterial({
       color: asset.direction === 'down' ? 0xff7378 : 0x7fffc1,
       transparent: true,
       opacity: 0.85,
     })
     disposables.push(accentMaterial)
-    const accent = new THREE.Mesh(accentGeometry, accentMaterial)
+    const accent = new Mesh(accentGeometry, accentMaterial)
     accent.position.set(1.01, -1.12, 0.13)
     group.add(accent)
 
@@ -267,36 +290,36 @@ function init() {
   if (!element) return
   try {
     reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches || false
-    scene = new THREE.Scene()
-    scene.fog = new THREE.FogExp2(0x060908, 0.018)
+    scene = new Scene()
+    scene.fog = new FogExp2(0x060908, 0.018)
 
-    camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100)
+    camera = new PerspectiveCamera(38, 1, 0.1, 100)
     camera.position.set(0, 0.15, 19.4)
 
-    renderer = new THREE.WebGLRenderer({
+    renderer = new WebGLRenderer({
       antialias: true,
       alpha: true,
       powerPreference: 'high-performance',
     })
-    renderer.outputColorSpace = THREE.SRGBColorSpace
-    renderer.toneMapping = THREE.ACESFilmicToneMapping
+    renderer.outputColorSpace = SRGBColorSpace
+    renderer.toneMapping = ACESFilmicToneMapping
     renderer.toneMappingExposure = 1.06
     element.appendChild(renderer.domElement)
 
-    root = new THREE.Group()
+    root = new Group()
     root.userData.targetRotationX = 0
     root.userData.targetRotationY = 0
     scene.add(root)
 
-    scene.add(new THREE.HemisphereLight(0xcfffee, 0x07100d, 1.45))
-    const key = new THREE.DirectionalLight(0xffffff, 2.2)
+    scene.add(new HemisphereLight(0xcfffee, 0x07100d, 1.45))
+    const key = new DirectionalLight(0xffffff, 2.2)
     key.position.set(-4, 7, 10)
     scene.add(key)
-    const rim = new THREE.PointLight(0x79ffc0, 18, 30)
+    const rim = new PointLight(0x79ffc0, 18, 30)
     rim.position.set(7, -3, 8)
     scene.add(rim)
 
-    const grid = new THREE.GridHelper(34, 34, 0x24443a, 0x12221d)
+    const grid = new GridHelper(34, 34, 0x24443a, 0x12221d)
     grid.rotation.x = Math.PI / 2
     grid.position.z = -5.5
     const gridMaterials = Array.isArray(grid.material) ? grid.material : [grid.material]
@@ -308,8 +331,8 @@ function init() {
     sceneDisposables.push(grid.geometry)
     scene.add(grid)
 
-    raycaster = new THREE.Raycaster()
-    pointer = new THREE.Vector2()
+    raycaster = new Raycaster()
+    pointer = new Vector2()
     buildArchiveArray()
     resize()
 
