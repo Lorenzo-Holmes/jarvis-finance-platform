@@ -88,40 +88,40 @@ def main():
     bpy.context.collection.objects.link(root)
 
     parts = []
-    parts.append(cube('Body', (3.12, 0.15, 4.72), (0, 0, 0), body_m, 0.065))
-    parts.append(cube('Inset', (2.91, 0.05, 4.46), (0, -0.105, 0), inset_m, 0.055))
+    parts.append(cube('Body', (4.98, 0.31, 3.70), (0, 0, 0), body_m, 0.065))
+    parts.append(cube('Inset', (4.72, 0.06, 3.44), (0, -0.185, 0), inset_m, 0.055))
 
     # Outer frame and seal rails.
-    for x in (-1.42, 1.42):
-        parts.append(cube('FrameSide', (0.075, 0.08, 4.34), (x, -0.19, 0), frame_m, 0.018))
-        parts.append(cube('SealSide', (0.025, 0.026, 4.10), (x * 0.955, -0.235, 0), rail_m, 0.008))
-    for z in (-2.09, 2.09):
-        parts.append(cube('FrameTopBottom', (2.86, 0.08, 0.075), (0, -0.19, z), frame_m, 0.018))
-        parts.append(cube('SealTopBottom', (2.66, 0.026, 0.025), (0, -0.235, z * 0.955), rail_m, 0.008))
+    for x in (-2.31, 2.31):
+        parts.append(cube('FrameSide', (0.08, 0.09, 3.34), (x, -0.235, 0), frame_m, 0.018))
+        parts.append(cube('SealSide', (0.03, 0.028, 3.10), (x * 0.97, -0.29, 0), rail_m, 0.008))
+    for z in (-1.65, 1.65):
+        parts.append(cube('FrameTopBottom', (4.56, 0.09, 0.08), (0, -0.235, z), frame_m, 0.018))
+        parts.append(cube('SealTopBottom', (4.42, 0.028, 0.03), (0, -0.29, z * 0.96), rail_m, 0.008))
 
     # Front glass and hardware.
-    parts.append(cube('Glass', (2.79, 0.025, 4.22), (0, -0.255, -0.02), glass_m, 0.05))
-    parts.append(cube('AmberSpine', (0.095, 0.032, 4.04), (-1.30, -0.335, -0.02), spine_m, 0.018))
-    parts.append(cube('Latch', (0.70, 0.10, 0.17), (0, -0.30, 1.95), accent_m, 0.035))
-    parts.append(cube('LabelCarrier', (2.64, 0.045, 0.76), (0, -0.305, 1.55), inset_m, 0.028))
+    parts.append(cube('Glass', (4.64, 0.035, 3.34), (0, -0.325, -0.02), glass_m, 0.05))
+    parts.append(cube('AmberSpine', (0.095, 0.04, 3.12), (-2.18, -0.39, -0.02), spine_m, 0.018))
+    parts.append(cube('Latch', (0.78, 0.11, 0.17), (0, -0.37, 1.48), accent_m, 0.035))
+    parts.append(cube('LabelCarrier', (4.28, 0.05, 0.70), (0, -0.37, 1.18), inset_m, 0.028))
 
     # Interior rails and rings.
-    for x in (-0.73, 0.73):
-        parts.append(cube('InnerRail', (0.055, 0.045, 3.16), (x, -0.285, -0.18), rail_m, 0.014))
-    parts.append(cube('CenterBridge', (0.048, 0.05, 2.62), (0, -0.31, -0.10), inner_m, 0.012))
-    parts.append(torus('RingTop', 0.50, 0.034, (0, -0.315, 0.48), inner_m))
-    parts.append(torus('RingBottom', 0.50, 0.034, (0, -0.315, -0.75), inner_m))
+    for x in (-1.06, 1.06):
+        parts.append(cube('InnerRail', (0.06, 0.05, 2.40), (x, -0.345, -0.15), rail_m, 0.014))
+    parts.append(cube('CenterBridge', (0.05, 0.055, 1.95), (0, -0.365, -0.05), inner_m, 0.012))
+    parts.append(torus('RingTop', 0.48, 0.034, (0, -0.37, 0.36), inner_m))
+    parts.append(torus('RingBottom', 0.48, 0.034, (0, -0.37, -0.48), inner_m))
 
     # Fasteners and micro hardware.
-    for x in (-1.27, 1.27):
-        for z in (-1.98, 1.98):
+    for x in (-2.12, 2.12):
+        for z in (-1.50, 1.50):
             parts.append(cylinder('Fastener', 0.055, 0.055, (x, -0.33, z), frame_m, verts=18))
-    for x in (-1.02, 1.02):
-        parts.append(cube('SideTab', (0.10, 0.055, 0.43), (x, -0.32, -1.72), accent_m, 0.018))
+    for x in (-1.70, 1.70):
+        parts.append(cube('SideTab', (0.10, 0.06, 0.36), (x, -0.38, -1.28), accent_m, 0.018))
 
     # Small lower vent-like details to break up flatness.
-    for i in range(-4, 5):
-        parts.append(cube('LowerDetail', (0.16, 0.03, 0.022), (i * 0.24, -0.33, -2.0), rail_m, 0.006))
+    for i in range(-7, 8):
+        parts.append(cube('LowerDetail', (0.17, 0.03, 0.022), (i * 0.28, -0.39, -1.49), rail_m, 0.006))
 
     for p in parts:
         p.parent = root

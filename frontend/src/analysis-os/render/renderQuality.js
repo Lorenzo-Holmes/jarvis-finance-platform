@@ -39,9 +39,9 @@ export function archiveQualityProfile(width, dpr = 1) {
     post: false,
     postCandidate: true,
     dof: true,
-    dofFocus: 34,
+    dofFocus: 140,
     dofAperture: 0.000018,
-    dofMaxBlur: 0.0032,
+    dofMaxBlur: 0.0022,
     aoKernel: 16,
     aoRadius: 5,
     aoMinDistance: 0.003,
@@ -139,6 +139,12 @@ export function resizeArchiveComposer(bundle, width, height) {
   bundle.composer.setSize(width, height)
   bundle.ssaoPass.setSize(width, height)
   bundle.bokehPass?.setSize?.(width, height)
+}
+
+export function focusArchiveComposer(bundle, distance) {
+  const focus = bundle?.bokehPass?.uniforms?.focus
+  if (!focus || !Number.isFinite(distance)) return
+  focus.value = Math.max(0.1, distance)
 }
 
 export function disposeArchiveComposer(bundle) {

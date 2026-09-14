@@ -47,7 +47,7 @@ test('analysis OS uses Three.js while preserving original JARVIS branding', () =
   assert.match(scene, /dragProjection/)
   assert.match(scene, /wheelTotal/)
   assert.match(scene, /emit\('activate'/)
-  assert.match(scene, /scene\.background = new Color\('#dfdbd3'\)/)
+  assert.match(scene, /scene\.background = new Color\('#eae5e1'\)/)
   assert.match(scene, /createArchiveAssembly/)
   assert.match(scene, /createArchiveComposer/)
   assert.match(scene, /focusedGlassMaterial/)

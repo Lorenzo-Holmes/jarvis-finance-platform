@@ -32,16 +32,18 @@ import {
   configureArchiveRenderer,
   createArchiveComposer,
   disposeArchiveComposer,
+  focusArchiveComposer,
   probeArchiveComposer,
   resizeArchiveComposer,
 } from '../../analysis-os/render/renderQuality'
 
-const LANE_SPACING = 5.28
-const ROW_SPACING = 0.88
-const LANE_ROW_SKEW = 0.58
+const LANE_SPACING = 5.20
+const ROW_SPACING = 0.62
+const LANE_ROW_SKEW = 0
 const CENTER_LANE = 2
 const CENTER_ROW = 12
-const ROW_PERIOD = 6
+const ARCHIVE_ORIGIN_ROW = 15.5
+const ROW_PERIOD = 8
 
 const ANONYMOUS_ARCHIVE = {
   id: 'archive:anonymous',
@@ -110,17 +112,47 @@ const entries = []
 const textureCache = new Map()
 const materialCache = new Map()
 const sceneDisposables = []
-const cameraAim = new Vector3(-0.2, -1.22, -0.6)
-const cameraBase = new Vector3(-23.8, 11.9, 31.5)
-const cameraAimBase = new Vector3(-0.2, -1.22, -0.6)
+const cameraAim = new Vector3(-1.091, -0.045, 0.481)
+const cameraBase = new Vector3(-114.556, 45.535, 68.658)
+const cameraAimBase = new Vector3(-1.091, -0.045, 0.481)
 const cameraDetailBase = new Vector3(-14.8, 7.5, 22.3)
 const cameraDetailAim = new Vector3(3.25, 0.3, -0.2)
-let cameraBaseFov = 16.4
+let cameraBaseFov = 3.0
 let cameraDetailFov = 13.6
 
 function smoothstep(value) {
   const t = Math.max(0, Math.min(1, value))
   return t * t * (3 - 2 * t)
+}
+
+function gaussian(distance, width) {
+  const scaled = distance / Math.max(0.0001, width)
+  return Math.exp(-0.5 * scaled * scaled)
+}
+
+function archiveShoulderField(rowOffset, laneOffset) {
+  const envelope = Math.max(-0.42, 2.15 - 0.17 * (Math.sqrt(rowOffset * rowOffset + 1) - 1))
+  const column = 0.25 + 0.75 * gaussian(laneOffset, 0.55)
+  return envelope * column
+}
+
+function setDesktopBrowseCamera(width, height) {
+  const aspect = Math.max(0.25, width / Math.max(1, height))
+  const baseSpan = 7.33
+  const span = Math.max(baseSpan, baseSpan * (16 / 9) / aspect)
+  const distance = 140
+  const yaw = 59 * Math.PI / 180
+  const elevation = 19 * Math.PI / 180
+  const viewX = -Math.sin(yaw) * Math.cos(elevation)
+  const viewY = Math.sin(elevation)
+  const viewZ = Math.cos(yaw) * Math.cos(elevation)
+  cameraAimBase.set(-1.091, -0.045, 0.481)
+  cameraBase.set(
+    cameraAimBase.x + viewX * distance,
+    cameraAimBase.y + viewY * distance,
+    cameraAimBase.z + viewZ * distance,
+  )
+  cameraBaseFov = 2 * Math.atan(span / (2 * distance)) * 180 / Math.PI
 }
 
 function makeLabelTexture(module) {
@@ -186,8 +218,8 @@ function createCard(physicalLane, physicalRow) {
 
   const baseX = (physicalLane - CENTER_LANE) * LANE_SPACING
   const laneOffset = physicalLane - CENTER_LANE
-  const baseY = -2.18 - Math.min(0.12, Math.abs(laneOffset) * 0.018)
-  const baseZ = (physicalRow - CENTER_ROW) * ROW_SPACING + laneOffset * LANE_ROW_SKEW
+  const baseY = -4.60
+  const baseZ = (physicalRow - ARCHIVE_ORIGIN_ROW) * ROW_SPACING + laneOffset * LANE_ROW_SKEW
   group.position.set(baseX, baseY, baseZ)
   group.rotation.y = (CENTER_LANE - physicalLane) * 0.014
   group.userData = { baseY, targetY: baseY, physicalLane, physicalRow, slotKey: `slot:${physicalLane}:${physicalRow}` }
@@ -231,31 +263,22 @@ function updateFocusVisuals() {
   const focused = focusedEntry()
   const extraction = Math.max(0, Math.min(1, Number(props.extractionProgress) || 0))
   const identified = extraction > 0.001 || props.retrievalState === 'MATCH' || props.retrievalState === 'FOCUSED'
+  const detailVisible = extraction > 0.035
   const previewLift = props.retrievalState === 'QUERY'
-    ? 0.32
+    ? 0.12
     : props.retrievalState === 'MATCH'
-      ? 0.96
+      ? 0.28
       : props.retrievalState === 'FOCUSED'
-        ? 1.55
+        ? 0.40
         : 0.08
   const module = focusedModuleData()
   for (const entry of entries) {
     const isFocused = entry === focused
     const isHovered = entry === hoveredEntry
     const focusedLift = extraction > 0.001
-      ? 1.55 + extraction * (4.05 - 1.55)
+      ? 0.40 + extraction * (4.05 - 0.40)
       : previewLift
-    const laneDelta = focused ? entry.physicalLane - focused.physicalLane : 99
-    const laneDistance = focused ? Math.abs(entry.physicalLane - focused.physicalLane) : 99
-    const rowDelta = focused ? entry.physicalRow - focused.physicalRow : 99
-    const rowDistance = Math.abs(rowDelta)
-    const clearance = identified && !isFocused && extraction < 0.08 && rowDelta > 0 && rowDelta <= 5.2
-      ? -Math.max(0, (1 - rowDelta / 5.8)) * (laneDistance < 0.6 ? 0.74 : laneDistance < 1.6 ? 0.22 : 0)
-      : 0
-    const readingVoid = identified && !isFocused && extraction < 0.08 && laneDelta > 0 && laneDelta <= 2 && rowDistance <= 2.6
-      ? -Math.max(0, 1 - rowDistance / 3.0) * (laneDelta < 1.2 ? 1.02 : 0.54)
-      : 0
-    entry.group.userData.targetY = entry.group.userData.baseY + (isFocused ? focusedLift : isHovered ? 0.28 : clearance + readingVoid)
+    entry.group.userData.targetY = entry.group.userData.baseY + (isFocused ? focusedLift : isHovered ? 0.16 : 0)
     entry.group.userData.targetScale = isFocused && identified ? 1.028 + extraction * 0.028 : isHovered ? 0.985 : 0.965
     if (entry.glass) {
       entry.glass.material = isFocused && extraction > 0.32
@@ -263,12 +286,12 @@ function updateFocusVisuals() {
         : archiveLibrary.materials.glass
     }
     if (entry.label) entry.label.material = isFocused && identified ? labelMaterial(module) : labelMaterial(ANONYMOUS_ARCHIVE)
-    if (entry.baseGroup) entry.baseGroup.visible = !(isFocused && detailAsset && identified)
+    if (entry.baseGroup) entry.baseGroup.visible = !(isFocused && detailAsset && detailVisible)
     if (entry.identityGroup) {
-      entry.identityGroup.position.z = isFocused && detailAsset && identified ? 0.22 : 0
+      entry.identityGroup.position.z = isFocused && identified ? (detailVisible ? 0.22 : 0.09) : 0
       entry.identityGroup.visible = Boolean(isFocused && identified)
     }
-    if (entry.nearGroup && isFocused && detailAsset && identified) entry.nearGroup.visible = false
+    if (entry.nearGroup && isFocused && detailAsset && detailVisible) entry.nearGroup.visible = false
   }
   if (detailAsset) {
     if (focused && detailAsset.parent !== focused.group) {
@@ -276,7 +299,7 @@ function updateFocusVisuals() {
       detailAsset.position.set(0, 0, 0)
       detailAsset.rotation.set(0, 0, 0)
     }
-    detailAsset.visible = Boolean(focused && identified)
+    detailAsset.visible = Boolean(focused && detailVisible)
   }
 }
 
@@ -372,7 +395,7 @@ function screenPoint(world) {
 }
 
 function dragProjection() {
-  const center = new Vector3(0, -2.12, 0)
+  const center = new Vector3(0, -2.75, -2.17)
   const base = screenPoint(center)
   const lane = screenPoint(center.clone().add(new Vector3(-LANE_SPACING, 0, -LANE_ROW_SKEW)))
   const row = screenPoint(center.clone().add(new Vector3(0, 0, -ROW_SPACING)))
@@ -544,26 +567,24 @@ function resize() {
   }
   camera.aspect = width / height
   if (width < 700) {
-    cameraBase.set(-13.2, 8.5, 31.8)
-    cameraBaseFov = 22.5
+    cameraBase.set(-23.5, 14.5, 30.5)
+    cameraBaseFov = 14.5
     cameraDetailBase.set(-8.9, 6.8, 25.7)
     cameraDetailAim.set(1.2, 0.4, 0)
     cameraDetailFov = 18
-    cameraAimBase.set(0.9, -1.02, -0.5)
+    cameraAimBase.set(-0.2, -1.0, -1.1)
   } else if (width < 1100) {
-    cameraBase.set(-17.8, 8.9, 27.7)
-    cameraBaseFov = 18.0
+    cameraBase.set(-44.0, 25.0, 35.0)
+    cameraBaseFov = 8.6
     cameraDetailBase.set(-12.5, 7.2, 23.2)
     cameraDetailAim.set(2.5, 0.25, 0)
     cameraDetailFov = 15
-    cameraAimBase.set(2.0, -1.02, -0.55)
+    cameraAimBase.set(-0.4, 0.2, -0.2)
   } else {
-    cameraBase.set(-20.8, 8.7, 27.2)
-    cameraBaseFov = 17.1
+    setDesktopBrowseCamera(width, height)
     cameraDetailBase.set(-14.8, 7.5, 22.3)
     cameraDetailAim.set(3.25, 0.3, -0.2)
     cameraDetailFov = 13.6
-    cameraAimBase.set(3.05, -1.02, -0.55)
   }
   camera.fov = cameraBaseFov
   camera.position.copy(cameraBase)
@@ -678,6 +699,14 @@ function renderFrame(time) {
     cameraAim.y += Math.sin(time / 14_300) * 0.05 * sleep.amount
   }
   camera.lookAt(cameraAim)
+  focusArchiveComposer(composerBundle, camera.position.distanceTo(cameraAim))
+
+  const fog = scene.fog
+  if (fog instanceof Fog) {
+    const renderedDistance = camera.position.distanceTo(cameraAim)
+    fog.near = renderedDistance + (5 - 6 * detail)
+    fog.far = renderedDistance + (25 - 13 * detail)
+  }
 
   const easing = reducedMotion ? 1 : 1 - Math.exp(-dt * 10)
   const focused = focusedEntry()
@@ -698,25 +727,24 @@ function renderFrame(time) {
       ? (Math.sin(time * 0.00055 + entry.physicalRow * 0.22 - entry.physicalLane * 0.35) * 0.11
         + Math.sin(time * 0.00029 - entry.physicalRow * 0.11 + entry.physicalLane * 0.27) * 0.05) * sleep.amount
       : 0
-    const laneDistance = Math.abs(entry.physicalLane - (laneTrack.value + sleep.lane))
+    const laneRelative = entry.physicalLane - (laneTrack.value + sleep.lane)
+    const laneDistance = Math.abs(laneRelative)
     const rowRelative = entry.physicalRow - (rowTrack.value + sleep.row)
     const rowDistance = Math.abs(rowRelative)
     const isFocused = entry === focused
     const isNear = isFocused || (laneDistance <= 2.2 && rowDistance <= 4.6)
     const showIdentity = Boolean(isFocused && identified)
-    const foregroundSink = !isFocused && rowRelative > 0
-      ? -Math.min(1.05, rowRelative * 0.15)
-      : 0
-    entry.group.position.y += (data.targetY + idle + sleepWave + foregroundSink - entry.group.position.y) * easing
+    const shoulder = archiveShoulderField(rowRelative, laneRelative) * (1 - detail)
+    entry.group.position.y += (data.targetY + shoulder + idle + sleepWave - entry.group.position.y) * easing
 
     const targetScale = data.targetScale || 1
     const scale = entry.group.scale.x + (targetScale - entry.group.scale.x) * easing
     entry.group.scale.setScalar(scale)
-    const targetTilt = focused === entry ? 0 : -0.26
+    const targetTilt = 0
     const idleTilt = focused === entry ? 0 : Math.sin(time * 0.00019 + index * 0.17) * 0.003
     entry.group.rotation.x += (targetTilt + idleTilt - entry.group.rotation.x) * easing
     if (entry.identityGroup) entry.identityGroup.visible = showIdentity
-    entry.nearGroup.visible = isNear && !(isFocused && detailAsset && identified)
+    entry.nearGroup.visible = isNear && !(isFocused && detailAsset && extraction > 0.035)
     entry.focusGroup.visible = (isFocused && identified) || entry === hoveredEntry
     if (entry.body) entry.body.castShadow = Boolean(qualityProfile?.shadows && isNear)
 
@@ -759,13 +787,16 @@ function init() {
   try {
     reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches || false
     scene = new Scene()
-    scene.background = new Color('#dfdbd3')
-    scene.fog = new Fog('#dfdbd3', 42, 76)
-    camera = new PerspectiveCamera(16.4, 1, 0.1, 150)
+    scene.background = new Color('#eae5e1')
+    // The reference project uses custom archive shaders with a much shorter fog
+    // range. Standard materials need a longer falloff to keep the foreground
+    // files crisp while still dissolving the distant rows.
+    scene.fog = new Fog('#eae5e1', 145, 165)
+    camera = new PerspectiveCamera(3.0, 1, 0.1, 220)
     renderer = new WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' })
     qualityProfile = archiveQualityProfile(element.clientWidth || 1440, window.devicePixelRatio || 1)
     configureArchiveRenderer(renderer, qualityProfile)
-    renderer.setClearColor('#dfdbd3', 1)
+    renderer.setClearColor('#eae5e1', 1)
     renderer.domElement.style.touchAction = 'none'
     element.appendChild(renderer.domElement)
 
@@ -796,11 +827,11 @@ function init() {
     rim.position.set(7, 4, 18)
     scene.add(rim)
 
-    const floorGeometry = new PlaneGeometry(120, 120)
-    const floorMaterial = new MeshStandardMaterial({ color: '#cfc8bd', roughness: 0.9, metalness: 0.02 })
+    const floorGeometry = new PlaneGeometry(200, 200)
+    const floorMaterial = new MeshStandardMaterial({ color: '#d8c9b9', roughness: 0.95, metalness: 0.02 })
     const floor = new Mesh(floorGeometry, floorMaterial)
     floor.rotation.x = -Math.PI / 2
-    floor.position.y = -2.55
+    floor.position.y = -4.63
     floor.receiveShadow = true
     scene.add(floor)
     sceneDisposables.push(floorGeometry, floorMaterial)
