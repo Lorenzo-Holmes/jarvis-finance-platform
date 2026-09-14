@@ -81,6 +81,12 @@ post_wrapped_ok() {
   echo "OK  $label"
 }
 
+fetch_csrf_token() {
+  local body
+  body="$(curl "${curl_args[@]}" -b "$cookie_jar" -c "$cookie_jar" "$SMOKE_API_BASE/api/auth/csrf")"
+  printf '%s' "$body" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("code")==200; print(d["data"]["token"])'
+}
+
 echo "== Local readiness =="
 assert_wrapped_ok "Java liveness" "$LOCAL_API_BASE/api/health/live"
 assert_wrapped_ok "Java + DB readiness" "$LOCAL_API_BASE/api/health/ready"
@@ -106,8 +112,7 @@ if [ "$CHECK_PY_BLOCK" = "1" ]; then
 fi
 
 echo "== CSRF + auth =="
-csrf_body="$(curl "${curl_args[@]}" -b "$cookie_jar" -c "$cookie_jar" "$SMOKE_API_BASE/api/auth/csrf")"
-csrf_token="$(printf '%s' "$csrf_body" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("code")==200; print(d["data"]["token"])')"
+csrf_token="$(fetch_csrf_token)"
 [ -n "$csrf_token" ] || { echo "ERROR: empty CSRF token" >&2; exit 1; }
 echo "OK  CSRF token"
 
@@ -126,6 +131,9 @@ assert_json_object "AI capabilities" "$SMOKE_API_BASE/api/ai/capabilities"
 backtest_as_of="$(python3 -c 'import datetime; print((datetime.date.today()-datetime.timedelta(days=1)).isoformat())')"
 assert_reproducible_backtest "reproducible backtest" "$SMOKE_API_BASE/api/backtest?market=gold_etf&short_ma=5&long_ma=20&initial_cash=100000&limit=60&as_of=$backtest_as_of"
 
+# 登录后的会话可能在后续读接口中刷新 CSRF token，退出前重新获取，避免误报 419。
+csrf_token="$(fetch_csrf_token)"
+[ -n "$csrf_token" ] || { echo "ERROR: empty refreshed CSRF token" >&2; exit 1; }
 post_wrapped_ok "logout" "$SMOKE_API_BASE/api/auth/logout" "$csrf_token" '{}'
 
 echo "Smoke test PASSED: $SMOKE_API_BASE"
