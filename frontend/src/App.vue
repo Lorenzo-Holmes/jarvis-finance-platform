@@ -27,7 +27,17 @@ const OpsView = defineAsyncComponent(() => import('./components/OpsView.vue'))
 const AdminView = defineAsyncComponent(() => import('./components/AdminView.vue'))
 
 const session = useAuthSession()
-const { user, isLoggedIn, sessionState } = session
+const { user: sessionUser, isLoggedIn: sessionLoggedIn, sessionState } = session
+const previewMode = ref(false)
+const LOCAL_PREVIEW_USER = Object.freeze({
+  id: -1,
+  email: 'preview@local.test',
+  displayName: 'Local Preview',
+  role: 'USER',
+  preview: true,
+})
+const user = computed(() => previewMode.value ? LOCAL_PREVIEW_USER : sessionUser.value)
+const isLoggedIn = computed(() => previewMode.value || sessionLoggedIn.value)
 const workspace = useWorkspaceTabs(user)
 const { activeTab, visitedTabs, tabs, switchTab } = workspace
 const publicView = ref('landing')
@@ -67,6 +77,18 @@ function handleLoggedIn(value) {
 }
 
 async function logout() {
+  if (previewMode.value) {
+    previewMode.value = false
+    workspace.reset()
+    clearResearchContext()
+    clearBacktestHandoff()
+    publicView.value = 'landing'
+    replacePublicQuery((params) => {
+      params.delete('preview')
+      params.delete('view')
+    })
+    return
+  }
   await session.logout()
   workspace.reset()
   clearResearchContext()
@@ -101,6 +123,7 @@ function sendStrategyToBacktest(handoff) {
 }
 
 watch(sessionState, (state) => {
+  if (previewMode.value) return
   if (state !== 'expired') return
   publicView.value = 'login'
   replacePublicQuery((params) => params.set('view', 'login'))
@@ -108,6 +131,20 @@ watch(sessionState, (state) => {
 
 onMounted(() => {
   const params = new URLSearchParams(window.location.search)
+  const host = window.location.hostname
+  const localPreview = import.meta.env.DEV
+    && (host === '127.0.0.1' || host === 'localhost')
+    && params.get('preview') === '1'
+  if (localPreview) {
+    previewMode.value = true
+    workspace.reset()
+    replacePublicQuery((query) => {
+      query.delete('view')
+      query.delete('oauth')
+      query.set('preview', '1')
+    })
+    return
+  }
   const hasOAuthResult = params.has('oauth')
   const wantsLogin = params.get('view') === 'login'
   if (hasOAuthResult || wantsLogin) publicView.value = 'login'

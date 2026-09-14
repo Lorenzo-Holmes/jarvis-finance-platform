@@ -26,6 +26,18 @@ test('business modules use the archive workspace shell instead of the legacy tab
   assert.match(shell, /--radius: 0px/)
 })
 
+test('local preview bypass is development-only and restricted to localhost', () => {
+  const app = read('App.vue')
+
+  assert.match(app, /import\.meta\.env\.DEV/)
+  assert.match(app, /host === '127\.0\.0\.1'/)
+  assert.match(app, /host === 'localhost'/)
+  assert.match(app, /params\.get\('preview'\) === '1'/)
+  assert.match(app, /previewMode\.value = true/)
+  assert.match(app, /preview@local\.test/)
+  assert.doesNotMatch(app, /previewMode\.value = true[\s\S]{0,200}session\.restore\(\)/)
+})
+
 test('global research context is shared by market and execution workspaces', () => {
   const app = read('App.vue')
   const store = read('analysis-os/state/researchContext.js')
