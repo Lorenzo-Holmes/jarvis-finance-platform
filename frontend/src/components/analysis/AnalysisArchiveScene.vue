@@ -1,12 +1,12 @@
 <script setup>
 import {
   AmbientLight,
-  BoxGeometry,
   CanvasTexture,
   Color,
   DirectionalLight,
   Fog,
   Group,
+  HemisphereLight,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
@@ -22,9 +22,21 @@ import {
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { cellForModule, moduleAtCell, moduleByKey, wrap } from '../../analysis-os/data/modules'
 import { ArchiveDrag, ArchivePlaneMomentum, dampSpring } from '../../analysis-os/motion/archiveMomentum'
+import {
+  createArchiveAssembly,
+  createArchiveAssetLibrary,
+  createFocusedGlassMaterial,
+} from '../../analysis-os/render/archiveAssembly'
+import {
+  archiveQualityProfile,
+  configureArchiveRenderer,
+  createArchiveComposer,
+  disposeArchiveComposer,
+  resizeArchiveComposer,
+} from '../../analysis-os/render/renderQuality'
 
-const LANE_SPACING = 4.75
-const ROW_SPACING = 0.62
+const LANE_SPACING = 4.52
+const ROW_SPACING = 0.56
 const CENTER_LANE = 2
 const CENTER_ROW = 12
 const ROW_PERIOD = 6
@@ -62,6 +74,13 @@ let lastFrameTime = 0
 let internalFocusKey = ''
 let initializedTrack = false
 let suppressSleepMotion = false
+let archiveLibrary = null
+let focusedGlassMaterial = null
+let composerBundle = null
+let qualityProfile = null
+let keyLight = null
+let renderedFrames = 0
+let composerRevision = 0
 
 const drag = new ArchiveDrag()
 const laneTrack = { value: CENTER_LANE, velocity: 0, target: CENTER_LANE }
@@ -69,15 +88,14 @@ const rowTrack = { value: CENTER_ROW, velocity: 0, target: CENTER_ROW }
 const entries = []
 const textureCache = new Map()
 const materialCache = new Map()
-const sharedGeometries = []
 const sceneDisposables = []
-const cameraAim = new Vector3(-0.4, -1.45, -0.4)
-const cameraBase = new Vector3(-25.5, 14.5, 34)
-const cameraAimBase = new Vector3(-0.4, -1.45, -0.4)
-const cameraDetailBase = new Vector3(-16, 8.6, 24)
-const cameraDetailAim = new Vector3(3.2, 0.15, 0)
-let cameraBaseFov = 15
-let cameraDetailFov = 13.2
+const cameraAim = new Vector3(-0.2, -1.22, -0.6)
+const cameraBase = new Vector3(-23.8, 11.9, 31.5)
+const cameraAimBase = new Vector3(-0.2, -1.22, -0.6)
+const cameraDetailBase = new Vector3(-14.8, 7.5, 22.3)
+const cameraDetailAim = new Vector3(3.25, 0.3, -0.2)
+let cameraBaseFov = 16.4
+let cameraDetailFov = 13.6
 
 function smoothstep(value) {
   const t = Math.max(0, Math.min(1, value))
@@ -139,63 +157,26 @@ function clearArchive() {
   for (const texture of textureCache.values()) texture.dispose()
   materialCache.clear()
   textureCache.clear()
-  for (const geometry of sharedGeometries.splice(0)) geometry.dispose()
 }
 
 function createCard(module, physicalLane, physicalRow) {
-  const group = new Group()
-  const shell = new Mesh(sharedGeometries[0], sharedMaterials.shell)
-  const spine = new Mesh(sharedGeometries[1], sharedMaterials.frame)
-  const marker = new Mesh(sharedGeometries[2], sharedMaterials.accent)
-  const label = new Mesh(sharedGeometries[3], labelMaterial(module))
-
-  shell.userData.moduleKey = module.key
-  label.userData.moduleKey = module.key
-  spine.position.set(1.57, 0, 0.15)
-  marker.position.set(1.42, -1.82, 0.22)
-  label.position.set(0, 1.68, 0.205)
-  group.add(shell, spine, marker, label)
+  const assembly = createArchiveAssembly(module, labelMaterial(module), archiveLibrary)
+  const group = assembly.group
 
   const baseX = (physicalLane - CENTER_LANE) * LANE_SPACING
-  const baseY = -2.18
+  const baseY = -2.12
   const baseZ = (physicalRow - CENTER_ROW) * ROW_SPACING
   group.position.set(baseX, baseY, baseZ)
-  group.rotation.y = (CENTER_LANE - physicalLane) * 0.012
+  group.rotation.y = (CENTER_LANE - physicalLane) * 0.0105
   group.userData = { baseY, targetY: baseY, physicalLane, physicalRow, moduleKey: module.key }
   root.add(group)
-  entries.push({ module, group, hitTargets: [shell, label], physicalLane, physicalRow })
-}
-
-const sharedMaterials = {
-  shell: null,
-  frame: null,
-  accent: null,
+  entries.push({ module, ...assembly, group, physicalLane, physicalRow })
 }
 
 function buildArchiveArray() {
-  if (!root || !renderer) return
+  if (!root || !renderer || !archiveLibrary) return
   clearArchive()
   if (!props.modules.length) return
-
-  sharedGeometries.push(
-    new BoxGeometry(3.38, 4.95, 0.24),
-    new BoxGeometry(0.10, 4.68, 0.09),
-    new BoxGeometry(0.14, 0.52, 0.08),
-    new PlaneGeometry(2.86, 0.73),
-  )
-  sharedMaterials.shell = new MeshStandardMaterial({
-    color: new Color('#e9e3d8'), metalness: 0.02, roughness: 0.52,
-    transparent: true, opacity: 0.76,
-  })
-  sharedMaterials.frame = new MeshStandardMaterial({
-    color: '#858178', roughness: 0.5, metalness: 0.08,
-    transparent: true, opacity: 0.45,
-  })
-  sharedMaterials.accent = new MeshStandardMaterial({
-    color: '#a98d5f', roughness: 0.32, metalness: 0.16,
-    transparent: true, opacity: 0.68,
-  })
-  sceneDisposables.push(sharedMaterials.shell, sharedMaterials.frame, sharedMaterials.accent)
 
   for (let physicalRow = 0; physicalRow <= 24; physicalRow += 1) {
     for (let physicalLane = -2; physicalLane <= 6; physicalLane += 1) {
@@ -231,6 +212,11 @@ function updateFocusVisuals() {
     const focusedLift = 0.42 + extraction * (4.05 - 0.42)
     entry.group.userData.targetY = entry.group.userData.baseY + (isFocused ? focusedLift : isHovered ? 0.28 : 0)
     entry.group.userData.targetScale = isFocused ? 1.018 + extraction * 0.035 : 1
+    if (entry.glass) {
+      entry.glass.material = isFocused && extraction > 0.32
+        ? focusedGlassMaterial
+        : archiveLibrary.materials.glass
+    }
   }
 }
 
@@ -288,7 +274,7 @@ function screenPoint(world) {
 }
 
 function dragProjection() {
-  const center = new Vector3(0, -2.18, 0)
+  const center = new Vector3(0, -2.12, 0)
   const base = screenPoint(center)
   const lane = screenPoint(center.clone().add(new Vector3(-LANE_SPACING, 0, 0)))
   const row = screenPoint(center.clone().add(new Vector3(0, 0, -ROW_SPACING)))
@@ -431,36 +417,61 @@ function resize() {
   if (!element || !renderer || !camera) return
   const width = Math.max(1, element.clientWidth)
   const height = Math.max(1, element.clientHeight)
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5))
+  const nextQuality = archiveQualityProfile(width, window.devicePixelRatio || 1)
+  const qualityChanged = !qualityProfile || qualityProfile.name !== nextQuality.name
+  qualityProfile = nextQuality
+  configureArchiveRenderer(renderer, qualityProfile)
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, qualityProfile.maxDpr))
   renderer.setSize(width, height, false)
+  if (qualityChanged || (qualityProfile.post && !composerBundle)) rebuildComposer(width, height, qualityProfile)
+  resizeArchiveComposer(composerBundle, width, height)
+  if (keyLight) {
+    const shadowSize = qualityProfile.name === 'HIGH' ? 2048 : 1024
+    keyLight.castShadow = Boolean(qualityProfile.shadows)
+    keyLight.shadow.mapSize.set(shadowSize, shadowSize)
+  }
   camera.aspect = width / height
   if (width < 700) {
-    cameraBase.set(-14.5, 10.5, 35)
-    cameraBaseFov = 22
-    cameraDetailBase.set(-9.5, 7.5, 27)
+    cameraBase.set(-13.8, 9.5, 33)
+    cameraBaseFov = 22.5
+    cameraDetailBase.set(-8.9, 6.8, 25.7)
     cameraDetailAim.set(1.2, 0.4, 0)
     cameraDetailFov = 18
-    cameraAimBase.set(0, -1.05, -0.3)
+    cameraAimBase.set(0, -0.92, -0.5)
   } else if (width < 1100) {
-    cameraBase.set(-19, 11.5, 31)
-    cameraBaseFov = 18
-    cameraDetailBase.set(-13, 8.1, 24.5)
+    cameraBase.set(-18.8, 10.4, 29.8)
+    cameraBaseFov = 18.4
+    cameraDetailBase.set(-12.5, 7.2, 23.2)
     cameraDetailAim.set(2.5, 0.25, 0)
     cameraDetailFov = 15
-    cameraAimBase.set(0, -1.25, -0.4)
+    cameraAimBase.set(0, -1.08, -0.55)
   } else {
-    cameraBase.set(-25.5, 14.5, 34)
-    cameraBaseFov = 15
-    cameraDetailBase.set(-16, 8.6, 24)
-    cameraDetailAim.set(3.2, 0.15, 0)
-    cameraDetailFov = 13.2
-    cameraAimBase.set(-0.4, -1.45, -0.4)
+    cameraBase.set(-23.8, 11.9, 31.5)
+    cameraBaseFov = 16.4
+    cameraDetailBase.set(-14.8, 7.5, 22.3)
+    cameraDetailAim.set(3.25, 0.3, -0.2)
+    cameraDetailFov = 13.6
+    cameraAimBase.set(-0.2, -1.22, -0.6)
   }
   camera.fov = cameraBaseFov
   camera.position.copy(cameraBase)
   cameraAim.copy(cameraAimBase)
   camera.lookAt(cameraAim)
   camera.updateProjectionMatrix()
+}
+
+async function rebuildComposer(width, height, profile) {
+  const revision = ++composerRevision
+  disposeArchiveComposer(composerBundle)
+  composerBundle = null
+  if (!profile?.post || !renderer || !scene || !camera) return
+  const next = await createArchiveComposer({ renderer, scene, camera, width, height, profile })
+  if (revision !== composerRevision || disposed || !next) {
+    disposeArchiveComposer(next)
+    return
+  }
+  composerBundle = next
+  resizeArchiveComposer(composerBundle, width, height)
 }
 
 function renderFrame(time) {
@@ -471,6 +482,7 @@ function renderFrame(time) {
   }
   const dt = Math.min(Math.max((time - lastFrameTime) / 1000, 0.001), 0.05)
   lastFrameTime = time
+  renderedFrames += 1
 
   if (momentum) {
     momentum.step(dt)
@@ -519,6 +531,13 @@ function renderFrame(time) {
 
   const easing = reducedMotion ? 1 : 1 - Math.exp(-dt * 10)
   const focused = focusedEntry()
+  if (focusedGlassMaterial) {
+    const decrypt = smoothstep(Math.max(0, (extraction - 0.38) / 0.52))
+    focusedGlassMaterial.roughness = 0.42 + (0.12 - 0.42) * decrypt
+    focusedGlassMaterial.transmission = 0.36 + (0.88 - 0.36) * decrypt
+    focusedGlassMaterial.thickness = 0.13 + (0.075 - 0.13) * decrypt
+    focusedGlassMaterial.opacity = 0.98 + (0.9 - 0.98) * decrypt
+  }
   entries.forEach((entry, index) => {
     const data = entry.group.userData
     const idle = !reducedMotion && !momentum && activePointer === null
@@ -533,9 +552,30 @@ function renderFrame(time) {
     const scale = entry.group.scale.x + (targetScale - entry.group.scale.x) * easing
     entry.group.scale.setScalar(scale)
     entry.group.rotation.x = focused === entry ? 0 : Math.sin(time * 0.00019 + index * 0.17) * 0.0025
+
+    const laneDistance = Math.abs(entry.physicalLane - (laneTrack.value + sleep.lane))
+    const rowDistance = Math.abs(entry.physicalRow - (rowTrack.value + sleep.row))
+    const isFocused = entry === focused
+    const isNear = isFocused || (laneDistance <= 2.2 && rowDistance <= 4.6)
+    const showIdentity = isFocused || (laneDistance <= 2.6 && rowDistance <= 5.4)
+    if (entry.identityGroup) entry.identityGroup.visible = showIdentity
+    entry.nearGroup.visible = isNear
+    entry.focusGroup.visible = isFocused || entry === hoveredEntry
+    if (entry.body) entry.body.castShadow = Boolean(qualityProfile?.shadows && isNear)
+
+    if (entry.decryptA && entry.decryptB) {
+      const decryptProgress = isFocused ? smoothstep(Math.max(0, (extraction - 0.46) / 0.36)) : 0
+      entry.decryptA.visible = decryptProgress > 0.01
+      entry.decryptB.visible = decryptProgress > 0.01
+      entry.decryptA.position.x = -0.82 + decryptProgress * 0.42
+      entry.decryptB.position.x = 0.82 - decryptProgress * 0.42
+      entry.decryptA.scale.x = 0.62 + decryptProgress * 0.58
+      entry.decryptB.scale.x = 0.62 + decryptProgress * 0.58
+    }
   })
 
-  renderer.render(scene, camera)
+  if (composerBundle) composerBundle.composer.render()
+  else renderer.render(scene, camera)
   animationFrame = requestAnimationFrame(renderFrame)
 }
 
@@ -558,30 +598,49 @@ function init() {
   try {
     reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches || false
     scene = new Scene()
-    scene.background = new Color('#e8e5e1')
-    scene.fog = new Fog('#e8e5e1', 31, 54)
-    camera = new PerspectiveCamera(15, 1, 0.1, 140)
+    scene.background = new Color('#dfdbd3')
+    scene.fog = new Fog('#dfdbd3', 42, 76)
+    camera = new PerspectiveCamera(16.4, 1, 0.1, 150)
     renderer = new WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' })
-    renderer.outputColorSpace = SRGBColorSpace
-    renderer.setClearColor('#e8e5e1', 1)
+    qualityProfile = archiveQualityProfile(element.clientWidth || 1440, window.devicePixelRatio || 1)
+    configureArchiveRenderer(renderer, qualityProfile)
+    renderer.setClearColor('#dfdbd3', 1)
     renderer.domElement.style.touchAction = 'none'
     element.appendChild(renderer.domElement)
 
     root = new Group()
     scene.add(root)
-    scene.add(new AmbientLight(0xffffff, 1.15))
-    const key = new DirectionalLight(0xfffcf5, 1.75)
-    key.position.set(-9, 15, 12)
-    scene.add(key)
-    const fill = new DirectionalLight(0xc6bca8, 0.58)
-    fill.position.set(12, 7, -8)
+    archiveLibrary = createArchiveAssetLibrary()
+    focusedGlassMaterial = createFocusedGlassMaterial(archiveLibrary)
+
+    scene.add(new AmbientLight(0xfffbf5, 0.24))
+    scene.add(new HemisphereLight(0xfffbf4, 0xa79f92, 0.82))
+    keyLight = new DirectionalLight(0xfffbf1, 2.35)
+    keyLight.position.set(-11, 18, 13)
+    keyLight.castShadow = Boolean(qualityProfile.shadows)
+    keyLight.shadow.mapSize.set(qualityProfile.name === 'HIGH' ? 2048 : 1024, qualityProfile.name === 'HIGH' ? 2048 : 1024)
+    keyLight.shadow.camera.left = -28
+    keyLight.shadow.camera.right = 28
+    keyLight.shadow.camera.top = 26
+    keyLight.shadow.camera.bottom = -18
+    keyLight.shadow.camera.near = 1
+    keyLight.shadow.camera.far = 85
+    keyLight.shadow.bias = -0.0004
+    keyLight.shadow.radius = 2.2
+    scene.add(keyLight)
+    const fill = new DirectionalLight(0xcabda9, 0.72)
+    fill.position.set(14, 8, -10)
     scene.add(fill)
+    const rim = new DirectionalLight(0xe6d8c5, 0.66)
+    rim.position.set(7, 4, 18)
+    scene.add(rim)
 
     const floorGeometry = new PlaneGeometry(120, 120)
-    const floorMaterial = new MeshStandardMaterial({ color: '#e6e1d8', roughness: 0.94 })
+    const floorMaterial = new MeshStandardMaterial({ color: '#cfc8bd', roughness: 0.9, metalness: 0.02 })
     const floor = new Mesh(floorGeometry, floorMaterial)
     floor.rotation.x = -Math.PI / 2
-    floor.position.y = -2.52
+    floor.position.y = -2.55
+    floor.receiveShadow = true
     scene.add(floor)
     sceneDisposables.push(floorGeometry, floorMaterial)
 
@@ -614,10 +673,17 @@ function init() {
 
 function dispose() {
   disposed = true
+  composerRevision += 1
   stopRendering()
   resizeObserver?.disconnect()
   clearArchive()
   for (const item of sceneDisposables.splice(0)) item?.dispose?.()
+  disposeArchiveComposer(composerBundle)
+  composerBundle = null
+  focusedGlassMaterial?.dispose?.()
+  focusedGlassMaterial = null
+  archiveLibrary?.dispose?.()
+  archiveLibrary = null
   renderer?.dispose()
   renderer?.forceContextLoss?.()
   renderer?.domElement?.remove()
@@ -625,6 +691,8 @@ function dispose() {
 }
 
 function getDebugState() {
+  const visibleNear = entries.filter(entry => entry.nearGroup?.visible).length
+  const visibleFocus = entries.filter(entry => entry.focusGroup?.visible).length
   return {
     cell: currentCell(),
     lane: laneTrack.value,
@@ -638,6 +706,14 @@ function getDebugState() {
     focusedKey: focusedEntry()?.module?.key || props.focusedKey,
     extractionProgress: Number(props.extractionProgress) || 0,
     sleepAmount: Number(props.sleepAmount) || 0,
+    quality: qualityProfile?.name || 'UNKNOWN',
+    postProcessing: Boolean(composerBundle),
+    postCandidate: Boolean(qualityProfile?.postCandidate),
+    visibleNear,
+    visibleFocus,
+    drawCalls: renderer?.info?.render?.calls ?? 0,
+    triangles: renderer?.info?.render?.triangles ?? 0,
+    renderedFrames,
     canvasCount: renderer?.domElement?.isConnected ? 1 : 0,
   }
 }

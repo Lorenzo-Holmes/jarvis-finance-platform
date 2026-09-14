@@ -47,7 +47,7 @@ export function useArchiveTransition(options = {}) {
 
   async function enter(reduced = false) {
     if (!['ARCHIVE', 'FOCUSED', 'RETURN_DESCEND'].includes(transitionState.value)) return false
-    const ok = await animateTo(1, reduced ? 80 : (options.enterDuration || 820), 'EXTRACTING')
+    const ok = await animateTo(1, reduced ? 90 : (options.enterDuration || 1080), 'EXTRACTING')
     if (ok) transitionState.value = 'ENTERING_WORKSPACE'
     return ok
   }
@@ -61,8 +61,8 @@ export function useArchiveTransition(options = {}) {
     cancel()
     extractionProgress.value = 1
     transitionState.value = 'RETURN_ALIGN'
-    if (!reduced) await new Promise(resolve => setTimeout(resolve, options.alignDuration || 150))
-    const ok = await animateTo(0, reduced ? 80 : (options.returnDuration || 720), 'RETURN_DESCEND')
+    if (!reduced) await new Promise(resolve => setTimeout(resolve, options.alignDuration || 190))
+    const ok = await animateTo(0, reduced ? 90 : (options.returnDuration || 760), 'RETURN_DESCEND')
     if (ok) transitionState.value = 'FOCUSED'
     return ok
   }
