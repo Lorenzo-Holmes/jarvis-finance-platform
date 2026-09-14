@@ -143,8 +143,9 @@ test('archive sea V5 has no visible physical edge because the finite pool is per
   const scene = read('components/analysis/AnalysisArchiveScene.vue')
   const loop = read('analysis-os/motion/archiveLoop.js')
 
-  assert.match(scene, /POOL_LANE_COUNT/)
-  assert.match(scene, /POOL_ROW_COUNT/)
+  assert.match(scene, /LOOP_POOL/)
+  assert.match(loop, /laneCount: 11/)
+  assert.match(loop, /rowCount: 35/)
   assert.match(scene, /updateWrappedArchivePositions/)
   assert.match(scene, /entry\.virtualLane/)
   assert.match(scene, /entry\.virtualRow/)

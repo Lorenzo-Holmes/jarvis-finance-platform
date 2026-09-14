@@ -1,3 +1,12 @@
+export const LOOP_POOL = Object.freeze({
+  laneMin: -3,
+  laneMax: 7,
+  rowMin: -4,
+  rowMax: 30,
+  laneCount: 11,
+  rowCount: 35,
+})
+
 function positiveModulo(value, period) {
   const size = Math.max(1, Math.abs(Number(period) || 1))
   return ((value % size) + size) % size

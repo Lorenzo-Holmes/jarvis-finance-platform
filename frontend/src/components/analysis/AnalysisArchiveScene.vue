@@ -22,6 +22,7 @@ import {
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ArchiveDrag, ArchivePlaneMomentum, dampSpring } from '../../analysis-os/motion/archiveMomentum'
 import {
+  LOOP_POOL,
   nearestPeriodicCoordinate,
   poolKeyForCell,
 } from '../../analysis-os/motion/archiveLoop'
@@ -47,18 +48,7 @@ const CENTER_LANE = 2
 const CENTER_ROW = 12
 const ARCHIVE_ORIGIN_ROW = 15.5
 const FOCUS_Z = (CENTER_ROW - ARCHIVE_ORIGIN_ROW) * ROW_SPACING
-const POOL_LANE_MIN = -2
-const POOL_LANE_MAX = 6
-const POOL_LANE_COUNT = POOL_LANE_MAX - POOL_LANE_MIN + 1
-const POOL_ROW_MIN = 0
-const POOL_ROW_MAX = 24
-const POOL_ROW_COUNT = POOL_ROW_MAX - POOL_ROW_MIN + 1
-const POOL_OPTIONS = {
-  laneMin: POOL_LANE_MIN,
-  laneCount: POOL_LANE_COUNT,
-  rowMin: POOL_ROW_MIN,
-  rowCount: POOL_ROW_COUNT,
-}
+const POOL_OPTIONS = LOOP_POOL
 
 const ANONYMOUS_ARCHIVE = {
   id: 'archive:anonymous',
@@ -262,8 +252,8 @@ function buildArchiveArray() {
   if (!root || !renderer || !archiveLibrary) return
   clearArchive()
 
-  for (let physicalRow = POOL_ROW_MIN; physicalRow <= POOL_ROW_MAX; physicalRow += 1) {
-    for (let physicalLane = POOL_LANE_MIN; physicalLane <= POOL_LANE_MAX; physicalLane += 1) {
+  for (let physicalRow = LOOP_POOL.rowMin; physicalRow <= LOOP_POOL.rowMax; physicalRow += 1) {
+    for (let physicalLane = LOOP_POOL.laneMin; physicalLane <= LOOP_POOL.laneMax; physicalLane += 1) {
       createCard(physicalLane, physicalRow)
     }
   }
@@ -292,8 +282,8 @@ function focusedEntry() {
 
 function updateWrappedArchivePositions(centerLane, centerRow) {
   for (const entry of entries) {
-    const virtualLane = nearestPeriodicCoordinate(entry.physicalLane, centerLane, POOL_LANE_COUNT)
-    const virtualRow = nearestPeriodicCoordinate(entry.physicalRow, centerRow, POOL_ROW_COUNT)
+    const virtualLane = nearestPeriodicCoordinate(entry.physicalLane, centerLane, LOOP_POOL.laneCount)
+    const virtualRow = nearestPeriodicCoordinate(entry.physicalRow, centerRow, LOOP_POOL.rowCount)
     entry.virtualLane = virtualLane
     entry.virtualRow = virtualRow
     entry.group.position.x = (virtualLane - centerLane) * LANE_SPACING
@@ -406,8 +396,8 @@ function shiftRows(steps, source = 'index') {
 }
 
 function rebaseTracksIfNeeded() {
-  const laneShift = Math.round((laneTrack.value - CENTER_LANE) / POOL_LANE_COUNT) * POOL_LANE_COUNT
-  if (Math.abs(laneShift) >= POOL_LANE_COUNT) {
+  const laneShift = Math.round((laneTrack.value - CENTER_LANE) / LOOP_POOL.laneCount) * LOOP_POOL.laneCount
+  if (Math.abs(laneShift) >= LOOP_POOL.laneCount) {
     laneTrack.value -= laneShift
     laneTrack.target -= laneShift
     if (momentum) {
@@ -415,8 +405,8 @@ function rebaseTracksIfNeeded() {
       momentum.lane.target -= laneShift
     }
   }
-  const rowShift = Math.round((rowTrack.value - CENTER_ROW) / POOL_ROW_COUNT) * POOL_ROW_COUNT
-  if (Math.abs(rowShift) >= POOL_ROW_COUNT) {
+  const rowShift = Math.round((rowTrack.value - CENTER_ROW) / LOOP_POOL.rowCount) * LOOP_POOL.rowCount
+  if (Math.abs(rowShift) >= LOOP_POOL.rowCount) {
     rowTrack.value -= rowShift
     rowTrack.target -= rowShift
     lastReportedRow -= rowShift
