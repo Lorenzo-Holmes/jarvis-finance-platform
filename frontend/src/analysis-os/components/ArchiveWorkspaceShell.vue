@@ -9,7 +9,7 @@ const props = defineProps({
   context: { type: Object, default: null },
 })
 
-const emit = defineEmits(['return', 'navigate-module', 'logout', 'update-profile'])
+const emit = defineEmits(['return', 'navigate-module', 'legacy-admin', 'logout', 'update-profile'])
 const returning = ref(false)
 const switching = ref(false)
 const entering = ref(true)
@@ -137,6 +137,15 @@ onBeforeUnmount(() => {
           <strong>{{ props.context?.symbol || 'NO GLOBAL CONTEXT' }}</strong>
         </div>
         <button type="button" class="return-button" @click="requestReturn">← RETURN TO ARCHIVE</button>
+        <button
+          v-if="props.user?.role === 'ADMIN'"
+          type="button"
+          class="legacy-admin-button"
+          title="返回旧版管理后台"
+          @click="emit('legacy-admin')"
+        >
+          旧版后台
+        </button>
         <div v-if="props.user" class="account-strip">
           <template v-if="editingProfile">
             <input v-model="displayName" maxlength="60" aria-label="昵称" @keyup.enter="saveProfile" @keyup.esc="editingProfile = false" />
@@ -262,12 +271,13 @@ onBeforeUnmount(() => {
 .context-readout { min-width: 120px; display: grid; gap: 5px; }
 .context-readout span { color: #99948a; font: 600 7px/1 ui-monospace, monospace; letter-spacing: .12em; }
 .context-readout strong { color: #575950; font: 600 9px/1 ui-monospace, monospace; white-space: nowrap; }
-.return-button, .account-strip button {
+.return-button, .legacy-admin-button, .account-strip button {
   min-height: 34px; border: 0; background: transparent; color: #5f5c55; cursor: pointer;
   font: 650 8px/1 ui-monospace, monospace; letter-spacing: .1em;
 }
 .return-button { padding: 0 12px; border-left: 1px solid #beb8ad; border-right: 1px solid #beb8ad; }
-.return-button:hover, .account-strip button:hover { color: #20221d; background: rgba(209,201,188,.28); }
+.legacy-admin-button { padding: 0 10px; border-right: 1px solid #beb8ad; }
+.return-button:hover, .legacy-admin-button:hover, .account-strip button:hover { color: #20221d; background: rgba(209,201,188,.28); }
 .account-strip { display: flex; align-items: center; gap: 4px; }
 .account-strip input { width: 110px; height: 31px; border: 0; border-bottom: 1px solid #8c877d; outline: 0; background: transparent; color: #20221d; font-size: 11px; }
 .workspace-module-index {

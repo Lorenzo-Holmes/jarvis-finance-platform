@@ -113,6 +113,11 @@ function navigateWorkspace(routeKey) {
   switchTab(routeKey)
 }
 
+function openLegacyAdmin() {
+  if (user.value?.role !== 'ADMIN') return
+  switchTab('管理')
+}
+
 function returnToArchive() {
   if (activeModule.value) archiveModuleKey.value = activeModule.value.key
   switchTab('研究终端')
@@ -192,6 +197,7 @@ onMounted(() => {
       :context="researchContext"
       @return="returnToArchive"
       @navigate-module="navigateWorkspace"
+      @legacy-admin="openLegacyAdmin"
       @logout="logout"
       @update-profile="updateProfile"
     >

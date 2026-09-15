@@ -62,15 +62,21 @@ export const JARVIS_MODULES = [
     capabilities: ['ALERT', 'TRIGGER', 'TIMELINE'], availability: 'ready',
   },
   {
-    id: 'module:strategy', no: 10, lane: 3, row: 1, key: 'strategy',
+    id: 'module:smart-quote', no: 10, lane: 2, row: 2, key: 'smart-quote',
+    labelEn: 'SMART QUOTE', labelZh: '智能报价', category: 'INTELLIGENCE', routeKey: '智能报价',
+    code: 'IN-10', summary: '查看标的实时报价，并基于服务端行情生成可解释的趋势区间。',
+    capabilities: ['LIVE QUOTE', 'TREND BAND', 'FORECAST'], availability: 'ready',
+  },
+  {
+    id: 'module:strategy', no: 11, lane: 3, row: 1, key: 'strategy',
     labelEn: 'STRATEGY', labelZh: '策略生成', category: 'STRATEGY', routeKey: '策略生成',
-    code: 'ST-10', summary: '把目标、约束与风险预算整理为结构化策略草案。',
+    code: 'ST-11', summary: '把目标、约束与风险预算整理为结构化策略草案。',
     capabilities: ['OBJECTIVE', 'RULES', 'VALIDATION'], availability: 'ready',
   },
   {
-    id: 'module:ops', no: 11, lane: 4, row: 1, key: 'ops',
+    id: 'module:ops', no: 12, lane: 4, row: 1, key: 'ops',
     labelEn: 'OPS', labelZh: '运维', category: 'SYSTEM', routeKey: '运维',
-    code: 'EX-11', summary: '查看 Java API、AI、数据库、行情流和认证服务状态。',
+    code: 'EX-12', summary: '查看 Java API、AI、数据库、行情流和认证服务状态。',
     capabilities: ['HEALTH', 'LATENCY', 'AUDIT'], availability: 'ready',
   },
 ]

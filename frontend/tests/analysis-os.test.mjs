@@ -74,4 +74,5 @@ test('analysis OS exposes existing research and trading routes', () => {
   for (const route of ['多市场', '研究助手', '财报解析', '产业链图谱', '风险预警', '模拟盘']) {
     assert.match(`${page}\n${modules}`, new RegExp(route))
   }
+  assert.match(modules, /routeKey: '智能报价'/)
 })
