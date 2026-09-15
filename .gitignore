@@ -36,6 +36,8 @@ mobile/web-build/
 .coverage.*
 htmlcov/
 .ipynb_checkpoints/
+frontend/.playwright-cli/
+frontend/output/
 
 # Logs and runtime PID files
 logs/

@@ -1,0 +1,164 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const here = path.dirname(fileURLToPath(import.meta.url))
+const src = path.resolve(here, '../src')
+const read = relative => fs.readFileSync(path.join(src, relative), 'utf8')
+
+test('business modules use the archive workspace shell instead of the legacy tab chrome', () => {
+  const app = read('App.vue')
+  const shell = read('analysis-os/components/ArchiveWorkspaceShell.vue')
+
+  assert.match(app, /ArchiveWorkspaceShell/)
+  assert.match(app, /v-if="activeModule"/)
+  assert.match(app, /@return="returnToArchive"/)
+  assert.match(app, /@navigate-module="navigateWorkspace"/)
+  assert.match(app, /@legacy-admin="openLegacyAdmin"/)
+  assert.match(app, /<AppTabs v-if="activeTab === '管理'"/)
+  assert.doesNotMatch(app, /<AppTabs v-if="activeTab !== '研究终端'"/)
+  assert.match(shell, /RETURN TO ARCHIVE/)
+  assert.match(shell, /ARCHIVE WORKSPACE/)
+  assert.match(shell, /workspace-module-index/)
+  assert.match(shell, /navigate-module/)
+  assert.match(shell, /legacy-admin/)
+  assert.match(shell, /旧版后台/)
+  assert.match(shell, /workspace-entry-bridge/)
+  assert.match(shell, /WORKSPACE ONLINE \/ TRANSFERRING CONTROL/)
+  assert.match(shell, /entryTimer = window\.setTimeout/)
+  assert.match(shell, /--panel: #efebe3/)
+  assert.match(shell, /--radius: 0px/)
+})
+
+test('local preview bypass is development-only and restricted to localhost', () => {
+  const app = read('App.vue')
+
+  assert.match(app, /import\.meta\.env\.DEV/)
+  assert.match(app, /host === '127\.0\.0\.1'/)
+  assert.match(app, /host === 'localhost'/)
+  assert.match(app, /params\.get\('preview'\) === '1'/)
+  assert.match(app, /previewMode\.value = true/)
+  assert.match(app, /preview@local\.test/)
+  assert.doesNotMatch(app, /previewMode\.value = true[\s\S]{0,200}session\.restore\(\)/)
+})
+
+test('global research context is shared by market and execution workspaces', () => {
+  const app = read('App.vue')
+  const store = read('analysis-os/state/researchContext.js')
+  const market = read('pages/MarketPage.vue')
+  const cross = read('components/CrossMarketView.vue')
+  const sim = read('components/SimTradeView.vue')
+  const ai = read('components/AiCenter.vue')
+  const chain = read('pages/ChainPage.vue')
+  const risk = read('pages/RiskPage.vue')
+  const financial = read('pages/FinancialReportPage.vue')
+
+  assert.match(store, /const context = ref\(null\)/)
+  assert.match(store, /function setContext/)
+  assert.match(app, /:context="researchContext"/)
+  assert.match(app, /@context-change="setResearchContext"/)
+  assert.match(market, /context-change/)
+  assert.match(cross, /context-change/)
+  assert.match(sim, /context-change/)
+  assert.match(app, /<AiCenter :research-context="researchContext"/)
+  assert.match(app, /<ChainPage[^>]*:research-context="researchContext"/s)
+  assert.match(app, /<RiskPage[^>]*:research-context="researchContext"/s)
+  assert.match(app, /<FinancialReportPage[^>]*:research-context="researchContext"/s)
+  assert.match(ai, /USE IN RESEARCH TASK/)
+  assert.match(chain, /GLOBAL RESEARCH CONTEXT/)
+  assert.match(risk, /compatibleRiskContext/)
+  assert.match(risk, /不自动伪造风险样本/)
+  assert.match(financial, /COMPANY CONTEXT/)
+  assert.match(financial, /不自动生成财务数字/)
+})
+
+test('strategy handoff carries real questionnaire intent into backtest without inventing MA parameters', () => {
+  const app = read('App.vue')
+  const store = read('analysis-os/state/workflowHandoff.js')
+  const strategy = read('pages/StrategyPage.vue')
+  const backtest = read('pages/BacktestPage.vue')
+
+  assert.match(store, /const backtestHandoff = ref\(null\)/)
+  assert.match(store, /function setBacktestHandoff/)
+  assert.match(strategy, /SEND TO BACKTEST/)
+  assert.match(strategy, /maxDrawdownPct/)
+  assert.match(strategy, /allocation: allocation\.value\.map/)
+  assert.doesNotMatch(strategy, /short_ma|long_ma/)
+  assert.match(app, /@send-backtest="sendStrategyToBacktest"/)
+  assert.match(app, /:handoff="backtestHandoff"/)
+  assert.match(backtest, /IMPORTED STRATEGY INTENT/)
+  assert.match(backtest, /策略问卷不会自动改写双均线参数/)
+  assert.match(backtest, /APPLY CAPITAL/)
+})
+
+test('industry workspace keeps a graph-first structural canvas without presenting scaffold edges as verified facts', () => {
+  const chain = read('pages/ChainPage.vue')
+
+  assert.match(chain, /INDUSTRY GRAPH \/ STRUCTURAL INDEX/)
+  assert.match(chain, /class="graph-stage"/)
+  assert.match(chain, /class="graph-node"/)
+  assert.match(chain, /结构索引不代表已验证的具体供应关系/)
+  assert.match(chain, /模型分析原文，不从文本中伪造结构化关系/)
+  assert.match(chain, /OPEN NODE FILE/)
+  assert.match(chain, /node-file\.open/)
+})
+
+test('archive transition is progress-driven and preserves the extracted card for workspace return', () => {
+  const transition = read('analysis-os/motion/useArchiveTransition.js')
+  const scene = read('components/analysis/AnalysisArchiveScene.vue')
+  const page = read('pages/AnalysisOsPage.vue')
+
+  assert.match(transition, /EXTRACTING/)
+  assert.match(transition, /WORKSPACE_ACTIVE/)
+  assert.match(transition, /RETURN_ALIGN/)
+  assert.match(transition, /RETURN_DESCEND/)
+  assert.match(scene, /0\.40 \+ extraction \* \(4\.05 - 0\.40\)/)
+  assert.match(scene, /camera\.position\.copy\(cameraBase\)\.lerp\(cameraDetailBase, detail\)/)
+  assert.match(page, /archiveTransition\.enter/)
+  assert.match(page, /archiveTransition\.returnToArchive/)
+})
+
+test('keyboard navigation covers archive rows, workspace escape, and focus restoration targets', () => {
+  const page = read('pages/AnalysisOsPage.vue')
+  const shell = read('analysis-os/components/ArchiveWorkspaceShell.vue')
+
+  assert.match(page, /event\.key === 'ArrowUp'/)
+  assert.match(page, /event\.key === 'ArrowDown'/)
+  assert.match(page, /navigateBySteps\(delta, 'module-row-step'\)/)
+  assert.match(page, /wrap\(focusedIndex\.value \+ delta, modules\.length\)/)
+  assert.match(page, /\.focus\?\.\(\{ preventScroll: true \}\)/)
+  assert.match(shell, /event\.key !== 'Escape'/)
+  assert.match(shell, /requestReturn\(\)/)
+  assert.match(shell, /tabindex="-1"/)
+  assert.match(shell, /moduleTitleRef/)
+})
+
+test('sleep and wake remain a visual layer over the logical archive selection', () => {
+  const idle = read('analysis-os/motion/useArchiveIdle.js')
+  const scene = read('components/analysis/AnalysisArchiveScene.vue')
+  const page = read('pages/AnalysisOsPage.vue')
+
+  assert.match(idle, /dimStartMs: 8_000/)
+  assert.match(idle, /motionStartMs: 12_000/)
+  assert.match(idle, /sleepStartMs: 18_000/)
+  assert.match(idle, /SLEEP_DRIFT/)
+  assert.match(scene, /sleepOffsets/)
+  assert.match(scene, /captureSleepPosition/)
+  assert.match(page, /__jarvisArchiveDebug/)
+})
+
+test('representative workspace pages use the archive information language', () => {
+  assert.match(read('pages/MarketPage.vue'), /MARKET \/ LIVE FEED/)
+  assert.match(read('components/CrossMarketView.vue'), /CROSS MARKET \/ OBSERVATORY/)
+  assert.match(read('pages/BacktestPage.vue'), /BACKTEST \/ STRATEGY LABORATORY/)
+  assert.match(read('components/SimTradeView.vue'), /EXECUTION \/ SIM TRADING/)
+  assert.match(read('components/AiCenter.vue'), /RESEARCH INTELLIGENCE \/ ANALYSIS DESK/)
+  assert.match(read('pages/SentimentPage.vue'), /BULL \/ BEAR DOSSIER/)
+  assert.match(read('pages/FinancialReportPage.vue'), /COMPANY FILE \/ FINANCIAL FILING/)
+  assert.match(read('pages/ChainPage.vue'), /INDUSTRY GRAPH \/ NODE DOSSIER/)
+  assert.match(read('pages/RiskPage.vue'), /RISK SURVEILLANCE \/ ALERT TERMINAL/)
+  assert.match(read('pages/StrategyPage.vue'), /STRATEGY FOUNDRY \/ OBJECTIVE BUILDER/)
+  assert.match(read('components/OpsView.vue'), /SYSTEM OPERATIONS \/ SERVICE TOPOLOGY/)
+})
