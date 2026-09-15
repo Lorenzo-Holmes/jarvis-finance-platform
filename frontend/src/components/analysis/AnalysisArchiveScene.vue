@@ -51,7 +51,13 @@ const CENTER_ROW = 12
 const ARCHIVE_ORIGIN_ROW = 15.5
 const FOCUS_Z = (CENTER_ROW - ARCHIVE_ORIGIN_ROW) * ROW_SPACING
 const POOL_OPTIONS = LOOP_POOL
-const IDLE_RENDER_INTERVAL_MS = 1000 / 30
+// 31 fps is intentional: on a nominal 60 Hz display a 33.33 ms threshold can
+// miss the second RAF by a fraction of a millisecond and accidentally render
+// every third frame (~20 fps). 32.26 ms reliably lands on every second RAF.
+const IDLE_RENDER_INTERVAL_MS = 1000 / 31
+const DETAIL_RETENTION_BIAS = 0.34
+const FRAME_DETAIL_BUDGET = 6
+const FRAME_RETENTION_BIAS = 0.48
 
 const ANONYMOUS_ARCHIVE = {
   id: 'archive:anonymous',
@@ -99,6 +105,7 @@ let lastRenderedAt = 0
 let initializedTrack = false
 let lastReportedRow = CENTER_ROW
 let navigationActive = false
+let settledAt = 0
 let suppressSleepMotion = false
 let archiveLibrary = null
 let focusedGlassMaterial = null
@@ -114,6 +121,7 @@ let postProcessingStatus = 'direct'
 let detailAsset = null
 let detailAssetStatus = 'idle'
 let prewarmTimer = 0
+let labelPrewarmTimer = 0
 let motionAmount = 0
 let detailDensity = 0.42
 let settleProgress = 1
@@ -121,6 +129,8 @@ let lastMotionLane = CENTER_LANE
 let lastMotionRow = CENTER_ROW
 let lastMotionPayload = { motionAmount: -1, detailDensity: -1, settleProgress: -1 }
 let baseInstances = null
+const nearDetailEntries = new Set()
+const frameDetailEntries = new Set()
 
 const drag = new ArchiveDrag()
 const laneTrack = { value: CENTER_LANE, velocity: 0, target: CENTER_LANE }
@@ -166,7 +176,10 @@ function emitMotionState(force = false) {
 function detailBudgetForState(extraction) {
   if (extraction > 0.01) return 6
   const densityBudget = Math.max(2, Math.min(6, Math.round(1 + detailDensity * 12)))
-  if (props.retrievalState === 'FLOW') return Math.min(motionAmount > 0.52 ? 2 : 3, densityBudget)
+  // Keep one browse-detail count for the whole wheel gesture. The previous
+  // 2 <-> 3 threshold crossed twice on every scroll (accelerate/decelerate),
+  // so a gold-framed card was abruptly removed and re-added while in motion.
+  if (props.retrievalState === 'FLOW') return Math.min(3, densityBudget)
   if (props.retrievalState === 'QUERY' || props.retrievalState === 'MATCH') return Math.min(4, densityBudget)
   return Math.min(4 + Math.round(settleProgress * 2), densityBudget)
 }
@@ -332,11 +345,22 @@ function clearArchive() {
   while (root?.children?.length) root.remove(root.children[0])
   entries.splice(0, entries.length)
   entriesByPoolKey.clear()
+  nearDetailEntries.clear()
+  frameDetailEntries.clear()
   hoveredEntry = null
   for (const material of materialCache.values()) material.dispose()
   for (const texture of textureCache.values()) texture.dispose()
   materialCache.clear()
   textureCache.clear()
+}
+
+function prewarmLabelTextures() {
+  if (!renderer || !Array.isArray(props.modules) || !props.modules.length) return
+  for (const module of props.modules) {
+    const texture = makeLabelTexture(module)
+    labelMaterial(module)
+    renderer.initTexture?.(texture)
+  }
 }
 
 function createCard(physicalLane, physicalRow) {
@@ -523,6 +547,7 @@ function emitStepFromTrack() {
 function beginFlow(direction = 0) {
   if (!navigationActive) emit('flow', Math.sign(direction || 0))
   navigationActive = true
+  settledAt = 0
   motionAmount = Math.max(motionAmount, 0.38)
   settleProgress = 0
   emitMotionState(true)
@@ -612,8 +637,11 @@ function sleepOffsets(time = performance.now()) {
   const amount = suppressSleepMotion ? 0 : Math.max(0, Math.min(1, Number(props.sleepAmount) || 0))
   return {
     amount,
-    lane: Math.sin(time / 11_000) * 0.35 * amount,
-    row: (Math.sin(time / 7_300) * 1.4 + Math.sin(time / 17_000) * 0.55) * amount,
+    // Sleep is a single slow field drift, not hundreds of independent card
+    // oscillations. Keep the amplitude deliberately small so long parallel
+    // archive edges do not crawl across the pixel grid while idle.
+    lane: Math.sin(time / 13_000) * 0.18 * amount,
+    row: (Math.sin(time / 9_500) * 0.72 + Math.sin(time / 21_000) * 0.28) * amount,
   }
 }
 
@@ -728,7 +756,9 @@ function resize() {
   const qualityChanged = !qualityProfile || qualityProfile.name !== nextQuality.name
   qualityProfile = nextQuality
   configureArchiveRenderer(renderer, qualityProfile)
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, qualityProfile.maxDpr))
+  const nativeDpr = window.devicePixelRatio || 1
+  const renderDpr = Math.min(nativeDpr * (qualityProfile.renderScale || 1), qualityProfile.maxDpr)
+  renderer.setPixelRatio(renderDpr)
   renderer.setSize(width, height, false)
   if (qualityProfile.name !== 'MOBILE' && detailAssetStatus === 'idle') loadFocusedArchiveAsset()
   if (qualityChanged && !qualityProfile.postCandidate && composerBundle) {
@@ -823,6 +853,7 @@ function maybeEmitSettled() {
   const rowSettled = Math.abs(rowTrack.value - rowTrack.target) < 0.002
   if (!laneSettled || !rowSettled) return
   navigationActive = false
+  settledAt = performance.now()
   emit('settled')
 }
 
@@ -833,7 +864,14 @@ function renderFrame(time) {
     return
   }
   const extraction = Math.max(0, Math.min(1, Number(props.extractionProgress) || 0))
-  const staticBrowse = !momentum
+  const tracksResting = Math.abs(laneTrack.value - laneTrack.target) < 0.00002
+    && Math.abs(rowTrack.value - rowTrack.target) < 0.00002
+    && motionAmount < 0.0008
+    && settleProgress > 0.998
+  const staticBrowse = tracksResting
+    && settledAt > 0
+    && time - settledAt > 1200
+    && !momentum
     && activePointer === null
     && !navigationActive
     && props.retrievalState === 'FOCUSED'
@@ -891,10 +929,10 @@ function renderFrame(time) {
     camera.updateProjectionMatrix()
   }
   if (sleep.amount > 0) {
-    camera.position.x += Math.sin(time / 8_700) * 0.22 * sleep.amount
-    camera.position.y += Math.sin(time / 12_500) * 0.11 * sleep.amount
-    cameraAim.x += Math.sin(time / 10_700) * 0.09 * sleep.amount
-    cameraAim.y += Math.sin(time / 14_300) * 0.05 * sleep.amount
+    camera.position.x += Math.sin(time / 11_500) * 0.12 * sleep.amount
+    camera.position.y += Math.sin(time / 16_000) * 0.06 * sleep.amount
+    cameraAim.x += Math.sin(time / 14_000) * 0.045 * sleep.amount
+    cameraAim.y += Math.sin(time / 19_000) * 0.025 * sleep.amount
   }
   camera.lookAt(cameraAim)
 
@@ -911,10 +949,13 @@ function renderFrame(time) {
   if (fog instanceof Fog) {
     const renderedDistance = camera.position.distanceTo(cameraAim)
     // Reference keyframes keep edge/card detail much crisper than our old
-    // washed vignette. Let distance fog start later and fall off more gently
-    // in Browse, while the close-up transition can still tighten it.
-    fog.near = renderedDistance + (8 - 2.5 * motionAmount - 7 * detail)
-    fog.far = renderedDistance + (34 - 6 * motionAmount - 18 * detail)
+    // washed vignette. Browse fog must not react to wheel velocity: coupling
+    // the full-screen fog field to motionAmount changed the luminance of most
+    // pixels whenever scrolling started/stopped, which reads as a screen flash
+    // even when card geometry itself is stable. Only extraction is allowed to
+    // tighten the fog range.
+    fog.near = renderedDistance + (8 - 7 * detail)
+    fog.far = renderedDistance + (34 - 18 * detail)
   }
 
   const easing = reducedMotion ? 1 : 1 - Math.exp(-dt * 10)
@@ -929,6 +970,7 @@ function renderFrame(time) {
   }
 
   const detailBudget = detailBudgetForState(extraction)
+  const retainedNearDetail = new Set(nearDetailEntries)
   const detailCandidates = entries
     .map(entry => {
       const laneDistance = Math.abs(entry.virtualLane - visualLane)
@@ -937,44 +979,80 @@ function renderFrame(time) {
         entry,
         laneDistance,
         rowDistance,
-        score: rowDistance + laneDistance * 2.8,
+        score: rowDistance + laneDistance * 2.8
+          - (retainedNearDetail.has(entry) ? DETAIL_RETENTION_BIAS : 0),
       }
     })
     .filter(item => item.laneDistance <= 1.35 && item.rowDistance <= 4.2)
     .sort((a, b) => a.score - b.score)
     .slice(0, detailBudget)
-  const nearDetailSet = new Set(detailCandidates.map(item => item.entry))
-  if (focused && !nearDetailSet.has(focused)) {
-    if (nearDetailSet.size >= detailBudget) {
+  const nextNearDetailEntries = new Set(detailCandidates.map(item => item.entry))
+  if (focused && !nextNearDetailEntries.has(focused)) {
+    if (nextNearDetailEntries.size >= detailBudget) {
       const last = detailCandidates.at(-1)?.entry
-      if (last) nearDetailSet.delete(last)
+      if (last) nextNearDetailEntries.delete(last)
     }
-    nearDetailSet.add(focused)
+    nextNearDetailEntries.add(focused)
   }
+  nearDetailEntries.clear()
+  nextNearDetailEntries.forEach(entry => nearDetailEntries.add(entry))
 
-  entries.forEach((entry, index) => {
+  const retainedFrames = new Set(frameDetailEntries)
+  const frameCandidates = entries
+    .map(entry => {
+      const laneDistance = Math.abs(entry.virtualLane - visualLane)
+      const rowDistance = Math.abs(entry.virtualRow - visualRow)
+      return {
+        entry,
+        laneDistance,
+        rowDistance,
+        score: rowDistance + laneDistance * 2.8
+          - (retainedFrames.has(entry) ? FRAME_RETENTION_BIAS : 0),
+      }
+    })
+    .filter(item => item.laneDistance <= 1.35 && item.rowDistance <= 4.8)
+    .sort((a, b) => a.score - b.score || a.entry.instanceIndex - b.entry.instanceIndex)
+    .slice(0, FRAME_DETAIL_BUDGET)
+  const nextFrameEntries = new Set(frameCandidates.map(item => item.entry))
+  if (focused && !nextFrameEntries.has(focused)) {
+    if (nextFrameEntries.size >= FRAME_DETAIL_BUDGET) {
+      const last = frameCandidates.at(-1)?.entry
+      if (last) nextFrameEntries.delete(last)
+    }
+    nextFrameEntries.add(focused)
+  }
+  frameDetailEntries.clear()
+  nextFrameEntries.forEach(entry => frameDetailEntries.add(entry))
+
+  const shoulderLane = sleep.amount > 0 ? laneTrack.value : visualLane
+  const shoulderRow = sleep.amount > 0 ? rowTrack.value : visualRow
+
+  entries.forEach(entry => {
     const data = entry.group.userData
-    const idle = !reducedMotion && !momentum && activePointer === null
-      ? Math.sin(time * 0.00034 + entry.virtualRow * 0.32 + entry.virtualLane * 0.41) * 0.045
-      : 0
-    const sleepWave = sleep.amount
-      ? (Math.sin(time * 0.00055 + entry.virtualRow * 0.22 - entry.virtualLane * 0.35) * 0.11
-        + Math.sin(time * 0.00029 - entry.virtualRow * 0.11 + entry.virtualLane * 0.27) * 0.05) * sleep.amount
-      : 0
-    const laneRelative = entry.virtualLane - visualLane
-    const rowRelative = entry.virtualRow - visualRow
+    // Avoid sub-pixel per-card oscillation in browse/sleep. The archive field
+    // already has global track/camera drift; independent bob/tilt on hundreds
+    // of long parallel edges creates temporal aliasing (edge crawl/shimmer).
+    const laneRelative = entry.virtualLane - shoulderLane
+    const rowRelative = entry.virtualRow - shoulderRow
     const isFocused = entry === focused
-    const isNear = nearDetailSet.has(entry)
+    const isNear = nearDetailEntries.has(entry)
+    const hasFrame = frameDetailEntries.has(entry)
     const showIdentity = Boolean(isFocused && identified)
     const shoulder = archiveShoulderField(rowRelative, laneRelative) * (1 - detail)
-    entry.group.position.y += (data.targetY + shoulder + idle + sleepWave - entry.group.position.y) * easing
+    const targetY = data.targetY + shoulder
+    const yDelta = targetY - entry.group.position.y
+    entry.group.position.y = Math.abs(yDelta) < 0.00035
+      ? targetY
+      : entry.group.position.y + yDelta * easing
 
     const targetScale = data.targetScale || 1
-    const scale = entry.group.scale.x + (targetScale - entry.group.scale.x) * easing
+    const scaleDelta = targetScale - entry.group.scale.x
+    const scale = Math.abs(scaleDelta) < 0.00005
+      ? targetScale
+      : entry.group.scale.x + scaleDelta * easing
     entry.group.scale.setScalar(scale)
     const targetTilt = 0
-    const idleTilt = focused === entry ? 0 : Math.sin(time * 0.00019 + index * 0.17) * 0.003
-    entry.group.rotation.x += (targetTilt + idleTilt - entry.group.rotation.x) * easing
+    entry.group.rotation.x += (targetTilt - entry.group.rotation.x) * easing
     entry.group.updateMatrix()
 
     if (baseInstances) {
@@ -992,6 +1070,7 @@ function renderFrame(time) {
     }
 
     if (entry.identityGroup) entry.identityGroup.visible = showIdentity
+    if (entry.frameGroup) entry.frameGroup.visible = hasFrame && !(isFocused && detailAsset && extraction > 0.035)
     entry.nearGroup.visible = isNear && !(isFocused && detailAsset && extraction > 0.035)
     // Full latch/fastener/decrypt hardware is an "open file" detail, not a
     // browse-state decoration. Hover may still preview it for affordance.
@@ -1017,7 +1096,12 @@ function renderFrame(time) {
 
   if (composerBundle && extractionDetail > 0.72) composerBundle.composer.render()
   else renderer.render(scene, camera)
-  if (!postProbeAttempted && qualityProfile?.postCandidate && renderedFrames > 24) {
+  // Keep optional post-processing completely off the browse path. Allocating
+  // and probing fullscreen render targets while the user is simply browsing
+  // can still cause a one-frame GPU/compositor disturbance on some drivers.
+  // If post is ever needed, defer that work until the file is actually being
+  // extracted; direct rendering remains the stable fallback throughout browse.
+  if (extraction > 0.52 && !postProbeAttempted && qualityProfile?.postCandidate && renderedFrames > 24) {
     const rect = renderer.domElement.getBoundingClientRect()
     schedulePostProcessingProbe(Math.max(1, rect.width), Math.max(1, rect.height), qualityProfile)
   }
@@ -1097,6 +1181,15 @@ function init() {
     buildArchiveArray()
     resize()
     updateFocusVisuals()
+    const labelPrewarm = () => {
+      labelPrewarmTimer = 0
+      if (!disposed) prewarmLabelTextures()
+    }
+    if (typeof window.requestIdleCallback === 'function') {
+      labelPrewarmTimer = window.requestIdleCallback(labelPrewarm, { timeout: 650 })
+    } else {
+      labelPrewarmTimer = window.setTimeout(labelPrewarm, 180)
+    }
     if (qualityProfile?.name !== 'MOBILE') loadFocusedArchiveAsset()
 
     renderer.domElement.addEventListener('pointerdown', onPointerDown)
@@ -1128,6 +1221,11 @@ function dispose() {
     else window.clearTimeout(prewarmTimer)
   }
   prewarmTimer = 0
+  if (labelPrewarmTimer) {
+    if (typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(labelPrewarmTimer)
+    else window.clearTimeout(labelPrewarmTimer)
+  }
+  labelPrewarmTimer = 0
   if (postProbeTimer) window.clearTimeout(postProbeTimer)
   postProbeTimer = 0
   stopRendering()
@@ -1149,6 +1247,7 @@ function dispose() {
 
 function getDebugState() {
   const visibleNear = entries.filter(entry => entry.nearGroup?.visible).length
+  const visibleFrames = entries.filter(entry => entry.frameGroup?.visible).length
   const visibleFocus = entries.filter(entry => entry.focusGroup?.visible).length
   return {
     cell: currentCell(),
@@ -1166,6 +1265,10 @@ function getDebugState() {
     extractionProgress: Number(props.extractionProgress) || 0,
     sleepAmount: Number(props.sleepAmount) || 0,
     quality: qualityProfile?.name || 'UNKNOWN',
+    pixelRatio: renderer?.getPixelRatio?.() ?? null,
+    drawingBufferSize: renderer?.domElement
+      ? [renderer.domElement.width, renderer.domElement.height]
+      : null,
     postProcessing: Boolean(composerBundle),
     postCandidate: Boolean(qualityProfile?.postCandidate),
     postProcessingStatus,
@@ -1183,6 +1286,7 @@ function getDebugState() {
     baseInstancing: Boolean(baseInstances),
     instanceCount: baseInstances?.body?.count || 0,
     visibleNear,
+    visibleFrames,
     visibleFocus,
     drawCalls: renderer?.info?.render?.calls ?? 0,
     triangles: renderer?.info?.render?.triangles ?? 0,

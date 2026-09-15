@@ -21,9 +21,13 @@ export function createArchiveAssetLibrary() {
   const geometries = {
     body: new RoundedBoxGeometry(5.00, 3.70, 0.31, 3, 0.075),
     inset: new RoundedBoxGeometry(4.72, 3.42, 0.06, 3, 0.065),
-    glass: new RoundedBoxGeometry(4.64, 3.34, 0.05, 3, 0.07),
-    sideBar: new BoxGeometry(0.08, 3.34, 0.07),
-    topBar: new BoxGeometry(4.56, 0.08, 0.07),
+    // Keep the transmissive pane inside the warm frame. The old pane overlapped
+    // the frame by a few hundredths of a world unit; at the very long browse
+    // camera distance that overlap produced unstable sub-pixel coverage on the
+    // gold edge while the archive field moved.
+    glass: new RoundedBoxGeometry(4.46, 3.18, 0.05, 3, 0.07),
+    sideBar: new BoxGeometry(0.10, 3.34, 0.075),
+    topBar: new BoxGeometry(4.56, 0.10, 0.075),
     rail: new BoxGeometry(0.07, 2.40, 0.04),
     bridge: new BoxGeometry(0.05, 1.95, 0.05),
     latch: new RoundedBoxGeometry(0.78, 0.16, 0.08, 2, 0.032),
@@ -40,7 +44,11 @@ export function createArchiveAssetLibrary() {
   const materials = {
     body: new MeshStandardMaterial({ color: new Color('#f7f2eb'), roughness: 0.36, metalness: 0.04 }),
     inset: new MeshStandardMaterial({ color: new Color('#fcf8f2'), roughness: 0.46, metalness: 0.02 }),
-    frame: new MeshStandardMaterial({ color: new Color('#c9bcad'), roughness: 0.42, metalness: 0.14 }),
+    frame: new MeshStandardMaterial({
+      color: new Color('#c9bcad'),
+      roughness: 0.54,
+      metalness: 0.08,
+    }),
     rail: new MeshStandardMaterial({ color: new Color('#d2c5b6'), roughness: 0.4, metalness: 0.16 }),
     inner: new MeshStandardMaterial({ color: new Color('#666860'), roughness: 0.34, metalness: 0.16 }),
     accent: new MeshStandardMaterial({ color: new Color('#92764d'), roughness: 0.28, metalness: 0.34 }),
@@ -103,6 +111,7 @@ export function createArchiveAssembly(module, labelMaterial, library) {
   const group = new Group()
   const baseGroup = new Group()
   const identityGroup = new Group()
+  const frameGroup = new Group()
   const nearGroup = new Group()
   const focusGroup = new Group()
 
@@ -127,15 +136,22 @@ export function createArchiveAssembly(module, labelMaterial, library) {
   const right = shadow(new Mesh(g.sideBar, m.frame), false, true)
   const top = shadow(new Mesh(g.topBar, m.frame), false, true)
   const bottom = shadow(new Mesh(g.topBar, m.frame), false, true)
-  left.position.set(-2.31, 0, 0.245)
-  right.position.set(2.31, 0, 0.245)
-  top.position.set(0, 1.65, 0.245)
-  bottom.position.set(0, -1.65, 0.245)
+  // Keep the warm frame physically in front of the inset instead of relying on
+  // polygon offset. The old z=0.245 placement made the 0.075-deep bar overlap
+  // the inset volume (front face z≈0.235). At the long browse-camera distance
+  // that interpenetration rasterized as the regular triangular/saw-tooth edge
+  // visible in motion. z=0.285 leaves a real depth gap behind the frame.
+  left.position.set(-2.30, 0, 0.285)
+  right.position.set(2.30, 0, 0.285)
+  top.position.set(0, 1.65, 0.285)
+  bottom.position.set(0, -1.65, 0.285)
 
   const railL = shadow(new Mesh(g.rail, m.rail), false, true)
   const railR = shadow(new Mesh(g.rail, m.rail), false, true)
-  railL.position.set(-1.06, -0.18, 0.252)
-  railR.position.set(1.06, -0.18, 0.252)
+  // The rails had the same shallow overlap with the inset. Keep them behind
+  // the glass but entirely in front of the recessed face as well.
+  railL.position.set(-1.06, -0.18, 0.275)
+  railR.position.set(1.06, -0.18, 0.275)
 
   const ringTop = shadow(new Mesh(g.ring, m.inner), false, true)
   const ringBottom = shadow(new Mesh(g.ring, m.inner), false, true)
@@ -145,7 +161,11 @@ export function createArchiveAssembly(module, labelMaterial, library) {
   const glass = new Mesh(g.glass, m.glass)
   glass.position.z = 0.33
   glass.renderOrder = 2
-  nearGroup.add(left, right, top, bottom, railL, railR, ringTop, ringBottom, glass)
+  // Keep the warm outer frame on its own visibility layer. Rails/rings/glass
+  // may still follow the original near-detail budget, but the gold frame no
+  // longer has to blink with those heavier details during wheel motion.
+  frameGroup.add(left, right, top, bottom)
+  nearGroup.add(railL, railR, ringTop, ringBottom, glass)
 
   const bridge = shadow(new Mesh(g.bridge, m.inner), false, true)
   bridge.position.set(0, -0.06, 0.292)
@@ -180,9 +200,10 @@ export function createArchiveAssembly(module, labelMaterial, library) {
   decryptB.visible = false
 
   focusGroup.add(bridge, latch, ...fasteners, ...glassEdges, decryptA, decryptB)
+  frameGroup.visible = false
   nearGroup.visible = false
   focusGroup.visible = false
-  group.add(baseGroup, identityGroup, nearGroup, focusGroup)
+  group.add(baseGroup, identityGroup, frameGroup, nearGroup, focusGroup)
 
   return {
     group,
@@ -192,6 +213,7 @@ export function createArchiveAssembly(module, labelMaterial, library) {
     label,
     baseGroup,
     identityGroup,
+    frameGroup,
     nearGroup,
     focusGroup,
     glass,

@@ -9,6 +9,7 @@ export function archiveQualityProfile(width, dpr = 1) {
     return {
       name: 'MOBILE',
       maxDpr: 1.15,
+      renderScale: 1,
       shadows: false,
       post: false,
       aoKernel: 8,
@@ -20,7 +21,8 @@ export function archiveQualityProfile(width, dpr = 1) {
   if (width < 1180 || dpr > 1.8) {
     return {
       name: 'BALANCED',
-      maxDpr: 1.35,
+      maxDpr: 1.5,
+      renderScale: 1.1,
       shadows: true,
       post: false,
       postCandidate: true,
@@ -32,7 +34,8 @@ export function archiveQualityProfile(width, dpr = 1) {
   }
   return {
     name: 'HIGH',
-    maxDpr: 1.5,
+    maxDpr: 1.75,
+    renderScale: 1.25,
     shadows: true,
     post: false,
     postCandidate: true,
@@ -100,8 +103,22 @@ export async function probeArchiveComposer({ renderer, scene, camera, width, hei
       profile: { ...profile, post: true },
     })
     if (!bundle) return { bundle: null, status: 'unavailable' }
-    bundle.composer.render()
-    gl.finish?.()
+    // Probe the optional SSAO pipeline without ever presenting the probe frame
+    // to the visible canvas. EffectComposer renders its last enabled pass to
+    // screen by default, so the old probe briefly replaced the normal archive
+    // frame with a post-processed one before direct rendering resumed. On a
+    // real browser that appeared as a one-frame full-screen flash (Playwright
+    // usually hid it because navigator.webdriver skips this probe entirely).
+    const previousTarget = renderer.getRenderTarget?.() || null
+    const previousRenderToScreen = bundle.composer.renderToScreen
+    try {
+      bundle.composer.renderToScreen = false
+      bundle.composer.render()
+      gl.finish?.()
+    } finally {
+      bundle.composer.renderToScreen = previousRenderToScreen
+      renderer.setRenderTarget?.(previousTarget)
+    }
     const error = gl.getError()
     if (error !== gl.NO_ERROR) {
       disposeArchiveComposer(bundle)
