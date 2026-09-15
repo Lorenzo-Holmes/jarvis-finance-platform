@@ -41,5 +41,9 @@ const rendered = computed(() => renderMarkdown(props.content))
 .md-content :deep(hr) { border: 0; border-top: 1px solid var(--line); margin: 1em 0; }
 .md-content :deep(table) { width: 100%; border-collapse: collapse; margin: .75em 0; font-size: .95em; }
 .md-content :deep(th), .md-content :deep(td) { padding: .45em .6em; border: 1px solid var(--line); text-align: left; vertical-align: top; }
-.md-content :deep(th) { color: var(--text); background: var(--panel-raised, var(--surface)); }
+.md-content :deep(th) {
+  color: var(--text);
+  background: var(--surface-2, var(--panel-raised, var(--surface)));
+  font-weight: 700;
+}
 </style>

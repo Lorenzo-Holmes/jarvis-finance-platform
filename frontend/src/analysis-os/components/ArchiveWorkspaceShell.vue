@@ -207,6 +207,7 @@ onBeforeUnmount(() => {
 .workspace-shell {
   --bg: #e8e5e1;
   --panel: #efebe3;
+  --panel-raised: #f3f0e9;
   --surface: #e5e0d6;
   --surface-2: #ddd7cc;
   --line: #c9c2b6;
@@ -219,6 +220,19 @@ onBeforeUnmount(() => {
   --ok: #5d765f;
   --bad: #9a5b53;
   --warn: #a17a42;
+  --workspace-panel-wash: #f0ece4;
+  --workspace-panel-soft: #edeae3;
+  --workspace-panel-rail: #f0ece4;
+  --workspace-chart-bg: transparent;
+  --workspace-node-bg: #efebe3;
+  --workspace-node-focus-bg: #ddd7cc;
+  --workspace-hover-bg: #e1ddd5;
+  --workspace-accent-wash: rgba(161,132,88,.08);
+  --workspace-row-divider: #c9c2b6;
+  --workspace-graph-grid: rgba(132,126,116,.08);
+  --workspace-graph-edge: rgba(112,105,94,.6);
+  --workspace-graph-outline: rgba(138,118,87,.24);
+  --workspace-node-shadow: rgba(77,68,55,.05);
   --radius: 0px;
   --radius-sm: 0px;
   min-height: 100dvh;
@@ -362,6 +376,7 @@ onBeforeUnmount(() => {
 .workspace-shell.is-night {
   --bg: #0b0f13;
   --panel: #141a20;
+  --panel-raised: #1b2229;
   --surface: #11171d;
   --surface-2: #1b2229;
   --line: #252e37;
@@ -374,6 +389,19 @@ onBeforeUnmount(() => {
   --ok: #35b978;
   --bad: #e46363;
   --warn: #d3a64f;
+  --workspace-panel-wash: #141a20;
+  --workspace-panel-soft: #11171d;
+  --workspace-panel-rail: #141a20;
+  --workspace-chart-bg: #0b0f13;
+  --workspace-node-bg: #1b2229;
+  --workspace-node-focus-bg: #252e37;
+  --workspace-hover-bg: #222a32;
+  --workspace-accent-wash: rgba(214,179,106,.12);
+  --workspace-row-divider: #252e37;
+  --workspace-graph-grid: rgba(127,138,148,.12);
+  --workspace-graph-edge: rgba(127,138,148,.58);
+  --workspace-graph-outline: rgba(214,179,106,.32);
+  --workspace-node-shadow: rgba(0,0,0,.28);
   background: var(--bg);
   color: var(--text);
 }

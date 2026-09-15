@@ -110,9 +110,9 @@ onMounted(() => { check(); polling.start() })
 .health-table-wrap { width: 100%; overflow-x: auto; }
 .health-table { width: 100%; min-width: 820px; border-collapse: collapse; font-size: 10px; }
 .health-table th, .health-table td { text-align: left; padding: 11px 12px; border-bottom: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
-.health-table th { position: sticky; top: 0; z-index: 2; background: #dfd9ce; color: #777269; font: 600 8px/1 ui-monospace, monospace; letter-spacing: .07em; box-shadow: 0 1px 0 var(--line); }
+.health-table th { position: sticky; top: 0; z-index: 2; background: var(--surface-2, #242b31); color: var(--text, #eee9de); font: 650 9px/1 ui-monospace, monospace; letter-spacing: .07em; box-shadow: 0 1px 0 var(--line-strong, #3a4651); }
 .health-table tbody tr:last-child td { border-bottom: 0; }
-.health-table tbody tr:hover td { background: rgba(209,201,188,.24); }
+.health-table tbody tr:hover td { background: var(--workspace-hover-bg, rgba(255,255,255,.055)); }
 .service-name { display: flex; align-items: center; gap: 8px; }
 .service-name i { width: 6px; height: 6px; border-radius: 50%; background: var(--bad); }
 .service-name i.ok { background: var(--ok); }
