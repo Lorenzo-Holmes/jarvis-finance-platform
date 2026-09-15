@@ -401,6 +401,36 @@ test('sentiment page renders dispute and section cards from backend-shaped data'
   assert.match(source, /class="st-output">\{\{ result \}\}/)
 })
 
+test('quote page renders trend band from backend forecast and never sends closes', async () => {
+  const source = await readFile(join(frontendRoot, 'src/pages/QuotePage.vue'), 'utf8')
+  const clientSource = await readFile(join(frontendRoot, 'src/api/client.js'), 'utf8')
+  const tabsSource = await readFile(join(frontendRoot, 'src/composables/useWorkspaceTabs.js'), 'utf8')
+  const appSource = await readFile(join(frontendRoot, 'src/App.vue'), 'utf8')
+
+  // 趋势区间数据来自后端确定性计算结果，前端只做展示
+  assert.match(source, /result\.value\?\.forecast/)
+  assert.match(source, /forecast\.lower/)
+  assert.match(source, /forecast\.center/)
+  assert.match(source, /forecast\.upper/)
+  assert.match(source, /forecast\.horizon_days/)
+  // 样本不足时给出友好提示，不当作硬错误
+  assert.match(source, /insufficient_closes/)
+  assert.match(source, /样本不足/)
+  // 页面四态齐全
+  assert.match(source, /state="loading"/)
+  assert.match(source, /state="error"/)
+  assert.match(source, /qt-empty/)
+
+  // 前端不计算、也不传递历史收盘价：closes 一律由服务端注入
+  assert.doesNotMatch(source, /closes\s*:/)
+  assert.match(clientSource, /aiQuote:[\s\S]*market: options\.market/)
+  assert.doesNotMatch(clientSource, /aiQuote:[\s\S]{0,400}?closes/)
+
+  // tab 已注册并挂载
+  assert.match(tabsSource, /'智能报价'/)
+  assert.match(appSource, /QuotePage v-if="visitedTabs\.has\('智能报价'\)"/)
+})
+
 test('strategy analysis explicitly opts into the bounded CSRF retry policy', async () => {
   const clientSource = await readFile(join(frontendRoot, 'src/api/client.js'), 'utf8')
   assert.match(clientSource, /aiStrategy:[\s\S]*csrfRetry:\s*true/)

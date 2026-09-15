@@ -523,6 +523,7 @@ onBeforeUnmount(() => {
       </div>
       <div class="module-index-tools">
         <button type="button" @click="indexOpen = true">⌕ SEARCH</button>
+        <button type="button" @click="emit('navigate', '智能报价')">QUOTE</button>
         <button type="button" :disabled="dataState === 'loading'" @click="syncSystemStatus">↻ SYNC</button>
         <button type="button" :aria-pressed="soundEnabled" @click="toggleSound">{{ soundEnabled ? '◉ SOUND' : '○ SOUND' }}</button>
         <span>{{ dataStateLabel }}</span>
