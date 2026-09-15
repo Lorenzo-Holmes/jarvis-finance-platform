@@ -14,6 +14,9 @@ test('business modules use the archive workspace shell instead of the legacy tab
 
   assert.match(app, /ArchiveWorkspaceShell/)
   assert.match(app, /v-if="activeModule"/)
+  assert.match(app, /QuotePage v-else-if="activeTab === '智能报价'"/)
+  assert.match(app, /TrendPage v-else-if="activeTab === '市场趋势预测'"/)
+  assert.doesNotMatch(app, /QuotePage v-if="visitedTabs\.has\('智能报价'\)"/)
   assert.match(app, /@return="returnToArchive"/)
   assert.match(app, /@navigate-module="navigateWorkspace"/)
   assert.match(app, /@legacy-admin="openLegacyAdmin"/)

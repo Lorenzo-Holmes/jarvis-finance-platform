@@ -139,7 +139,7 @@ function clearAll() {
             <option :value="95">95%</option>
             <option :value="99">99%</option>
           </select>
-          <span>区间覆盖概率，越高区间越宽。</span>
+          <span>正态近似下的双侧区间覆盖水平；不代表实际命中率。</span>
         </div>
 
         <div v-if="validation" class="tr-validation">{{ validation }}</div>

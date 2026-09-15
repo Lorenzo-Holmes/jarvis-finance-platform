@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from statistics import NormalDist
 from typing import Any, Dict, Iterable, List, Optional
 
 
@@ -635,32 +636,34 @@ def _linear_slope(values: List[Decimal]) -> Optional[Decimal]:
 
 
 def _z_score_for(confidence: Decimal) -> Decimal:
-    """给定置信度的单侧 z 值（正态近似，纯 Decimal 常量表）。
+    """给定双侧中心区间覆盖率的 z 值（正态近似）。
 
-    只覆盖常见置信度，其余取最近档，避免引入 scipy 等依赖、保持口径可审计。
+    常见置信度使用可审计常量；其余范围使用 Python 标准库正态分布分位数，
+    避免把请求的置信度静默映射到不同覆盖水平。
     """
     table = (
-        (Decimal("0.99"), Decimal("2.3263")),
-        (Decimal("0.975"), Decimal("1.9600")),
-        (Decimal("0.95"), Decimal("1.6449")),
-        (Decimal("0.90"), Decimal("1.2816")),
-        (Decimal("0.80"), Decimal("0.8416")),
-        (Decimal("0.50"), Decimal("0.0000")),
+        (Decimal("0.99"), Decimal("2.5758")),
+        (Decimal("0.975"), Decimal("2.2414")),
+        (Decimal("0.95"), Decimal("1.9600")),
+        (Decimal("0.90"), Decimal("1.6449")),
+        (Decimal("0.80"), Decimal("1.2816")),
+        (Decimal("0.50"), Decimal("0.6745")),
     )
     for threshold, z in table:
-        if confidence >= threshold:
+        if confidence == threshold:
             return z
-    return table[-1][1]
+    probability = (Decimal("1") + confidence) / Decimal("2")
+    return Decimal(str(NormalDist().inv_cdf(float(probability))))
 
 
 def trend_forecast(closes_raw: Any, horizon_days: Any = None,
                    confidence: Any = None, symbol: Any = None) -> Dict[str, Any]:
     """基于历史收盘价的统计/时序基线预测，输出未来价格走势趋势区间（FR-07）。
 
-    方法（确定性、无机器学习，纯 Decimal）：
+    方法（确定性、无机器学习；价格/波动指标以 Decimal 计算，z 分位数采用标准库正态近似）：
       1. 用最近 _TREND_LOOKBACK 根收盘价做最小二乘线性拟合，得到每步斜率；
       2. 中心值 = 最近收盘价 + 斜率 × 预测天数（线性外推）；
-      3. 区间半宽 = 单侧 z 值 × 日收益波动率 × sqrt(预测天数) × 最近收盘价；
+      3. 双侧中心区间半宽 = z(confidence) × 日收益波动率 × sqrt(预测天数) × 最近收盘价；
       4. 上下界 = 中心值 ± 半宽。
 
     返回（available=False 时仅含 available/bars/reason）：

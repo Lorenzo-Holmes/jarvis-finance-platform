@@ -428,7 +428,7 @@ test('quote page renders trend band from backend forecast and never sends closes
 
   // tab 已注册并挂载
   assert.match(tabsSource, /'智能报价'/)
-  assert.match(appSource, /QuotePage v-if="visitedTabs\.has\('智能报价'\)"/)
+  assert.match(appSource, /QuotePage v-else-if="activeTab === '智能报价'"/)
 })
 
 test('strategy analysis explicitly opts into the bounded CSRF retry policy', async () => {
@@ -467,5 +467,5 @@ test('trend page renders interval and basis from backend forecast and never send
 
   // tab 已注册并挂载
   assert.match(tabsSource, /'市场趋势预测'/)
-  assert.match(appSource, /TrendPage v-if="visitedTabs\.has\('市场趋势预测'\)"/)
+  assert.match(appSource, /TrendPage v-else-if="activeTab === '市场趋势预测'"/)
 })
