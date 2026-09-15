@@ -1,5 +1,5 @@
 <script setup>
-import { defineAsyncComponent, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onMounted, ref, watch } from 'vue'
 import { api } from './api/client'
 import LoginView from './components/LoginView.vue'
 import AppHeader from './components/common/AppHeader.vue'
@@ -7,6 +7,10 @@ import AppTabs from './components/common/AppTabs.vue'
 import LandingPage from './pages/LandingPage.vue'
 import { useAuthSession } from './composables/useAuthSession'
 import { useWorkspaceTabs } from './composables/useWorkspaceTabs'
+import ArchiveWorkspaceShell from './analysis-os/components/ArchiveWorkspaceShell.vue'
+import { JARVIS_MODULES } from './analysis-os/data/modules'
+import { useResearchContext } from './analysis-os/state/researchContext'
+import { useWorkflowHandoff } from './analysis-os/state/workflowHandoff'
 
 const AnalysisOsPage = defineAsyncComponent(() => import('./pages/AnalysisOsPage.vue'))
 const MarketPage = defineAsyncComponent(() => import('./pages/MarketPage.vue'))
@@ -24,10 +28,26 @@ const OpsView = defineAsyncComponent(() => import('./components/OpsView.vue'))
 const AdminView = defineAsyncComponent(() => import('./components/AdminView.vue'))
 
 const session = useAuthSession()
-const { user, isLoggedIn, sessionState } = session
+const { user: sessionUser, isLoggedIn: sessionLoggedIn, sessionState } = session
+const previewMode = ref(false)
+const LOCAL_PREVIEW_USER = Object.freeze({
+  id: -1,
+  email: 'preview@local.test',
+  displayName: 'Local Preview',
+  role: 'USER',
+  preview: true,
+})
+const user = computed(() => previewMode.value ? LOCAL_PREVIEW_USER : sessionUser.value)
+const isLoggedIn = computed(() => previewMode.value || sessionLoggedIn.value)
 const workspace = useWorkspaceTabs(user)
 const { activeTab, visitedTabs, tabs, switchTab } = workspace
 const publicView = ref('landing')
+const activeModule = computed(() => JARVIS_MODULES.find(module => module.routeKey === activeTab.value) || null)
+const archiveModuleKey = ref('market')
+const research = useResearchContext()
+const { context: researchContext, setContext: setResearchContext, clearContext: clearResearchContext } = research
+const workflow = useWorkflowHandoff()
+const { backtestHandoff, setBacktestHandoff, clearBacktestHandoff } = workflow
 
 function replacePublicQuery(mutator) {
   const url = new URL(window.location.href)
@@ -58,8 +78,22 @@ function handleLoggedIn(value) {
 }
 
 async function logout() {
+  if (previewMode.value) {
+    previewMode.value = false
+    workspace.reset()
+    clearResearchContext()
+    clearBacktestHandoff()
+    publicView.value = 'landing'
+    replacePublicQuery((params) => {
+      params.delete('preview')
+      params.delete('view')
+    })
+    return
+  }
   await session.logout()
   workspace.reset()
+  clearResearchContext()
+  clearBacktestHandoff()
   publicView.value = 'landing'
   replacePublicQuery((params) => params.delete('view'))
 }
@@ -69,7 +103,33 @@ async function updateProfile(displayName) {
   if (response.code === 200 && response.data) session.acceptLogin(response.data)
 }
 
+function syncArchiveModule(key) {
+  if (JARVIS_MODULES.some(module => module.key === key)) archiveModuleKey.value = key
+}
+
+function navigateWorkspace(routeKey) {
+  const module = JARVIS_MODULES.find(item => item.routeKey === routeKey)
+  if (module) archiveModuleKey.value = module.key
+  switchTab(routeKey)
+}
+
+function openLegacyAdmin() {
+  if (user.value?.role !== 'ADMIN') return
+  switchTab('管理')
+}
+
+function returnToArchive() {
+  if (activeModule.value) archiveModuleKey.value = activeModule.value.key
+  switchTab('研究终端')
+}
+
+function sendStrategyToBacktest(handoff) {
+  setBacktestHandoff(handoff)
+  navigateWorkspace('回测')
+}
+
 watch(sessionState, (state) => {
+  if (previewMode.value) return
   if (state !== 'expired') return
   publicView.value = 'login'
   replacePublicQuery((params) => params.set('view', 'login'))
@@ -77,6 +137,20 @@ watch(sessionState, (state) => {
 
 onMounted(() => {
   const params = new URLSearchParams(window.location.search)
+  const host = window.location.hostname
+  const localPreview = import.meta.env.DEV
+    && (host === '127.0.0.1' || host === 'localhost')
+    && params.get('preview') === '1'
+  if (localPreview) {
+    previewMode.value = true
+    workspace.reset()
+    replacePublicQuery((query) => {
+      query.delete('view')
+      query.delete('oauth')
+      query.set('preview', '1')
+    })
+    return
+  }
   const hasOAuthResult = params.has('oauth')
   const wantsLogin = params.get('view') === 'login'
   if (hasOAuthResult || wantsLogin) publicView.value = 'login'
@@ -100,50 +174,80 @@ onMounted(() => {
     :class="{
       'container--trading': activeTab === '模拟盘',
       'container--analysis': activeTab === '研究终端',
+      'container--workspace': Boolean(activeModule),
     }"
   >
-    <AppHeader :user="user" @logout="logout" @update-profile="updateProfile" />
-    <AppTabs :tabs="tabs" :active="activeTab" @change="switchTab" />
+    <AppHeader v-if="activeTab === '管理'" :user="user" @logout="logout" @update-profile="updateProfile" />
+    <AppTabs v-if="activeTab === '管理'" :tabs="tabs" :active="activeTab" @change="switchTab" />
 
     <AnalysisOsPage
       v-if="visitedTabs.has('研究终端')"
       v-show="activeTab === '研究终端'"
       :active="activeTab === '研究终端'"
-      @navigate="switchTab"
+      :requested-module-key="archiveModuleKey"
+      @focus-change="syncArchiveModule"
+      @navigate="navigateWorkspace"
     />
 
-    <MarketPage v-if="visitedTabs.has('行情')" v-show="activeTab === '行情'" :active="activeTab === '行情'" />
+    <ArchiveWorkspaceShell
+      v-if="activeModule"
+      :module="activeModule"
+      :modules="JARVIS_MODULES"
+      :user="user"
+      :context="researchContext"
+      @return="returnToArchive"
+      @navigate-module="navigateWorkspace"
+      @legacy-admin="openLegacyAdmin"
+      @logout="logout"
+      @update-profile="updateProfile"
+    >
+      <MarketPage v-if="activeTab === '行情'" :active="true" @context-change="setResearchContext" />
 
-    <section v-if="activeTab === '多市场'" class="panel-wrap">
-      <CrossMarketView :user="user" />
-    </section>
+      <section v-else-if="activeTab === '多市场'" class="panel-wrap">
+        <CrossMarketView :user="user" @context-change="setResearchContext" />
+      </section>
 
-    <BacktestPage v-if="visitedTabs.has('回测')" v-show="activeTab === '回测'" :active="activeTab === '回测'" />
+      <BacktestPage
+        v-else-if="activeTab === '回测'"
+        :active="true"
+        :handoff="backtestHandoff"
+        @clear-handoff="clearBacktestHandoff"
+      />
 
-    <section v-if="activeTab === '模拟盘'">
-      <SimTradeView :user="user" />
-    </section>
+      <section v-else-if="activeTab === '模拟盘'">
+        <SimTradeView :user="user" @context-change="setResearchContext" />
+      </section>
 
-    <section v-if="activeTab === '研究助手'" class="panel-wrap">
-      <AiCenter />
-    </section>
+      <section v-else-if="activeTab === '研究助手'" class="panel-wrap">
+        <AiCenter :research-context="researchContext" />
+      </section>
 
+      <SentimentPage v-else-if="activeTab === '多空研报'" />
+      <FinancialReportPage v-else-if="activeTab === '财报解析'" :research-context="researchContext" />
+      <ChainPage v-else-if="activeTab === '产业链图谱'" :research-context="researchContext" />
+      <RiskPage v-else-if="activeTab === '风险预警'" :research-context="researchContext" />
+      <StrategyPage v-else-if="activeTab === '策略生成'" @send-backtest="sendStrategyToBacktest" />
+
+      <section v-else-if="activeTab === '运维'" class="panel-wrap">
+        <OpsView />
+      </section>
+    </ArchiveWorkspaceShell>
+
+    <button
+      v-if="activeTab === '智能报价'"
+      type="button"
+      class="quote-return"
+      @click="switchTab('研究终端')"
+    >
+      ← RETURN TO ARCHIVE
+    </button>
     <QuotePage v-if="visitedTabs.has('智能报价')" v-show="activeTab === '智能报价'" />
-    <SentimentPage v-if="visitedTabs.has('多空研报')" v-show="activeTab === '多空研报'" />
-    <FinancialReportPage v-if="visitedTabs.has('财报解析')" v-show="activeTab === '财报解析'" />
-    <ChainPage v-if="visitedTabs.has('产业链图谱')" v-show="activeTab === '产业链图谱'" />
-    <RiskPage v-if="visitedTabs.has('风险预警')" v-show="activeTab === '风险预警'" />
-    <StrategyPage v-if="visitedTabs.has('策略生成')" v-show="activeTab === '策略生成'" />
-
-    <section v-if="activeTab === '运维'" class="panel-wrap">
-      <OpsView />
-    </section>
 
     <section v-if="user?.role === 'ADMIN' && activeTab === '管理'" class="panel-wrap">
       <AdminView />
     </section>
 
-    <footer v-if="activeTab !== '模拟盘' && activeTab !== '研究终端'" class="foot">
+    <footer v-if="activeTab === '管理'" class="foot">
       <span>贾维斯金融投研平台 · 仅供研究参考，不构成投资建议</span>
     </footer>
   </div>
@@ -152,8 +256,15 @@ onMounted(() => {
 <style scoped>
 .container { max-width: 1580px; margin: 0 auto; padding: 0 20px 32px; }
 .container--trading { max-width: none; padding-left: 12px; padding-right: 12px; padding-bottom: 12px; }
-.container--analysis { max-width: none; padding-left: 12px; padding-right: 12px; padding-bottom: 12px; }
+.container--analysis { max-width: none; padding: 0; }
+.container--workspace { max-width: none; padding: 0; }
 .panel-wrap { margin-top: 4px; }
+.quote-return {
+  margin: 18px 0 12px; border: 0; padding: 0; background: transparent;
+  color: var(--muted); cursor: pointer; font: 600 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: .08em;
+}
+.quote-return:hover { color: var(--text); }
 .foot { color: var(--subtle); font-size: 11px; margin-top: 16px; }
 .auth-shell { position: relative; min-height: 100vh; background: var(--bg); }
 .home-back {

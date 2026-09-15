@@ -16,6 +16,7 @@ import {
 const props = defineProps({
   user: { type: Object, default: null },
 })
+const emit = defineEmits(['context-change'])
 
 const LEGACY_INSTRUMENTS = [
   {
@@ -62,6 +63,7 @@ const currentDefaults = computed(() => currentInstruments.value.filter(item =>
   !hiddenDefaultKeys.value.includes(instrumentKey(item)) && !watchlistKeys.value.has(instrumentKey(item))))
 const displayedInstruments = computed(() => [...currentWatchlist.value, ...currentDefaults.value])
 const marketOpen = computed(() => market.value === 'crypto' || session.value?.is_open === true)
+const selectedInstrument = computed(() => displayedInstruments.value.find(item => item.symbol === selectedSymbol.value) || null)
 
 function instrumentKey(item) {
   return `${item.market}:${item.symbol}`
@@ -166,6 +168,15 @@ function startPriceStream() {
 
 function selectInstrument(symbol) {
   selectedSymbol.value = symbol
+  const item = displayedInstruments.value.find(candidate => candidate.symbol === symbol)
+  if (item) {
+    emit('context-change', {
+      market: item.market,
+      symbol: item.symbol,
+      name: item.name || item.symbol,
+      sourceModule: 'sim-trade',
+    })
+  }
 }
 
 function chooseDefaultSymbol() {
@@ -323,6 +334,16 @@ watch(market, async () => {
   await loadSession()
 })
 
+watch(selectedInstrument, item => {
+  if (!item) return
+  emit('context-change', {
+    market: item.market,
+    symbol: item.symbol,
+    name: item.name || item.symbol,
+    sourceModule: 'sim-trade',
+  })
+})
+
 onMounted(async () => {
   await initialize()
   if (account.value) {
@@ -347,7 +368,7 @@ onBeforeUnmount(() => {
 
     <template v-if="account">
       <header class="sim-toolbar">
-        <div class="sim-title"><h1>模拟交易工作台</h1><span>复用交易终端窗口，支持自选标的与开市交易</span></div>
+        <div class="sim-title"><h1>EXECUTION / SIM TRADING</h1><span>专业图表 · 自选标的 · 模拟下单 · 持仓与止损</span></div>
         <div class="market-switch" role="tablist" aria-label="模拟盘市场切换">
           <button v-for="item in marketOptions" :key="item.value" type="button" class="market-tab"
                   role="tab" :aria-selected="market === item.value" :class="{ active: market === item.value }"
@@ -356,12 +377,12 @@ onBeforeUnmount(() => {
       </header>
 
       <div class="symbol-parser">
-        <span class="parser-label">导入自选</span>
+        <span class="parser-label">INSTRUMENT / 导入自选</span>
         <input v-model="customQuery" class="parser-input"
                :placeholder="market === 'a_share' ? '输入 600519 / SH600519' : market === 'us_stock' ? '输入 AAPL / BRK.B' : '输入 BTC / BTCUSDT'"
                @keyup.enter="resolveCustomInstrument" />
         <button type="button" class="parser-btn" :disabled="resolveLoading || !customQuery.trim()" @click="resolveCustomInstrument">
-          {{ resolveLoading ? '解析中…' : '解析并加入自选' }}
+          {{ resolveLoading ? 'RESOLVING…' : 'RESOLVE + WATCH' }}
         </button>
         <span class="parser-hint">解析成功后自动持久化，可直接用于模拟交易</span>
       </div>
@@ -406,24 +427,24 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.sim-terminal-page { display: flex; flex-direction: column; gap: 10px; margin-top: 2px; min-width: 0; }
-.sim-toolbar { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; min-height: 38px; border-bottom: 1px solid var(--line); }
-.sim-title h1 { margin: 0; color: var(--text); font-size: 16px; font-weight: 680; }
-.sim-title span { display: block; margin-top: 3px; color: var(--subtle); font-size: 10px; }
-.market-switch { display: flex; align-items: stretch; gap: 16px; align-self: stretch; }
-.market-tab { position: relative; border: 0; background: transparent; color: var(--muted); padding: 0 1px 9px; font-size: 11px; cursor: pointer; white-space: nowrap; }
+.sim-terminal-page { display: flex; flex-direction: column; gap: 10px; margin: 0; min-width: 0; }
+.sim-toolbar { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; min-height: 50px; padding: 0 2px 10px; border-bottom: 1px solid var(--line); }
+.sim-title h1 { margin: 0; color: var(--text); font: 650 13px/1 ui-monospace, monospace; letter-spacing: .11em; }
+.sim-title span { display: block; margin-top: 7px; color: var(--subtle); font-size: 10px; }
+.market-switch { display: flex; align-items: stretch; gap: 22px; align-self: stretch; }
+.market-tab { position: relative; border: 0; background: transparent; color: var(--muted); padding: 0 1px 9px; font: 600 9px/1 ui-monospace, monospace; letter-spacing: .06em; cursor: pointer; white-space: nowrap; }
 .market-tab.active { color: var(--text); font-weight: 650; }
 .market-tab.active::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--accent); }
-.symbol-parser { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-sm); }
-.parser-label { color: var(--text); font-size: 10px; font-weight: 650; white-space: nowrap; }
-.parser-input { flex: 0 1 260px; min-width: 140px; height: 30px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius-sm); color: var(--text); padding: 0 9px; font-size: 10px; outline: none; }
+.symbol-parser { display: flex; align-items: center; gap: 8px; padding: 8px 0; background: transparent; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; }
+.parser-label { color: var(--text); font: 650 9px/1 ui-monospace, monospace; letter-spacing: .07em; white-space: nowrap; }
+.parser-input { flex: 0 1 260px; min-width: 140px; height: 30px; background: transparent; border: 0; border-bottom: 1px solid var(--line-strong); border-radius: 0; color: var(--text); padding: 0 6px; font-size: 10px; outline: none; }
 .parser-input:focus { border-color: #6a5b40; }
-.parser-btn { min-height: 30px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: #1c1f22; color: var(--text); padding: 5px 11px; cursor: pointer; font-size: 10px; white-space: nowrap; }
+.parser-btn { min-height: 30px; border: 1px solid #373a32; border-radius: 0; background: #373a32; color: #f2eee6; padding: 5px 11px; cursor: pointer; font: 650 8px/1 ui-monospace, monospace; letter-spacing: .07em; white-space: nowrap; }
 .parser-btn:disabled { opacity: .45; cursor: not-allowed; }
 .parser-hint, .preference-status { color: var(--subtle); font-size: 9px; }
 .preference-status { min-height: 12px; display: flex; gap: 10px; }
 .parser-error { color: var(--warn); }
-.sim-content { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 10px; align-items: stretch; min-width: 0; }
+.sim-content { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 0; align-items: stretch; min-width: 0; border: 1px solid var(--line); }
 @media (max-width: 900px) { .sim-content { grid-template-columns: 190px minmax(0, 1fr); } }
 @media (max-width: 700px) {
   .sim-toolbar { align-items: flex-start; flex-direction: column; }

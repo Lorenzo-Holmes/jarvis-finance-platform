@@ -599,6 +599,14 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .trade-terminal {
+  --line: #2b2e32;
+  --line-strong: #3a3d41;
+  --text: #e7e9e8;
+  --muted: #a4a8aa;
+  --subtle: #74797c;
+  --accent-strong: #d0ad68;
+  --warn: #d8a14d;
+  --surface: #24272a;
   --trade-bg: #111214;
   --trade-panel: #1b1c1f;
   --trade-border: var(--line);
@@ -611,7 +619,7 @@ onBeforeUnmount(() => {
   min-height: 640px;
   overflow: hidden;
   border: 1px solid var(--trade-border);
-  border-radius: 6px;
+  border-radius: 0;
   background: var(--trade-bg);
   color: var(--trade-text);
   box-shadow: none;
@@ -691,7 +699,7 @@ onBeforeUnmount(() => {
 .modal-actions .confirm.buy { background: var(--trade-buy); color: #17140e; }
 .modal-actions .confirm:disabled { opacity: .45; cursor: not-allowed; }
 @media (max-width: 760px) {
-  .trade-terminal { min-height: 650px; border-radius: 8px; }
+  .trade-terminal { min-height: 650px; border-radius: 0; }
   .symbol-block { padding-left: 10px; }
   .symbol-change { display: none; }
   .quote-row { gap: 10px; }
