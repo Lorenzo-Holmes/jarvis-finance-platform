@@ -12,6 +12,14 @@ export default defineConfig({
     modulePreload: {
       polyfill: false,
     },
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('/node_modules/three/build/three.module')) return 'three-core'
+          return undefined
+        },
+      },
+    },
   },
   server: {
     port: 5173,

@@ -4,12 +4,15 @@ import {
   CanvasTexture,
   Color,
   DirectionalLight,
+  DynamicDrawUsage,
   Fog,
   Group,
   HemisphereLight,
+  InstancedMesh,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
+  Object3D,
   PerspectiveCamera,
   PlaneGeometry,
   Raycaster,
@@ -70,7 +73,7 @@ const props = defineProps({
   active: { type: Boolean, default: true },
 })
 
-const emit = defineEmits(['step', 'settled', 'flow', 'activate', 'interaction'])
+const emit = defineEmits(['step', 'settled', 'flow', 'activate', 'interaction', 'motion'])
 const mountRef = ref(null)
 const failed = ref(false)
 
@@ -110,6 +113,14 @@ let postProbeFailed = false
 let postProcessingStatus = 'direct'
 let detailAsset = null
 let detailAssetStatus = 'idle'
+let prewarmTimer = 0
+let motionAmount = 0
+let detailDensity = 0.42
+let settleProgress = 1
+let lastMotionLane = CENTER_LANE
+let lastMotionRow = CENTER_ROW
+let lastMotionPayload = { motionAmount: -1, detailDensity: -1, settleProgress: -1 }
+let baseInstances = null
 
 const drag = new ArchiveDrag()
 const laneTrack = { value: CENTER_LANE, velocity: 0, target: CENTER_LANE }
@@ -119,6 +130,8 @@ const entriesByPoolKey = new Map()
 const textureCache = new Map()
 const materialCache = new Map()
 const sceneDisposables = []
+const baseInstanceGeometries = []
+const hiddenInstanceTransform = new Object3D()
 const cameraAim = new Vector3(-5.13, -2.03, 0.481)
 const cameraBase = new Vector3(-101.635, 11.023, 23.205)
 const cameraAimBase = new Vector3(-5.13, -2.03, 0.481)
@@ -130,6 +143,66 @@ let cameraDetailFov = 13.6
 function smoothstep(value) {
   const t = Math.max(0, Math.min(1, value))
   return t * t * (3 - 2 * t)
+}
+
+function clamp01(value) {
+  return Math.max(0, Math.min(1, value))
+}
+
+function emitMotionState(force = false) {
+  const payload = {
+    motionAmount: clamp01(motionAmount),
+    detailDensity: clamp01(detailDensity),
+    settleProgress: clamp01(settleProgress),
+  }
+  const changed = Math.abs(payload.motionAmount - lastMotionPayload.motionAmount) > 0.012
+    || Math.abs(payload.detailDensity - lastMotionPayload.detailDensity) > 0.012
+    || Math.abs(payload.settleProgress - lastMotionPayload.settleProgress) > 0.012
+  if (!force && !changed) return
+  lastMotionPayload = payload
+  emit('motion', payload)
+}
+
+function detailBudgetForState(extraction) {
+  if (extraction > 0.01) return 6
+  const densityBudget = Math.max(2, Math.min(6, Math.round(1 + detailDensity * 12)))
+  if (props.retrievalState === 'FLOW') return Math.min(motionAmount > 0.52 ? 2 : 3, densityBudget)
+  if (props.retrievalState === 'QUERY' || props.retrievalState === 'MATCH') return Math.min(4, densityBudget)
+  return Math.min(4 + Math.round(settleProgress * 2), densityBudget)
+}
+
+function updateMotionState(dt, visualLane, visualRow) {
+  const laneSpeed = Math.abs(visualLane - lastMotionLane) / Math.max(dt, 0.001)
+  const rowSpeed = Math.abs(visualRow - lastMotionRow) / Math.max(dt, 0.001)
+  lastMotionLane = visualLane
+  lastMotionRow = visualRow
+  const momentumSpeed = momentum
+    ? Math.hypot(momentum.velocity.lane, momentum.velocity.row)
+    : Math.hypot(laneTrack.velocity || 0, rowTrack.velocity || 0)
+  const measuredSpeed = Math.max(Math.hypot(laneSpeed, rowSpeed), momentumSpeed)
+  const motionTarget = clamp01(measuredSpeed / 5.2)
+  const motionRate = motionTarget > motionAmount ? 18 : 5.4
+  motionAmount += (motionTarget - motionAmount) * (1 - Math.exp(-dt * motionRate))
+
+  const settleTarget = props.retrievalState === 'FOCUSED'
+    && !navigationActive
+    && !momentum
+    && activePointer === null
+    && motionAmount < 0.11
+    ? 1
+    : 0
+  const settleRate = settleTarget > settleProgress ? 11.5 : 20
+  settleProgress += (settleTarget - settleProgress) * (1 - Math.exp(-dt * settleRate))
+
+  let detailTarget = 0.42
+  if (props.retrievalState === 'FLOW') detailTarget = 0.22 - 0.07 * motionAmount
+  else if (props.retrievalState === 'QUERY') detailTarget = 0.26
+  else if (props.retrievalState === 'MATCH') detailTarget = 0.30
+  else detailTarget = 0.35 + 0.07 * settleProgress
+  detailTarget = clamp01(detailTarget)
+  const detailRate = detailTarget < detailDensity ? 10.5 : 6.2
+  detailDensity += (detailTarget - detailDensity) * (1 - Math.exp(-dt * detailRate))
+  emitMotionState()
 }
 
 function gaussian(distance, width) {
@@ -144,9 +217,11 @@ function archiveShoulderField(rowOffset, laneOffset) {
 }
 
 function setDesktopBrowseCamera(width, height) {
-  const aspect = Math.max(0.25, width / Math.max(1, height))
   const baseSpan = 7.33
-  const span = Math.max(baseSpan, baseSpan * (16 / 9) / aspect)
+  // Keep the same long-lens vertical framing across desktop aspect ratios.
+  // A taller viewport may crop slightly more of the archive field laterally;
+  // that is preferable to shrinking the files and exposing a blank top band.
+  const span = baseSpan
   const distance = 100
   const referenceDistance = 140
   // Calibrated from the supplied Rhine terminal reference: the dominant
@@ -160,7 +235,7 @@ function setDesktopBrowseCamera(width, height) {
   const viewZ = Math.cos(yaw) * Math.cos(elevation)
   // 55s keyframe alignment: keep the selected file in the left-middle
   // reading zone instead of leaving the aim point above the archive sea.
-  cameraAimBase.set(-5.13, -2.03, 0.481)
+  cameraAimBase.set(-5.13, -2.16, 0.481)
   cameraBase.set(
     cameraAimBase.x + viewX * distance,
     cameraAimBase.y + viewY * distance,
@@ -216,7 +291,44 @@ function labelMaterial(module) {
   return material
 }
 
+function disposeBaseInstances() {
+  if (baseInstances && root) {
+    root.remove(baseInstances.body, baseInstances.inset, baseInstances.mark)
+  }
+  baseInstances = null
+  for (const geometry of baseInstanceGeometries.splice(0)) geometry?.dispose?.()
+}
+
+function createBaseInstances() {
+  if (!root || !archiveLibrary || !entries.length) return
+  disposeBaseInstances()
+  const { geometries: g, materials: m } = archiveLibrary
+  const insetGeometry = g.inset.clone()
+  insetGeometry.translate(0, 0, 0.205)
+  const markGeometry = g.marker.clone()
+  markGeometry.scale(0.70, 0.58, 0.70)
+  markGeometry.translate(2.16, -0.72, 0.37)
+  baseInstanceGeometries.push(insetGeometry, markGeometry)
+
+  const count = entries.length
+  const body = new InstancedMesh(g.body, m.body, count)
+  const inset = new InstancedMesh(insetGeometry, m.inset, count)
+  const mark = new InstancedMesh(markGeometry, m.inner, count)
+  for (const mesh of [body, inset, mark]) {
+    mesh.instanceMatrix.setUsage(DynamicDrawUsage)
+    mesh.frustumCulled = false
+    mesh.receiveShadow = true
+    root.add(mesh)
+  }
+  body.name = 'ARCHIVE_BASE_BODY_INSTANCED'
+  inset.name = 'ARCHIVE_BASE_INSET_INSTANCED'
+  mark.name = 'ARCHIVE_BASE_MARK_INSTANCED'
+  body.castShadow = true
+  baseInstances = { body, inset, mark }
+}
+
 function clearArchive() {
+  disposeBaseInstances()
   while (root?.children?.length) root.remove(root.children[0])
   entries.splice(0, entries.length)
   entriesByPoolKey.clear()
@@ -243,6 +355,7 @@ function createCard(physicalLane, physicalRow) {
     physicalRow,
     slotKey: `slot:${physicalLane}:${physicalRow}`,
   }
+  if (assembly.baseGroup) assembly.baseGroup.visible = false
   root.add(group)
   const entry = {
     ...assembly,
@@ -251,6 +364,7 @@ function createCard(physicalLane, physicalRow) {
     physicalRow,
     virtualLane: physicalLane,
     virtualRow: physicalRow,
+    instanceIndex: entries.length,
   }
   entries.push(entry)
   entriesByPoolKey.set(`${physicalLane}:${physicalRow}`, entry)
@@ -265,6 +379,7 @@ function buildArchiveArray() {
       createCard(physicalLane, physicalRow)
     }
   }
+  createBaseInstances()
 
   if (!initializedTrack) {
     laneTrack.value = laneTrack.target = CENTER_LANE
@@ -331,7 +446,7 @@ function updateFocusVisuals() {
         : archiveLibrary.materials.glass
     }
     if (entry.label) entry.label.material = isFocused && identified ? labelMaterial(module) : labelMaterial(ANONYMOUS_ARCHIVE)
-    if (entry.baseGroup) entry.baseGroup.visible = !(isFocused && detailAsset && detailVisible)
+    if (entry.baseGroup) entry.baseGroup.visible = !baseInstances && !(isFocused && detailAsset && detailVisible)
     if (entry.identityGroup) {
       entry.identityGroup.position.z = isFocused && identified ? (detailVisible ? 0.22 : 0.09) : 0
       entry.identityGroup.visible = Boolean(isFocused && identified)
@@ -365,6 +480,18 @@ async function loadFocusedArchiveAsset() {
     })
     detailAssetStatus = 'ready'
     updateFocusVisuals()
+    if (!prewarmTimer && renderer && scene && camera) {
+      const prewarm = () => {
+        prewarmTimer = 0
+        if (disposed || !renderer || !scene || !camera) return
+        try { renderer.compile(scene, camera) } catch (_) { /* direct rendering remains available */ }
+      }
+      if (typeof window.requestIdleCallback === 'function') {
+        prewarmTimer = window.requestIdleCallback(prewarm, { timeout: 900 })
+      } else {
+        prewarmTimer = window.setTimeout(prewarm, 120)
+      }
+    }
   } catch (error) {
     console.warn('Analysis OS focused GLB unavailable; using procedural fallback', error)
     detailAssetStatus = 'fallback'
@@ -396,6 +523,13 @@ function emitStepFromTrack() {
 function beginFlow(direction = 0) {
   if (!navigationActive) emit('flow', Math.sign(direction || 0))
   navigationActive = true
+  motionAmount = Math.max(motionAmount, 0.38)
+  settleProgress = 0
+  emitMotionState(true)
+  // Do not carry a stationary hover preview into wheel/keyboard navigation.
+  // The moving archive sea should read as simple volumes until the pointer
+  // intentionally settles over a card again.
+  hoveredEntry = null
 }
 
 function shiftRows(steps, source = 'index') {
@@ -413,6 +547,7 @@ function rebaseTracksIfNeeded() {
   if (Math.abs(laneShift) >= LOOP_POOL.laneCount) {
     laneTrack.value -= laneShift
     laneTrack.target -= laneShift
+    lastMotionLane -= laneShift
     if (momentum) {
       momentum.lane.value -= laneShift
       momentum.lane.target -= laneShift
@@ -423,6 +558,7 @@ function rebaseTracksIfNeeded() {
     rowTrack.value -= rowShift
     rowTrack.target -= rowShift
     lastReportedRow -= rowShift
+    lastMotionRow -= rowShift
     if (momentum) {
       momentum.row.value -= rowShift
       momentum.row.target -= rowShift
@@ -456,8 +592,13 @@ function pointerFromEvent(event) {
 function pickEntry(event) {
   pointerFromEvent(event)
   raycaster.setFromCamera(pointer, camera)
-  const hit = raycaster.intersectObjects(entries.flatMap(entry => entry.hitTargets), false)[0]
+  const identityTargets = entries.flatMap(entry => entry.label?.visible ? [entry.label] : [])
+  const targets = baseInstances?.body ? [baseInstances.body, ...identityTargets] : entries.flatMap(entry => entry.hitTargets)
+  const hit = raycaster.intersectObjects(targets, false)[0]
   if (!hit) return null
+  if (baseInstances?.body && hit.object === baseInstances.body && Number.isInteger(hit.instanceId)) {
+    return entries[hit.instanceId] || null
+  }
   return entries.find(entry => entry.hitTargets.includes(hit.object)) || null
 }
 
@@ -740,6 +881,7 @@ function renderFrame(time) {
   const visualLane = laneTrack.value + sleep.lane
   const visualRow = rowTrack.value + sleep.row
   updateWrappedArchivePositions(visualLane, visualRow)
+  updateMotionState(dt, visualLane, visualRow)
 
   camera.position.copy(cameraBase).lerp(cameraDetailBase, detail)
   cameraAim.copy(cameraAimBase).lerp(cameraDetailAim, detail)
@@ -756,16 +898,14 @@ function renderFrame(time) {
   }
   camera.lookAt(cameraAim)
 
-  const interactiveMotion = Boolean(
-    momentum
-    || activePointer !== null
-    || navigationActive
-    || props.retrievalState === 'FLOW'
-    || props.retrievalState === 'QUERY'
-    || sleep.amount > 0.01,
-  )
-  if (composerBundle?.ssaoPass) composerBundle.ssaoPass.enabled = !interactiveMotion
-  if (keyLight) keyLight.castShadow = Boolean(qualityProfile?.shadows && !interactiveMotion)
+  // Browse mode deliberately stays on one stable low-detail render path.
+  // Previously stopping the wheel switched SSAO + cast shadows back on in a
+  // single frame, which made rails, seams and contact shadows "pop" into view.
+  // Keep those expensive/high-frequency details reserved for the extraction
+  // sequence instead of tying them to whether the pointer happens to move.
+  const extractionDetail = smoothstep(Math.max(0, (extraction - 0.46) / 0.54))
+  if (composerBundle?.ssaoPass) composerBundle.ssaoPass.enabled = extractionDetail > 0.72
+  if (keyLight) keyLight.castShadow = Boolean(qualityProfile?.shadows && extractionDetail > 0.86)
 
   const fog = scene.fog
   if (fog instanceof Fog) {
@@ -773,8 +913,8 @@ function renderFrame(time) {
     // Reference keyframes keep edge/card detail much crisper than our old
     // washed vignette. Let distance fog start later and fall off more gently
     // in Browse, while the close-up transition can still tighten it.
-    fog.near = renderedDistance + (8 - 7 * detail)
-    fog.far = renderedDistance + (34 - 18 * detail)
+    fog.near = renderedDistance + (8 - 2.5 * motionAmount - 7 * detail)
+    fog.far = renderedDistance + (34 - 6 * motionAmount - 18 * detail)
   }
 
   const easing = reducedMotion ? 1 : 1 - Math.exp(-dt * 10)
@@ -787,6 +927,31 @@ function renderFrame(time) {
     focusedGlassMaterial.thickness = 0.13 + (0.075 - 0.13) * decrypt
     focusedGlassMaterial.opacity = 0.98 + (0.9 - 0.98) * decrypt
   }
+
+  const detailBudget = detailBudgetForState(extraction)
+  const detailCandidates = entries
+    .map(entry => {
+      const laneDistance = Math.abs(entry.virtualLane - visualLane)
+      const rowDistance = Math.abs(entry.virtualRow - visualRow)
+      return {
+        entry,
+        laneDistance,
+        rowDistance,
+        score: rowDistance + laneDistance * 2.8,
+      }
+    })
+    .filter(item => item.laneDistance <= 1.35 && item.rowDistance <= 4.2)
+    .sort((a, b) => a.score - b.score)
+    .slice(0, detailBudget)
+  const nearDetailSet = new Set(detailCandidates.map(item => item.entry))
+  if (focused && !nearDetailSet.has(focused)) {
+    if (nearDetailSet.size >= detailBudget) {
+      const last = detailCandidates.at(-1)?.entry
+      if (last) nearDetailSet.delete(last)
+    }
+    nearDetailSet.add(focused)
+  }
+
   entries.forEach((entry, index) => {
     const data = entry.group.userData
     const idle = !reducedMotion && !momentum && activePointer === null
@@ -797,11 +962,9 @@ function renderFrame(time) {
         + Math.sin(time * 0.00029 - entry.virtualRow * 0.11 + entry.virtualLane * 0.27) * 0.05) * sleep.amount
       : 0
     const laneRelative = entry.virtualLane - visualLane
-    const laneDistance = Math.abs(laneRelative)
     const rowRelative = entry.virtualRow - visualRow
-    const rowDistance = Math.abs(rowRelative)
     const isFocused = entry === focused
-    const isNear = isFocused || (laneDistance <= 2.2 && rowDistance <= 4.6)
+    const isNear = nearDetailSet.has(entry)
     const showIdentity = Boolean(isFocused && identified)
     const shoulder = archiveShoulderField(rowRelative, laneRelative) * (1 - detail)
     entry.group.position.y += (data.targetY + shoulder + idle + sleepWave - entry.group.position.y) * easing
@@ -812,9 +975,27 @@ function renderFrame(time) {
     const targetTilt = 0
     const idleTilt = focused === entry ? 0 : Math.sin(time * 0.00019 + index * 0.17) * 0.003
     entry.group.rotation.x += (targetTilt + idleTilt - entry.group.rotation.x) * easing
+    entry.group.updateMatrix()
+
+    if (baseInstances) {
+      let matrix = entry.group.matrix
+      if (isFocused && detailAsset && extraction > 0.035) {
+        hiddenInstanceTransform.position.copy(entry.group.position)
+        hiddenInstanceTransform.rotation.copy(entry.group.rotation)
+        hiddenInstanceTransform.scale.setScalar(0.0001)
+        hiddenInstanceTransform.updateMatrix()
+        matrix = hiddenInstanceTransform.matrix
+      }
+      baseInstances.body.setMatrixAt(entry.instanceIndex, matrix)
+      baseInstances.inset.setMatrixAt(entry.instanceIndex, matrix)
+      baseInstances.mark.setMatrixAt(entry.instanceIndex, matrix)
+    }
+
     if (entry.identityGroup) entry.identityGroup.visible = showIdentity
     entry.nearGroup.visible = isNear && !(isFocused && detailAsset && extraction > 0.035)
-    entry.focusGroup.visible = (isFocused && identified) || entry === hoveredEntry
+    // Full latch/fastener/decrypt hardware is an "open file" detail, not a
+    // browse-state decoration. Hover may still preview it for affordance.
+    entry.focusGroup.visible = (isFocused && extraction > 0.14) || entry === hoveredEntry
     if (entry.body) entry.body.castShadow = Boolean(qualityProfile?.shadows && isNear)
 
     if (entry.decryptA && entry.decryptB) {
@@ -828,7 +1009,13 @@ function renderFrame(time) {
     }
   })
 
-  if (composerBundle && !interactiveMotion) composerBundle.composer.render()
+  if (baseInstances) {
+    baseInstances.body.instanceMatrix.needsUpdate = true
+    baseInstances.inset.instanceMatrix.needsUpdate = true
+    baseInstances.mark.instanceMatrix.needsUpdate = true
+  }
+
+  if (composerBundle && extractionDetail > 0.72) composerBundle.composer.render()
   else renderer.render(scene, camera)
   if (!postProbeAttempted && qualityProfile?.postCandidate && renderedFrames > 24) {
     const rect = renderer.domElement.getBoundingClientRect()
@@ -936,6 +1123,11 @@ function init() {
 function dispose() {
   disposed = true
   composerRevision += 1
+  if (prewarmTimer) {
+    if (typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(prewarmTimer)
+    else window.clearTimeout(prewarmTimer)
+  }
+  prewarmTimer = 0
   if (postProbeTimer) window.clearTimeout(postProbeTimer)
   postProbeTimer = 0
   stopRendering()
@@ -978,6 +1170,18 @@ function getDebugState() {
     postCandidate: Boolean(qualityProfile?.postCandidate),
     postProcessingStatus,
     detailAssetStatus,
+    cameraPosition: camera?.position?.toArray?.() || null,
+    cameraAim: cameraAim?.toArray?.() || null,
+    cameraFov: camera?.fov ?? null,
+    canvasSize: renderer?.domElement
+      ? [renderer.domElement.clientWidth, renderer.domElement.clientHeight]
+      : null,
+    motionAmount,
+    detailDensity,
+    settleProgress,
+    browseDetailDensity: detailDensity,
+    baseInstancing: Boolean(baseInstances),
+    instanceCount: baseInstances?.body?.count || 0,
     visibleNear,
     visibleFocus,
     drawCalls: renderer?.info?.render?.calls ?? 0,

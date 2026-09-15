@@ -1,13 +1,13 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { api } from '../api/client'
-import AnalysisArchiveScene from '../components/analysis/AnalysisArchiveScene.vue'
 import { JARVIS_MODULES, moduleByKey, wrap } from '../analysis-os/data/modules'
 import { useArchiveAudio } from '../analysis-os/audio/useArchiveAudio'
 import { useArchiveIdle } from '../analysis-os/motion/useArchiveIdle'
 import { useArchiveTransition } from '../analysis-os/motion/useArchiveTransition'
 
 const emit = defineEmits(['navigate', 'focus-change'])
+const AnalysisArchiveScene = defineAsyncComponent(() => import('../components/analysis/AnalysisArchiveScene.vue'))
 const props = defineProps({
   active: { type: Boolean, default: false },
   requestedModuleKey: { type: String, default: '' },
@@ -28,6 +28,9 @@ const lastUpdated = ref('')
 const clock = ref('—')
 const moduleIndexRef = ref(null)
 const archiveSceneRef = ref(null)
+const motionAmount = ref(0)
+const detailDensity = ref(0.42)
+const settleProgress = ref(1)
 let bootTimer = 0
 const bootTimers = []
 let clockTimer = 0
@@ -61,6 +64,35 @@ const dataStateLabel = computed(() => ({
   loading: 'SYNCING', live: 'LIVE API', catalog: 'CATALOG', fallback: 'FALLBACK',
 }[dataState.value] || 'UNKNOWN'))
 const documentRevealAmount = computed(() => Math.max(0, Math.min(1, (extractionProgress.value - 0.72) / 0.28)))
+const clamp01 = value => Math.max(0, Math.min(1, value))
+const rangeProgress = (value, start, end) => clamp01((value - start) / Math.max(0.001, end - start))
+const calloutFileOpacity = computed(() => {
+  if (retrievalState.value === 'FLOW') return 0.28 - motionAmount.value * 0.16
+  if (retrievalState.value === 'QUERY') return 0.42
+  if (retrievalState.value === 'MATCH') return 0.62
+  return 0.70 + 0.30 * rangeProgress(settleProgress.value, 0, 0.45)
+})
+const calloutNameOpacity = computed(() => {
+  if (retrievalState.value === 'FLOW') return 0.45 - motionAmount.value * 0.20
+  if (retrievalState.value === 'QUERY') return 0.52
+  if (retrievalState.value === 'MATCH') return 0.72
+  return 0.56 + 0.44 * rangeProgress(settleProgress.value, 0.16, 0.72)
+})
+const calloutCtaOpacity = computed(() => {
+  if (retrievalState.value !== 'FOCUSED') return 0
+  return 0.82 * rangeProgress(settleProgress.value, 0.62, 1)
+})
+const calloutCtaReady = computed(() => retrievalState.value === 'FOCUSED'
+  && settleProgress.value >= 0.72
+  && motionAmount.value < 0.14)
+const calloutStyle = computed(() => ({
+  '--file-opacity': calloutFileOpacity.value.toFixed(3),
+  '--name-opacity': calloutNameOpacity.value.toFixed(3),
+  '--cta-opacity': calloutCtaOpacity.value.toFixed(3),
+  '--callout-blur': `${(motionAmount.value * 0.72).toFixed(3)}px`,
+  '--callout-shift': `${(motionAmount.value * 4.8 + (1 - calloutNameOpacity.value) * 1.8).toFixed(2)}px`,
+  '--rule-scale': (0.30 + 0.70 * Math.max(calloutNameOpacity.value, settleProgress.value)).toFixed(3),
+}))
 const accessStage = computed(() => {
   const progress = extractionProgress.value
   if (progress < 0.16) return { code: 'RELEASE LOCK', detail: 'ARCHIVE LOCK RELEASED' }
@@ -125,6 +157,12 @@ function handleSceneFlow(direction = 0) {
     retrievalDirection.value = Math.sign(direction)
     lastNavigationDirection = Math.sign(direction)
   }
+}
+
+function handleSceneMotion(payload = {}) {
+  if (Number.isFinite(payload.motionAmount)) motionAmount.value = clamp01(payload.motionAmount)
+  if (Number.isFinite(payload.detailDensity)) detailDensity.value = clamp01(payload.detailDensity)
+  if (Number.isFinite(payload.settleProgress)) settleProgress.value = clamp01(payload.settleProgress)
 }
 
 function handleSceneStep(delta) {
@@ -375,6 +413,9 @@ onMounted(() => {
       transitionState: { enumerable: true, get: () => transitionState.value },
       retrievalState: { enumerable: true, get: () => retrievalState.value },
       retrievalDirection: { enumerable: true, get: () => retrievalDirection.value },
+      motionAmount: { enumerable: true, get: () => motionAmount.value },
+      detailDensity: { enumerable: true, get: () => detailDensity.value },
+      settleProgress: { enumerable: true, get: () => settleProgress.value },
       scene: { enumerable: true, get: () => archiveSceneRef.value?.getDebugState?.() || null },
     })
     window.__jarvisArchiveDebug = debug
@@ -399,6 +440,7 @@ onBeforeUnmount(() => {
       'is-idle': environmentState !== 'AWAKE',
       'is-sleeping': environmentState === 'SLEEP_DRIFT',
       'is-extracting': extractionProgress > 0.001,
+      'is-browsing': retrievalState !== 'FOCUSED' && extractionProgress < 0.01,
     }"
     :style="{ '--hud-opacity': 1 - hudDim * 0.45 }"
     aria-label="JARVIS Analysis OS 模块档案终端"
@@ -443,6 +485,7 @@ onBeforeUnmount(() => {
         @settled="handleSceneSettled"
         @activate="activateModule"
         @interaction="archiveIdle.activity"
+        @motion="handleSceneMotion"
       />
     </div>
 
@@ -492,35 +535,24 @@ onBeforeUnmount(() => {
     </p>
 
     <section
-      v-if="focusedModule && retrievalState === 'FOCUSED'"
+      v-if="focusedModule && extractionProgress < 0.01"
       class="archive-callout"
+      :class="{ 'is-settled': retrievalState === 'FOCUSED' }"
+      :data-state="retrievalState"
+      :style="calloutStyle"
       aria-label="当前聚焦模块"
-      :style="{ opacity: Math.max(0, .86 - extractionProgress * 1.58) }"
     >
-      <p class="file-context">INTERNAL DATABASE <i>/</i> {{ focusedModule.category }} ARCHIVE</p>
       <p class="file-number">FILE NUMBER: {{ focusedModule.code }}</p>
       <div class="callout-meta">
         <strong>{{ focusedModule.labelEn }}</strong>
-        <span>{{ focusedModule.labelZh }} / {{ focusedModule.category }}</span>
+        <span>{{ focusedModule.labelZh }}</span>
       </div>
       <div class="callout-rule"><span></span></div>
-      <p class="module-summary">{{ focusedModule.summary }}</p>
-      <div class="capability-line">
-        <span v-for="item in focusedModule.capabilities" :key="item">{{ item }}</span>
-      </div>
-      <button type="button" @click="activateModule(focusedModule.key)">ACCESS FILE <span>→</span></button>
-    </section>
-
-    <section
-      v-if="focusedModule && retrievalState !== 'FOCUSED' && extractionProgress < 0.01"
-      class="retrieval-hud"
-      :data-state="retrievalState"
-      aria-live="polite"
-    >
-      <span>{{ retrievalState === 'FLOW' ? 'ARCHIVE FLOW' : retrievalState === 'QUERY' ? 'ARCHIVE QUERY' : 'MATCH FOUND' }}</span>
-      <strong>{{ retrievalState === 'MATCH' ? focusedModule.code : `${moduleNumber} / ${focusedModule.labelEn}` }}</strong>
-      <small>{{ retrievalState === 'FLOW' ? 'INDEX STREAM ACTIVE' : retrievalState === 'QUERY' ? 'SEARCHING ARCHIVE…' : `${focusedModule.labelZh} / IDENTITY RESOLVED` }}</small>
-      <i></i>
+      <button
+        type="button"
+        :disabled="!calloutCtaReady"
+        @click="activateModule(focusedModule.key)"
+      >ACCESS FILE <span>→</span></button>
     </section>
 
     <section
@@ -566,7 +598,7 @@ onBeforeUnmount(() => {
     </div>
 
     <div class="archive-hint" aria-hidden="true">
-      <span>DRAG / FREE PLANE</span><i></i><span>WHEEL / ROW</span><i></i><span>CLICK TWICE / ENTER</span>
+      <span>DRAG / FREE PLANE</span><i></i><span>WHEEL / ROW</span>
     </div>
 
     <div class="column-navigation" aria-label="当前模块列">
@@ -599,11 +631,6 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <footer class="system-footer">
-      <span><i></i> SESSION AUTHORIZED</span>
-      <span>WEBGL / MODULE ARCHIVE / {{ dataStateLabel }} / {{ environmentState }}</span>
-      <strong>拖动档案海或使用顶部 MODULE INDEX 选择功能</strong>
-    </footer>
     <div class="powered">POWERED BY <b>JARVIS</b><i></i></div>
   </section>
 </template>
@@ -684,15 +711,18 @@ onBeforeUnmount(() => {
   display: flex; align-items: center; justify-content: flex-end; gap: 18px; padding-bottom: 7px;
 }
 .module-index-shell.expanded { min-width: min(930px, calc(100vw - 390px)); }
-.terminal-brand, .module-index-shell, .archive-hint, .column-navigation, .system-footer, .powered {
+.terminal-brand, .module-index-shell, .archive-hint, .column-navigation, .powered {
   transition: opacity .55s cubic-bezier(.22,1,.36,1);
 }
 .analysis-os.is-idle .module-index-shell,
 .analysis-os.is-idle .archive-hint,
 .analysis-os.is-idle .column-navigation,
-.analysis-os.is-idle .system-footer,
 .analysis-os.is-idle .powered { opacity: var(--hud-opacity, 1); }
 .analysis-os.is-sleeping .archive-hint { opacity: .24; }
+.analysis-os.is-browsing .module-index-shell { opacity: .82; }
+.analysis-os.is-browsing .archive-hint { opacity: .22; }
+.analysis-os.is-browsing .column-navigation strong { opacity: .34; }
+.analysis-os.is-browsing .powered { opacity: .52; }
 .module-index-label { display: flex; align-items: center; gap: 9px; padding: 0; border: 0; background: transparent; color: #777269; font: 650 7px/1 ui-monospace, monospace; letter-spacing: .15em; white-space: nowrap; cursor: pointer; }
 .module-index-label span { color: #aaa398; font-size: 6px; letter-spacing: .09em; }
 .module-index-track { position: absolute; right: 0; top: 27px; display: flex; width: 0; opacity: 0; pointer-events: none; overflow: hidden; scrollbar-width: none; scroll-behavior: smooth; background: rgba(236,231,224,.94); border-top: 1px solid rgba(112,108,99,.25); border-bottom: 1px solid rgba(112,108,99,.25); mask-image: linear-gradient(90deg, transparent, #000 2%, #000 97%, transparent); transition: width .42s cubic-bezier(.22,1,.36,1), opacity .22s ease; }
@@ -717,34 +747,40 @@ onBeforeUnmount(() => {
 .module-index-tools button:disabled { opacity: .4; }
 .module-index-tools time { color: #4d4c46; }
 
-.data-warning { position: absolute; z-index: 11; right: 42px; top: 118px; margin: 0; max-width: 470px; color: #8b6944; font: 600 7px/1.5 ui-monospace, monospace; text-align: right; letter-spacing: .05em; }
-.archive-callout { position: absolute; z-index: 8; left: 50.5%; right: auto; top: 43%; width: min(510px, 37vw); color: #20221d; pointer-events: none; }
-.archive-callout .file-context { margin: 0 0 13px; color: #79746b; font: 650 8px/1 ui-monospace, monospace; letter-spacing: .12em; }
-.archive-callout .file-context i { margin: 0 10px; color: #aaa398; font-style: normal; }
-.archive-callout .file-number { margin: 0; color: #1f211d; font: 720 23px/.98 ui-monospace, monospace; letter-spacing: -.035em; }
-.callout-meta { margin-top: 15px; display: flex; align-items: baseline; gap: 13px; color: #77736a; }
+.data-warning { position: absolute; z-index: 11; right: 42px; top: 118px; margin: 0; max-width: 470px; color: #8b6944; font: 600 7px/1.5 ui-monospace, monospace; text-align: right; letter-spacing: .05em; opacity: .56; transition: opacity .18s ease; }
+.analysis-os.is-browsing .data-warning { opacity: 0; }
+.archive-callout {
+  position: absolute; z-index: 8; left: 50.5%; right: auto; top: 43%; width: min(430px, 32vw);
+  color: #20221d; pointer-events: none; filter: blur(var(--callout-blur, 0));
+  transform: translate3d(0, var(--callout-shift, 0), 0);
+  transition: filter .09s linear, transform .09s linear;
+}
+.archive-callout .file-number {
+  margin: 0; color: #1f211d; font: 690 18px/.98 ui-monospace, monospace; letter-spacing: -.025em;
+  opacity: var(--file-opacity, .7); transition: opacity .09s linear;
+}
+.callout-meta {
+  margin-top: 12px; display: flex; align-items: baseline; gap: 11px; color: #77736a;
+  opacity: var(--name-opacity, .56); transform: translateY(calc((1 - var(--name-opacity, .56)) * 3px));
+  transition: opacity .09s linear, transform .09s linear;
+}
 .callout-meta strong { color: #5e5c55; font: 680 9px/1 ui-monospace, monospace; letter-spacing: .09em; }
 .callout-meta span { font-size: 10px; }
-.callout-rule { position: relative; height: 1px; margin: 23px 0 16px 48px; background: rgba(78,77,70,.72); }
-.callout-rule::before { content: ''; position: absolute; left: -48px; top: -2px; width: 5px; height: 5px; background: #252721; }
-.module-summary { margin: 0 0 12px 48px; color: #6f6c64; font-size: 10.5px; line-height: 1.6; max-width: 400px; }
-.capability-line { margin-left: 48px; display: flex; flex-wrap: wrap; gap: 7px 15px; color: #8f897f; font: 600 7.5px/1 ui-monospace, monospace; letter-spacing: .07em; }
-.archive-callout > button { pointer-events: auto; margin: 24px 0 0 48px; border: 0; background: transparent; color: #252721; padding: 0; font: 680 9px/1 ui-monospace, monospace; letter-spacing: .08em; cursor: pointer; }
-.archive-callout > button span { margin-left: 42px; font-size: 17px; vertical-align: -2px; }
-.archive-callout > button:hover { color: #8a7657; }
-.retrieval-hud {
-  position: absolute; z-index: 10; left: 56%; top: 39%; width: min(300px, 24vw);
-  display: grid; gap: 8px; color: #5f5b53; pointer-events: none;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+.callout-rule {
+  position: relative; height: 1px; margin: 18px 0 0 36px; background: rgba(78,77,70,.54);
+  transform-origin: left center; transform: scaleX(var(--rule-scale, .3)); opacity: var(--name-opacity, .56);
+  transition: transform .09s linear, opacity .09s linear;
 }
-.retrieval-hud > span { color: #8c8579; font-size: 7px; font-weight: 650; letter-spacing: .16em; }
-.retrieval-hud > strong { color: #42443d; font-size: 11px; font-weight: 650; letter-spacing: .055em; }
-.retrieval-hud > small { color: #9a9388; font-size: 7px; font-weight: 600; letter-spacing: .11em; }
-.retrieval-hud > i { position: relative; display: block; width: 100%; height: 1px; margin-top: 5px; overflow: hidden; background: rgba(126,119,108,.22); }
-.retrieval-hud > i::after { content: ''; position: absolute; inset: 0 auto 0 0; width: 30%; background: #9a7b50; transform: translateX(-120%); animation: retrieval-scan .72s cubic-bezier(.22,1,.36,1) infinite; }
-.retrieval-hud[data-state="MATCH"] > span,
-.retrieval-hud[data-state="MATCH"] > strong { color: #7b633f; }
-.retrieval-hud[data-state="MATCH"] > i::after { width: 100%; transform: none; animation: none; }
+.callout-rule::before { content: ''; position: absolute; left: -36px; top: -1px; width: 3px; height: 3px; background: #252721; }
+.archive-callout > button {
+  pointer-events: auto; margin: 16px 0 0 36px; border: 0; background: transparent; color: #252721; padding: 0;
+  font: 660 8px/1 ui-monospace, monospace; letter-spacing: .08em; cursor: pointer;
+  opacity: var(--cta-opacity, 0); transform: translateY(calc((1 - var(--cta-opacity, 0)) * 3px));
+  transition: opacity .035s linear, transform .09s linear;
+}
+.archive-callout > button:disabled { pointer-events: none; cursor: default; }
+.archive-callout > button span { margin-left: 34px; font-size: 15px; vertical-align: -2px; }
+.archive-callout > button:hover { color: #8a7657; }
 .access-sequence {
   position: absolute; z-index: 13; right: 7%; top: 37%; width: min(330px, 28vw);
   padding: 16px 0; color: #292b25; pointer-events: none;
@@ -805,9 +841,6 @@ onBeforeUnmount(() => {
 .module-directory-list strong { display: block; margin-top: 7px; font: 650 11px/1.2 ui-monospace, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .module-directory-list small { display: block; margin-top: 6px; color: #948f85; font-size: 9px; }
 
-.system-footer { position: absolute; z-index: 7; left: 49px; right: 44px; bottom: 21px; display: flex; align-items: center; gap: 22px; color: #9a958b; font: 500 8px/1 ui-monospace, monospace; letter-spacing: .08em; pointer-events: none; }
-.system-footer strong { margin-left: auto; color: #7c786f; font-weight: 500; }
-.system-footer > span:first-child i { display: inline-block; width: 4px; height: 4px; margin-right: 8px; background: #8b8f75; vertical-align: 1px; }
 .powered { position: absolute; z-index: 8; right: 45px; bottom: 82px; display: flex; align-items: center; gap: 5px; color: #67655e; font-size: 11px; }
 .powered b { color: #20221d; font-weight: 760; }
 .powered i { display: inline-block; width: 18px; height: 3px; margin-left: 8px; background: #34362f; }
@@ -823,11 +856,9 @@ onBeforeUnmount(() => {
   .module-index-shell.expanded .module-index-track { width: min(720px, calc(100vw - 270px)); }
   .module-index-tools > span, .module-index-tools time { display: none; }
   .archive-callout { left: 52%; right: auto; top: 39%; width: 42vw; }
-  .retrieval-hud { left: 52%; width: 40vw; }
   .archive-counter { left: 30px; }
   .archive-hint { left: 275px; }
   .column-navigation { left: 49%; }
-  .system-footer { left: 30px; right: 28px; }
 }
 
 @media (max-width: 700px) {
@@ -846,11 +877,9 @@ onBeforeUnmount(() => {
   .module-index-track button { min-width: 102px; height: 54px; padding: 7px 12px; }
   .module-index-track button::after { bottom: 0; }
   .archive-callout { left: 18px; right: 18px; top: 23%; width: auto; }
-  .retrieval-hud { left: 18px; right: 18px; top: 24%; width: auto; }
   .archive-callout .file-number { font-size: 10px; }
-  .module-summary { max-width: 330px; }
   .archive-counter { left: 18px; bottom: 77px; transform: scale(.72); transform-origin: bottom left; }
-  .archive-hint, .column-navigation, .system-footer, .powered { display: none; }
+  .archive-hint, .column-navigation, .powered { display: none; }
   .module-directory { left: 14px; right: 14px; top: 70px; width: auto; max-height: 74vh; overflow: auto; padding: 17px; }
   .module-directory-list { grid-template-columns: 1fr 1fr; }
   .data-warning { left: 18px; right: 18px; top: 86px; max-width: none; text-align: left; }
