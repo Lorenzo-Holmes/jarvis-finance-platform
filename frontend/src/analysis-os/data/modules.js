@@ -79,6 +79,12 @@ export const JARVIS_MODULES = [
     code: 'EX-12', summary: '查看 Java API、AI、数据库、行情流和认证服务状态。',
     capabilities: ['HEALTH', 'LATENCY', 'AUDIT'], availability: 'ready',
   },
+  {
+    id: 'module:market-trend', no: 13, lane: 2, row: 3, key: 'market-trend',
+    labelEn: 'MARKET TREND', labelZh: '市场趋势预测', category: 'INTELLIGENCE', routeKey: '市场趋势预测',
+    code: 'IN-13', summary: '基于服务端自营日 K 数据，展示统计趋势区间、技术依据与 AI 解读。',
+    capabilities: ['TREND BAND', 'TECHNICAL BASIS', 'AI INTERPRETATION'], availability: 'ready',
+  },
 ]
 
 export function wrap(value, count) {

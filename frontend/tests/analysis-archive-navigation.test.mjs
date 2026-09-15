@@ -11,10 +11,10 @@ import {
   ArchiveMomentum,
 } from '../src/analysis-os/motion/archiveMomentum.js'
 
-test('module archive defines the twelve stable workspace modules', () => {
-  assert.equal(JARVIS_MODULES.length, 12)
-  assert.deepEqual(JARVIS_MODULES.map(module => module.no), [1,2,3,4,5,6,7,8,9,10,11,12])
-  assert.equal(new Set(JARVIS_MODULES.map(module => module.routeKey)).size, 12)
+test('module archive defines the thirteen stable workspace modules', () => {
+  assert.equal(JARVIS_MODULES.length, 13)
+  assert.deepEqual(JARVIS_MODULES.map(module => module.no), [1,2,3,4,5,6,7,8,9,10,11,12,13])
+  assert.equal(new Set(JARVIS_MODULES.map(module => module.routeKey)).size, 13)
   assert.equal(modulesForLane(1).length, 3)
   assert.equal(moduleAtCell(1, 2).key, 'financial')
   assert.equal(moduleAtCell(1, 5).key, 'financial')

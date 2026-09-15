@@ -7,11 +7,13 @@
   - 边界：样本不足、非法收盘价、预测天数与置信度裁剪
   - smart_quote 扩展后的向后兼容（无 closes 时不输出 forecast，content 语义不变）
 """
+from decimal import Decimal
+
 import pytest
 
 from backend.app.ai_routes import QuoteReq
 from backend.app.ai_service import smart_quote
-from backend.app.research_tools import trend_forecast
+from backend.app.research_tools import _z_score_for, trend_forecast
 
 
 def test_trend_forecast_deterministic_on_gentle_series():
@@ -25,11 +27,11 @@ def test_trend_forecast_deterministic_on_gentle_series():
     assert result["horizon_days"] == 5
     assert result["last_close"] == "130.400000"
     assert result["center"] == "132.828947"
-    assert result["lower"] == "129.810940"
-    assert result["upper"] == "135.846955"
+    assert result["lower"] == "129.232805"
+    assert result["upper"] == "136.425090"
     assert result["change_to_center_pct"] == "1.8627"
     assert result["slope_pct_per_day"] == "0.3725"
-    assert result["band_pct"] == "2.3144"
+    assert result["band_pct"] == "2.7578"
     assert result["vol_daily_pct"] == "0.6292"
 
 
@@ -42,7 +44,7 @@ def test_trend_forecast_center_equals_last_close_plus_slope_times_horizon():
     assert result["center"] == "144.000000"        # 139 + 1×5
     assert result["change_to_center_pct"] == "3.5971"
     # 线性序列的日收益非恒定，但仍应有极小波动区间
-    assert result["band_pct"] == "0.3021"
+    assert result["band_pct"] == "0.3600"
 
 
 def test_trend_forecast_boundaries_wrap_center():
@@ -78,6 +80,15 @@ def test_trend_forecast_higher_confidence_widens_band():
     wide = trend_forecast(closes, horizon_days=5, confidence=0.99)
 
     assert float(wide["band_pct"]) > float(narrow["band_pct"])
+
+
+def test_trend_confidence_uses_two_sided_normal_quantiles():
+    assert _z_score_for(Decimal("0.90")) == Decimal("1.6449")
+    assert _z_score_for(Decimal("0.95")) == Decimal("1.9600")
+    assert _z_score_for(Decimal("0.99")) == Decimal("2.5758")
+    assert _z_score_for(Decimal("0.50")) == Decimal("0.6745")
+    # 93% must not be silently reported as 93% while using a 90% critical value.
+    assert abs(float(_z_score_for(Decimal("0.93"))) - 1.8119) < 0.0001
 
 
 def test_trend_forecast_longer_horizon_widens_band():
@@ -127,7 +138,7 @@ def test_trend_forecast_volatile_series_has_wide_band():
 
     assert result["available"] is True
     assert result["vol_daily_pct"] == "3.4104"
-    assert result["band_pct"] == "17.7395"          # 高波动 → 区间显著变宽
+    assert result["band_pct"] == "21.1377"          # 高波动 → 区间显著变宽
     assert float(result["lower"]) > 0               # 下界不应为负价
 
 

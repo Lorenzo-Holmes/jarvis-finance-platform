@@ -273,6 +273,13 @@ export const api = {
     horizon_days: options.horizonDays,
     confidence: options.confidence,
   }),
+  // 市场趋势预测（FR-12）：单资产日 K 统计基线（趋势区间）+ 技术依据 + AI 解读。
+  // 历史收盘价由 Java 服务端从自营 K 线库注入并覆盖客户端传值，前端只传标的与预测参数。
+  aiTrend: (options = {}) => post(API_BASE, '/api/ai/trend', {
+    market: options.market,
+    horizon_days: options.horizonDays,
+    confidence: options.confidence,
+  }),
   aiFinancialReport: (content) => post(API_BASE, '/api/ai/financial/report', { content }),
   aiChain: (node, context = '') => post(API_BASE, '/api/ai/analyze/chain', { node, context }),
   aiSentiment: (reports) => post(API_BASE, '/api/ai/analyze/sentiment', { reports }),

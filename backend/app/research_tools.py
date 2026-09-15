@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from statistics import NormalDist
 from typing import Any, Dict, Iterable, List, Optional
 
 
@@ -635,32 +636,34 @@ def _linear_slope(values: List[Decimal]) -> Optional[Decimal]:
 
 
 def _z_score_for(confidence: Decimal) -> Decimal:
-    """给定置信度的单侧 z 值（正态近似，纯 Decimal 常量表）。
+    """给定双侧中心区间覆盖率的 z 值（正态近似）。
 
-    只覆盖常见置信度，其余取最近档，避免引入 scipy 等依赖、保持口径可审计。
+    常见置信度使用可审计常量；其余范围使用 Python 标准库正态分布分位数，
+    避免把请求的置信度静默映射到不同覆盖水平。
     """
     table = (
-        (Decimal("0.99"), Decimal("2.3263")),
-        (Decimal("0.975"), Decimal("1.9600")),
-        (Decimal("0.95"), Decimal("1.6449")),
-        (Decimal("0.90"), Decimal("1.2816")),
-        (Decimal("0.80"), Decimal("0.8416")),
-        (Decimal("0.50"), Decimal("0.0000")),
+        (Decimal("0.99"), Decimal("2.5758")),
+        (Decimal("0.975"), Decimal("2.2414")),
+        (Decimal("0.95"), Decimal("1.9600")),
+        (Decimal("0.90"), Decimal("1.6449")),
+        (Decimal("0.80"), Decimal("1.2816")),
+        (Decimal("0.50"), Decimal("0.6745")),
     )
     for threshold, z in table:
-        if confidence >= threshold:
+        if confidence == threshold:
             return z
-    return table[-1][1]
+    probability = (Decimal("1") + confidence) / Decimal("2")
+    return Decimal(str(NormalDist().inv_cdf(float(probability))))
 
 
 def trend_forecast(closes_raw: Any, horizon_days: Any = None,
                    confidence: Any = None, symbol: Any = None) -> Dict[str, Any]:
     """基于历史收盘价的统计/时序基线预测，输出未来价格走势趋势区间（FR-07）。
 
-    方法（确定性、无机器学习，纯 Decimal）：
+    方法（确定性、无机器学习；价格/波动指标以 Decimal 计算，z 分位数采用标准库正态近似）：
       1. 用最近 _TREND_LOOKBACK 根收盘价做最小二乘线性拟合，得到每步斜率；
       2. 中心值 = 最近收盘价 + 斜率 × 预测天数（线性外推）；
-      3. 区间半宽 = 单侧 z 值 × 日收益波动率 × sqrt(预测天数) × 最近收盘价；
+      3. 双侧中心区间半宽 = z(confidence) × 日收益波动率 × sqrt(预测天数) × 最近收盘价；
       4. 上下界 = 中心值 ± 半宽。
 
     返回（available=False 时仅含 available/bars/reason）：
@@ -725,4 +728,74 @@ def trend_forecast(closes_raw: Any, horizon_days: Any = None,
         "slope_pct_per_day": _fmt(_percent(slope, last_close), Q4),
         "band_pct": _fmt(_percent(band, last_close), Q4),
         "vol_daily_pct": _fmt(std * Decimal("100"), Q4),
+    }
+
+
+# ---- 市场趋势预测：单资产日 K 统计基线 + 技术依据（FR-12）----
+# 在 trend_forecast（趋势区间）之上补充均线 / RSI / 支撑阻力等可展示的「预测依据」，
+# 全部由本层确定性计算；LLM 只负责解读，不得改写任何数值口径。
+# 宏观/行业/舆情多维数据与机器学习模型列入二期，本期收敛为单资产日 K 统计基线。
+_TREND_INDICATOR_WINDOW = 20      # 支撑 / 阻力回看窗口（交易日）
+
+
+def _trend_indicators(closes: List[Decimal]) -> Dict[str, Any]:
+    """从收盘价序列计算供 LLM 引用的技术依据（确定性、纯 Decimal）。"""
+    last = closes[-1]
+    sma5 = _sma(closes, 5)
+    sma20 = _sma(closes, 20)
+    ema12 = _ema(closes, 12)
+    rsi14 = _rsi(closes, 14)
+    window = closes[-min(_TREND_INDICATOR_WINDOW, len(closes)):]
+    if sma5 is not None and sma20 is not None:
+        ma_trend = "多头排列" if sma5 > sma20 else "空头排列" if sma5 < sma20 else "均线粘合"
+    else:
+        ma_trend = None
+    return {
+        "sma5": _fmt(sma5),
+        "sma20": _fmt(sma20),
+        "ema12": _fmt(ema12),
+        "rsi14": _fmt(rsi14, Q4),
+        "distance_to_sma20_pct": _fmt(_percent(last - sma20, sma20), Q4) if sma20 is not None else None,
+        "support20": _fmt(min(window)),
+        "resistance20": _fmt(max(window)),
+        "ma_trend": ma_trend,
+    }
+
+
+def _trend_direction(slope_pct: Optional[Decimal]) -> Dict[str, str]:
+    """按日均斜率（%）给出方向标签，阈值与前端展示口径一致。"""
+    if slope_pct is None:
+        return {"key": "flat", "label": "横盘震荡"}
+    if slope_pct > Decimal("0.005"):
+        return {"key": "up", "label": "上行趋势"}
+    if slope_pct < Decimal("-0.005"):
+        return {"key": "down", "label": "下行趋势"}
+    return {"key": "flat", "label": "横盘震荡"}
+
+
+def market_trend(closes_raw: Any, horizon_days: Any = None,
+                 confidence: Any = None, symbol: Any = None) -> Dict[str, Any]:
+    """市场趋势预测（FR-12）：单资产日 K 统计基线 + 技术依据。
+
+    在 trend_forecast（未来走势趋势区间）之上补充均线 / RSI / 支撑阻力等
+    可展示的「预测依据」，全部为确定性计算，无机器学习、无外部数据管道。
+
+    返回（available=False 时仅含 available/bars/reason）：
+      - forecast：趋势区间（字段与 trend_forecast 一致：center/lower/upper…）
+      - indicators：技术依据（sma5/sma20/ema12/rsi14/距sma20/支撑/阻力/均线排列）
+      - direction：方向标签 {key: up|down|flat, label}
+    """
+    forecast = trend_forecast(closes_raw, horizon_days=horizon_days,
+                              confidence=confidence, symbol=symbol)
+    if not forecast.get("available"):
+        return forecast
+
+    closes = [_decimal(value) for value in (closes_raw or [])]
+    closes = [value for value in closes if value is not None and value > 0]
+
+    slope_pct = _decimal(forecast.get("slope_pct_per_day"))
+    return {
+        **forecast,
+        "indicators": _trend_indicators(closes),
+        "direction": _trend_direction(slope_pct),
     }

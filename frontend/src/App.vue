@@ -24,6 +24,7 @@ const ChainPage = defineAsyncComponent(() => import('./pages/ChainPage.vue'))
 const RiskPage = defineAsyncComponent(() => import('./pages/RiskPage.vue'))
 const StrategyPage = defineAsyncComponent(() => import('./pages/StrategyPage.vue'))
 const QuotePage = defineAsyncComponent(() => import('./pages/QuotePage.vue'))
+const TrendPage = defineAsyncComponent(() => import('./pages/TrendPage.vue'))
 const OpsView = defineAsyncComponent(() => import('./components/OpsView.vue'))
 const AdminView = defineAsyncComponent(() => import('./components/AdminView.vue'))
 
@@ -222,26 +223,18 @@ onMounted(() => {
         <AiCenter :research-context="researchContext" />
       </section>
 
+      <QuotePage v-else-if="activeTab === '智能报价'" />
       <SentimentPage v-else-if="activeTab === '多空研报'" />
       <FinancialReportPage v-else-if="activeTab === '财报解析'" :research-context="researchContext" />
       <ChainPage v-else-if="activeTab === '产业链图谱'" :research-context="researchContext" />
       <RiskPage v-else-if="activeTab === '风险预警'" :research-context="researchContext" />
       <StrategyPage v-else-if="activeTab === '策略生成'" @send-backtest="sendStrategyToBacktest" />
+      <TrendPage v-else-if="activeTab === '市场趋势预测'" />
 
       <section v-else-if="activeTab === '运维'" class="panel-wrap">
         <OpsView />
       </section>
     </ArchiveWorkspaceShell>
-
-    <button
-      v-if="activeTab === '智能报价'"
-      type="button"
-      class="quote-return"
-      @click="switchTab('研究终端')"
-    >
-      ← RETURN TO ARCHIVE
-    </button>
-    <QuotePage v-if="visitedTabs.has('智能报价')" v-show="activeTab === '智能报价'" />
 
     <section v-if="user?.role === 'ADMIN' && activeTab === '管理'" class="panel-wrap">
       <AdminView />
@@ -259,12 +252,6 @@ onMounted(() => {
 .container--analysis { max-width: none; padding: 0; }
 .container--workspace { max-width: none; padding: 0; }
 .panel-wrap { margin-top: 4px; }
-.quote-return {
-  margin: 18px 0 12px; border: 0; padding: 0; background: transparent;
-  color: var(--muted); cursor: pointer; font: 600 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
-  letter-spacing: .08em;
-}
-.quote-return:hover { color: var(--text); }
 .foot { color: var(--subtle); font-size: 11px; margin-top: 16px; }
 .auth-shell { position: relative; min-height: 100vh; background: var(--bg); }
 .home-back {

@@ -428,10 +428,44 @@ test('quote page renders trend band from backend forecast and never sends closes
 
   // tab 已注册并挂载
   assert.match(tabsSource, /'智能报价'/)
-  assert.match(appSource, /QuotePage v-if="visitedTabs\.has\('智能报价'\)"/)
+  assert.match(appSource, /QuotePage v-else-if="activeTab === '智能报价'"/)
 })
 
 test('strategy analysis explicitly opts into the bounded CSRF retry policy', async () => {
   const clientSource = await readFile(join(frontendRoot, 'src/api/client.js'), 'utf8')
   assert.match(clientSource, /aiStrategy:[\s\S]*csrfRetry:\s*true/)
+})
+
+test('trend page renders interval and basis from backend forecast and never sends closes', async () => {
+  const source = await readFile(join(frontendRoot, 'src/pages/TrendPage.vue'), 'utf8')
+  const clientSource = await readFile(join(frontendRoot, 'src/api/client.js'), 'utf8')
+  const tabsSource = await readFile(join(frontendRoot, 'src/composables/useWorkspaceTabs.js'), 'utf8')
+  const appSource = await readFile(join(frontendRoot, 'src/App.vue'), 'utf8')
+
+  // 趋势区间与预测依据均来自后端确定性计算结果，前端只做展示
+  assert.match(source, /result\.value\?\.forecast/)
+  assert.match(source, /forecast\.lower/)
+  assert.match(source, /forecast\.center/)
+  assert.match(source, /forecast\.upper/)
+  assert.match(source, /indicators\./)
+  // 样本不足时给出友好提示，不当作硬错误
+  assert.match(source, /insufficient_closes/)
+  assert.match(source, /样本不足/)
+  // 页面四态齐全
+  assert.match(source, /state="loading"/)
+  assert.match(source, /state="error"/)
+  assert.match(source, /tr-empty/)
+
+  // 前端不计算、也不传递历史收盘价：一律由服务端注入
+  assert.doesNotMatch(source, /closes\s*:/)
+  assert.match(clientSource, /aiTrend:[\s\S]*market: options\.market/)
+  assert.doesNotMatch(clientSource, /aiTrend:[\s\S]{0,400}?closes/)
+  // 请求路径必须是 Java 主后端端点 /api/ai/trend；
+  // /api/ai/analyze/trend 是 Java 转发给 Python 的内部路径，前端直连会 500（09-14 浏览器走查发现）
+  assert.match(clientSource, /aiTrend:[\s\S]{0,120}?'\/api\/ai\/trend'/)
+  assert.doesNotMatch(clientSource, /aiTrend:[\s\S]{0,120}?'\/api\/ai\/analyze\/trend'/)
+
+  // tab 已注册并挂载
+  assert.match(tabsSource, /'市场趋势预测'/)
+  assert.match(appSource, /TrendPage v-else-if="activeTab === '市场趋势预测'"/)
 })
