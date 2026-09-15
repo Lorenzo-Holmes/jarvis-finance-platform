@@ -161,6 +161,12 @@ export function createArchiveAssembly(module, labelMaterial, library) {
   const glass = new Mesh(g.glass, m.glass)
   glass.position.z = 0.33
   glass.renderOrder = 2
+  // The transmissive pane creates a dark grey/green bevel at this extreme
+  // long-lens angle. When a newly selected card lifts, that refractive edge
+  // changes sub-pixel coverage and appears to shake into place like a refresh.
+  // Keep the pane out of the browse/focus/extraction transition; the frame,
+  // rails and label still provide the intended layered archive construction.
+  glass.visible = false
   // Keep the warm outer frame on its own visibility layer. Rails/rings/glass
   // may still follow the original near-detail budget, but the gold frame no
   // longer has to blink with those heavier details during wheel motion.
@@ -185,6 +191,15 @@ export function createArchiveAssembly(module, labelMaterial, library) {
     new Mesh(g.glassSide, m.gasket), new Mesh(g.glassSide, m.gasket),
     new Mesh(g.glassTop, m.gasket), new Mesh(g.glassTop, m.gasket),
   ]
+  glassEdges.forEach(edge => {
+    // These dark gasket strips are too high-contrast at the archive camera's
+    // long focal length. Making them appear during extraction creates the
+    // grey-green edge "flash" reported on the selected card, so keep them out
+    // of the visible focus transition while retaining the geometry for future
+    // close-up use.
+    edge.userData.archiveGlassEdge = true
+    edge.visible = false
+  })
   glassEdges[0].position.set(-2.24, 0, 0.365)
   glassEdges[1].position.set(2.24, 0, 0.365)
   glassEdges[2].position.set(0, 1.58, 0.365)
