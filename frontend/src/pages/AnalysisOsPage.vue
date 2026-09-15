@@ -11,6 +11,7 @@ const AnalysisArchiveScene = defineAsyncComponent(() => import('../components/an
 const props = defineProps({
   active: { type: Boolean, default: false },
   requestedModuleKey: { type: String, default: '' },
+  workspacePreload: { type: Function, default: null },
 })
 
 const modules = JARVIS_MODULES
@@ -31,12 +32,16 @@ const archiveSceneRef = ref(null)
 const motionAmount = ref(0)
 const detailDensity = ref(0.42)
 const settleProgress = ref(1)
+const handoffProgress = ref(0)
+const handoffPhase = ref('IDLE')
 let bootTimer = 0
 const bootTimers = []
 let clockTimer = 0
 let syncVersion = 0
 let retrievalTimer = 0
 let matchTimer = 0
+let handoffFrame = 0
+let handoffRevision = 0
 let lastNavigationDirection = 1
 const reducedMotion = typeof window !== 'undefined'
   && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
@@ -46,7 +51,11 @@ const archiveTransition = useArchiveTransition()
 const { transitionState, extractionProgress } = archiveTransition
 const archiveAudio = useArchiveAudio()
 const { enabled: soundEnabled } = archiveAudio
-const WORKSPACE_REVEAL_HOLD_MS = 180
+// The post-extraction beat is an animated handoff rather than a dead timeout.
+// This keeps the archive visibly alive while the destination chunk is already
+// being fetched/parsed in the background.
+const WORKSPACE_HANDOFF_MS = 1420
+const WORKSPACE_HANDOFF_REDUCED_MS = 180
 
 const focusedModule = computed(() => moduleByKey(focusedKey.value, modules))
 const focusedIndex = computed(() => Math.max(0, modules.findIndex(module => module.key === focusedKey.value)))
@@ -66,6 +75,36 @@ const dataStateLabel = computed(() => ({
 const documentRevealAmount = computed(() => Math.max(0, Math.min(1, (extractionProgress.value - 0.72) / 0.28)))
 const clamp01 = value => Math.max(0, Math.min(1, value))
 const rangeProgress = (value, start, end) => clamp01((value - start) / Math.max(0.001, end - start))
+const easeProgress = value => {
+  const t = clamp01(value)
+  return t * t * (3 - 2 * t)
+}
+const handoffVisual = computed(() => {
+  const active = handoffPhase.value !== 'IDLE'
+  const progress = active ? handoffProgress.value : 0
+  const transfer = easeProgress(rangeProgress(progress, 0.04, 1))
+  return {
+    archiveOpacity: 1 - transfer * 0.06,
+    panelOpacity: active ? 0.86 + easeProgress(rangeProgress(progress, 0.03, 0.82)) * 0.14 : 0.86,
+    line: active ? easeProgress(rangeProgress(progress, 0.08, 0.56)) : 0,
+    scanX: active ? -120 + easeProgress(rangeProgress(progress, 0.18, 0.92)) * 640 : -120,
+    readyOpacity: active ? 0.70 + easeProgress(rangeProgress(progress, 0.28, 0.76)) * 0.30 : 0.70,
+  }
+})
+const analysisStyle = computed(() => ({
+  '--hud-opacity': (1 - hudDim.value * 0.45).toFixed(3),
+  '--handoff-archive-opacity': handoffVisual.value.archiveOpacity.toFixed(3),
+  '--handoff-line': handoffVisual.value.line.toFixed(3),
+  '--handoff-scan-x': `${handoffVisual.value.scanX.toFixed(1)}%`,
+  '--handoff-ready-opacity': handoffVisual.value.readyOpacity.toFixed(3),
+}))
+const documentRevealStyle = computed(() => ({
+  opacity: documentRevealAmount.value * handoffVisual.value.panelOpacity,
+  // A large animated clip-path repainted the entire reveal surface on every
+  // extraction frame. Use compositor-only opacity/translation instead so the
+  // card-to-handoff boundary does not stall the main thread.
+  transform: `translate3d(${((1 - documentRevealAmount.value) * 12).toFixed(2)}px, 0, 0)`,
+}))
 const calloutFileOpacity = computed(() => {
   if (retrievalState.value === 'FLOW') return 0.28 - motionAmount.value * 0.16
   if (retrievalState.value === 'QUERY') return 0.42
@@ -233,19 +272,80 @@ function navigateToModule(module, source = 'index') {
   navigateBySteps(delta, source)
 }
 
+function cancelWorkspaceHandoff(reset = true) {
+  handoffRevision += 1
+  if (handoffFrame) cancelAnimationFrame(handoffFrame)
+  handoffFrame = 0
+  if (reset) {
+    handoffProgress.value = 0
+    handoffPhase.value = 'IDLE'
+  }
+}
+
+function animateWorkspaceHandoff(reduced = false) {
+  cancelWorkspaceHandoff(true)
+  const runRevision = handoffRevision
+  const duration = reduced ? WORKSPACE_HANDOFF_REDUCED_MS : WORKSPACE_HANDOFF_MS
+  const start = performance.now()
+  handoffPhase.value = 'SETTLING'
+  handoffProgress.value = 0
+  return new Promise(resolve => {
+    const tick = now => {
+      if (runRevision !== handoffRevision) {
+        resolve(false)
+        return
+      }
+      const progress = duration <= 0 ? 1 : clamp01((now - start) / duration)
+      handoffProgress.value = progress
+      handoffPhase.value = progress < 0.19
+        ? 'SETTLING'
+        : progress < 0.72
+          ? 'PRESENTING'
+          : 'HANDOFF'
+      if (progress >= 1) {
+        handoffProgress.value = 1
+        handoffFrame = 0
+        resolve(true)
+        return
+      }
+      handoffFrame = requestAnimationFrame(tick)
+    }
+    handoffFrame = requestAnimationFrame(tick)
+  })
+}
+
+function waitForPaint() {
+  return new Promise(resolve => {
+    requestAnimationFrame(() => requestAnimationFrame(resolve))
+  })
+}
+
 async function activateModule(key = focusedKey.value) {
   const module = moduleByKey(key, modules)
   if (!module) return
   if (extractionProgress.value > 0.001 || transitionState.value === 'EXTRACTING') return
   if (retrievalState.value === 'FLOW' || retrievalState.value === 'QUERY') return
   archiveIdle.activity('activate')
-  archiveAudio.play('extract')
   focusedKey.value = module.key
   await nextTick()
+
+  archiveAudio.play('extract')
   const entered = await archiveTransition.enter(reducedMotion)
   if (!entered) return
-  if (!reducedMotion) await new Promise(resolve => window.setTimeout(resolve, WORKSPACE_REVEAL_HOLD_MS))
+  const handedOff = await animateWorkspaceHandoff(reducedMotion)
+  if (!handedOff) return
+
+  // Keep destination parsing and chart setup out of the visible extraction.
+  // If idle preload has not finished yet, complete it only after motion has
+  // settled on the final handoff frame.
+  const workspaceReady = props.workspacePreload?.(module.routeKey, 'immediate')
+  if (workspaceReady?.then) {
+    await workspaceReady
+    if (!reducedMotion) await waitForPaint()
+  }
+
   archiveAudio.play('reveal')
+  if (!reducedMotion) await waitForPaint()
   emit('navigate', module.routeKey)
   archiveTransition.workspaceActive()
 }
@@ -346,7 +446,11 @@ function toggleSound() {
   archiveAudio.toggle()
 }
 
-watch(focusedKey, scrollActiveIndexIntoView)
+watch(focusedKey, key => {
+  scrollActiveIndexIntoView()
+  const module = moduleByKey(key, modules)
+  if (module?.routeKey) props.workspacePreload?.(module.routeKey, 'idle')
+}, { flush: 'post', immediate: true })
 watch(moduleIndexExpanded, expanded => {
   if (expanded) scrollActiveIndexIntoView()
 })
@@ -361,6 +465,7 @@ watch(() => props.requestedModuleKey, key => {
 })
 watch(() => props.active, active => {
   if (!active) {
+    cancelWorkspaceHandoff(true)
     archiveIdle.setEnabled(false)
     return
   }
@@ -416,6 +521,8 @@ onMounted(() => {
       motionAmount: { enumerable: true, get: () => motionAmount.value },
       detailDensity: { enumerable: true, get: () => detailDensity.value },
       settleProgress: { enumerable: true, get: () => settleProgress.value },
+      handoffProgress: { enumerable: true, get: () => handoffProgress.value },
+      handoffPhase: { enumerable: true, get: () => handoffPhase.value },
       scene: { enumerable: true, get: () => archiveSceneRef.value?.getDebugState?.() || null },
     })
     window.__jarvisArchiveDebug = debug
@@ -424,6 +531,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   syncVersion += 1
+  cancelWorkspaceHandoff(true)
   clearRetrievalTimers()
   if (bootTimer) window.clearTimeout(bootTimer)
   bootTimers.splice(0).forEach(timer => window.clearTimeout(timer))
@@ -441,8 +549,9 @@ onBeforeUnmount(() => {
       'is-sleeping': environmentState === 'SLEEP_DRIFT',
       'is-extracting': extractionProgress > 0.001,
       'is-browsing': retrievalState !== 'FOCUSED' && extractionProgress < 0.01,
+      'is-handoff': handoffPhase !== 'IDLE',
     }"
-    :style="{ '--hud-opacity': 1 - hudDim * 0.45 }"
+    :style="analysisStyle"
     aria-label="JARVIS Analysis OS 模块档案终端"
     @pointerdown.capture="archiveIdle.activity('pointer')"
   >
@@ -572,11 +681,9 @@ onBeforeUnmount(() => {
     <section
       v-if="focusedModule && documentRevealAmount > 0"
       class="document-reveal"
+      :data-handoff-phase="handoffPhase"
       aria-hidden="true"
-      :style="{
-        opacity: documentRevealAmount * .86,
-        clipPath: `inset(0 ${Math.round((1 - documentRevealAmount) * 100)}% 0 0)`,
-      }"
+      :style="documentRevealStyle"
     >
       <header>
         <span>MODULE WORKSPACE / {{ moduleNumber }}</span>
@@ -648,7 +755,11 @@ onBeforeUnmount(() => {
   color: var(--ink); background: var(--paper);
   font-family: "MiSans", "Mi Sans", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
 }
-.archive-stage { position: absolute; inset: 0; z-index: 0; }
+.archive-stage {
+  position: absolute; inset: 0; z-index: 0;
+  opacity: var(--handoff-archive-opacity, 1);
+  will-change: opacity;
+}
 .boot-layer {
   position: fixed; inset: 0; z-index: 200; overflow: hidden;
   background: #e6e2da; color: #171914; cursor: pointer;
@@ -796,8 +907,20 @@ onBeforeUnmount(() => {
   position: absolute; z-index: 6; right: 3.5%; top: 18%; width: min(560px, 39vw); height: 58%;
   display: grid; grid-template-rows: auto 1fr auto; padding: 26px 28px 20px;
   border-top: 1px solid rgba(111,106,97,.4); border-bottom: 1px solid rgba(111,106,97,.32);
-  background: linear-gradient(90deg, rgba(231,226,217,.12), rgba(239,235,227,.7));
-  backdrop-filter: blur(2px); pointer-events: none; transition: opacity .05s linear;
+  background: linear-gradient(90deg, rgba(231,226,217,.34), rgba(239,235,227,.78));
+  overflow: hidden; pointer-events: none; contain: paint;
+  will-change: opacity, transform;
+}
+.document-reveal::before {
+  content: ''; position: absolute; left: 28px; right: 28px; top: 96px; height: 1px;
+  background: rgba(119,111,98,.42); transform: scaleX(var(--handoff-line, 0));
+  transform-origin: left center; pointer-events: none;
+}
+.document-reveal::after {
+  content: ''; position: absolute; top: 0; bottom: 0; left: 0; width: 24%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.20), transparent);
+  transform: translate3d(var(--handoff-scan-x, -120%), 0, 0);
+  opacity: var(--handoff-line, 0); pointer-events: none; will-change: transform;
 }
 .document-reveal header { align-self: start; display: grid; gap: 7px; }
 .document-reveal header span { color: #89847a; font: 650 7px/1 ui-monospace, monospace; letter-spacing: .13em; }
@@ -805,7 +928,10 @@ onBeforeUnmount(() => {
 .document-reveal header small { color: #747068; font-size: 11px; }
 .document-grid { align-self: center; display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); border-top: 1px solid rgba(124,119,109,.25); border-left: 1px solid rgba(124,119,109,.25); }
 .document-grid span { min-height: 62px; display: grid; place-items: center start; padding: 0 11px; border-right: 1px solid rgba(124,119,109,.25); border-bottom: 1px solid rgba(124,119,109,.25); color: #777269; font: 600 7px/1.3 ui-monospace, monospace; letter-spacing: .08em; }
-.document-reveal footer { color: #999287; font: 600 7px/1 ui-monospace, monospace; letter-spacing: .11em; }
+.document-reveal footer {
+  color: #999287; font: 600 7px/1 ui-monospace, monospace; letter-spacing: .11em;
+  opacity: var(--handoff-ready-opacity, .7);
+}
 .analysis-os.is-extracting .module-index-shell,
 .analysis-os.is-extracting .archive-counter,
 .analysis-os.is-extracting .archive-hint,

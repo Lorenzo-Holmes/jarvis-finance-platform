@@ -58,6 +58,17 @@ const IDLE_RENDER_INTERVAL_MS = 1000 / 31
 const DETAIL_RETENTION_BIAS = 0.34
 const FRAME_DETAIL_BUDGET = 6
 const FRAME_RETENTION_BIAS = 0.48
+// Keep one geometry representation on screen for the whole browse -> focus ->
+// extraction path. The standalone GLB uses a darker graphite/seal silhouette;
+// swapping to it while a card is selected produces the grey-green edge pop and
+// a refresh-like shimmer reported during extraction. The loader remains in the
+// codebase for future/offscreen use, but the visible transition stays procedural.
+const USE_FOCUSED_GLB_IN_TRANSITION = false
+// The extraction sequence must stay on one renderer path. Switching to SSAO
+// or allocating a shadow map mid-animation produces a refresh-like hitch and a
+// visible "sharpening" step on some GPUs. Keep extraction on direct rendering
+// and pre-resident focused geometry instead.
+const STABLE_DIRECT_EXTRACTION = true
 
 const ANONYMOUS_ARCHIVE = {
   id: 'archive:anonymous',
@@ -330,13 +341,13 @@ function createBaseInstances() {
   for (const mesh of [body, inset, mark]) {
     mesh.instanceMatrix.setUsage(DynamicDrawUsage)
     mesh.frustumCulled = false
-    mesh.receiveShadow = true
+    mesh.receiveShadow = false
     root.add(mesh)
   }
   body.name = 'ARCHIVE_BASE_BODY_INSTANCED'
   inset.name = 'ARCHIVE_BASE_INSET_INSTANCED'
   mark.name = 'ARCHIVE_BASE_MARK_INSTANCED'
-  body.castShadow = true
+  body.castShadow = false
   baseInstances = { body, inset, mark }
 }
 
@@ -442,7 +453,12 @@ function updateFocusVisuals() {
   const focused = focusedEntry()
   const extraction = Math.max(0, Math.min(1, Number(props.extractionProgress) || 0))
   const identified = extraction > 0.001 || props.retrievalState === 'MATCH' || props.retrievalState === 'FOCUSED'
-  const detailVisible = extraction > 0.035
+  // Keep the focused GLB resident before extraction starts. The previous
+  // procedural -> GLB swap at extraction ~= 0.035 could trigger first-use
+  // shader compilation and looked exactly like a brief refresh followed by a
+  // sharper frame.
+  const detailVisible = USE_FOCUSED_GLB_IN_TRANSITION
+    && (extraction > 0.035 || props.retrievalState === 'FOCUSED')
   const previewLift = props.retrievalState === 'QUERY'
     ? 0.12
     : props.retrievalState === 'MATCH'
@@ -465,9 +481,10 @@ function updateFocusVisuals() {
       ? 0.965 + extraction * 0.091
       : isHovered ? 0.985 : 0.965
     if (entry.glass) {
-      entry.glass.material = isFocused && extraction > 0.32
-        ? focusedGlassMaterial
-        : archiveLibrary.materials.glass
+      // Keep the same glass material before and during extraction. Changing to
+      // the focused transmissive material altered edge contrast in a single
+      // frame and read as another small refresh/sharpen step.
+      entry.glass.material = archiveLibrary.materials.glass
     }
     if (entry.label) entry.label.material = isFocused && identified ? labelMaterial(module) : labelMaterial(ANONYMOUS_ARCHIVE)
     if (entry.baseGroup) entry.baseGroup.visible = !baseInstances && !(isFocused && detailAsset && detailVisible)
@@ -477,7 +494,7 @@ function updateFocusVisuals() {
     }
     if (entry.nearGroup && isFocused && detailAsset && detailVisible) entry.nearGroup.visible = false
   }
-  if (detailAsset) {
+  if (detailAsset && USE_FOCUSED_GLB_IN_TRANSITION) {
     if (focused && detailAsset.parent !== focused.group) {
       focused.group.add(detailAsset)
       detailAsset.position.set(0, 0, 0)
@@ -499,8 +516,8 @@ async function loadFocusedArchiveAsset() {
     detailAsset.name = 'JARVIS_FOCUSED_ARCHIVE_GLB'
     detailAsset.traverse(node => {
       if (!node.isMesh) return
-      node.castShadow = true
-      node.receiveShadow = true
+      node.castShadow = false
+      node.receiveShadow = false
     })
     detailAssetStatus = 'ready'
     updateFocusVisuals()
@@ -756,11 +773,14 @@ function resize() {
   const qualityChanged = !qualityProfile || qualityProfile.name !== nextQuality.name
   qualityProfile = nextQuality
   configureArchiveRenderer(renderer, qualityProfile)
+  renderer.shadowMap.enabled = false
   const nativeDpr = window.devicePixelRatio || 1
   const renderDpr = Math.min(nativeDpr * (qualityProfile.renderScale || 1), qualityProfile.maxDpr)
   renderer.setPixelRatio(renderDpr)
   renderer.setSize(width, height, false)
-  if (qualityProfile.name !== 'MOBILE' && detailAssetStatus === 'idle') loadFocusedArchiveAsset()
+  if (USE_FOCUSED_GLB_IN_TRANSITION
+    && qualityProfile.name !== 'MOBILE'
+    && detailAssetStatus === 'idle') loadFocusedArchiveAsset()
   if (qualityChanged && !qualityProfile.postCandidate && composerBundle) {
     composerRevision += 1
     disposeArchiveComposer(composerBundle)
@@ -776,7 +796,7 @@ function resize() {
   resizeArchiveComposer(composerBundle, width, height)
   if (keyLight) {
     const shadowSize = qualityProfile.name === 'HIGH' ? 2048 : 1024
-    keyLight.castShadow = Boolean(qualityProfile.shadows)
+    keyLight.castShadow = false
     keyLight.shadow.mapSize.set(shadowSize, shadowSize)
   }
   camera.aspect = width / height
@@ -936,14 +956,13 @@ function renderFrame(time) {
   }
   camera.lookAt(cameraAim)
 
-  // Browse mode deliberately stays on one stable low-detail render path.
-  // Previously stopping the wheel switched SSAO + cast shadows back on in a
-  // single frame, which made rails, seams and contact shadows "pop" into view.
-  // Keep those expensive/high-frequency details reserved for the extraction
-  // sequence instead of tying them to whether the pointer happens to move.
+  // Browse + extraction deliberately stay on one stable render path. A prior
+  // version enabled SSAO and shadow maps part-way through extraction; each
+  // switch forced render-target/shader work and the next frame looked sharper,
+  // which users perceived as repeated refresh hitches.
   const extractionDetail = smoothstep(Math.max(0, (extraction - 0.46) / 0.54))
-  if (composerBundle?.ssaoPass) composerBundle.ssaoPass.enabled = extractionDetail > 0.72
-  if (keyLight) keyLight.castShadow = Boolean(qualityProfile?.shadows && extractionDetail > 0.86)
+  if (composerBundle?.ssaoPass) composerBundle.ssaoPass.enabled = false
+  if (keyLight) keyLight.castShadow = false
 
   const fog = scene.fog
   if (fog instanceof Fog) {
@@ -1037,6 +1056,12 @@ function renderFrame(time) {
     const isFocused = entry === focused
     const isNear = nearDetailEntries.has(entry)
     const hasFrame = frameDetailEntries.has(entry)
+    const focusedDetailActive = Boolean(
+      isFocused
+      && USE_FOCUSED_GLB_IN_TRANSITION
+      && detailAsset
+      && (extraction > 0.035 || props.retrievalState === 'FOCUSED')
+    )
     const showIdentity = Boolean(isFocused && identified)
     const shoulder = archiveShoulderField(rowRelative, laneRelative) * (1 - detail)
     const targetY = data.targetY + shoulder
@@ -1057,7 +1082,7 @@ function renderFrame(time) {
 
     if (baseInstances) {
       let matrix = entry.group.matrix
-      if (isFocused && detailAsset && extraction > 0.035) {
+      if (focusedDetailActive) {
         hiddenInstanceTransform.position.copy(entry.group.position)
         hiddenInstanceTransform.rotation.copy(entry.group.rotation)
         hiddenInstanceTransform.scale.setScalar(0.0001)
@@ -1070,12 +1095,32 @@ function renderFrame(time) {
     }
 
     if (entry.identityGroup) entry.identityGroup.visible = showIdentity
-    if (entry.frameGroup) entry.frameGroup.visible = hasFrame && !(isFocused && detailAsset && extraction > 0.035)
-    entry.nearGroup.visible = isNear && !(isFocused && detailAsset && extraction > 0.035)
+    if (entry.marker) entry.marker.visible = showIdentity && !focusedDetailActive
+    if (entry.labelCarrier) entry.labelCarrier.visible = showIdentity && !focusedDetailActive
+    if (entry.label) entry.label.visible = showIdentity
+    // Never render the procedural shell on top of the focused GLB. After the
+    // previous prewarm change the GLB becomes visible already in FOCUSED state,
+    // while these layers used to stay visible until extraction > 0.035. The two
+    // nearly-coplanar representations fought in the depth buffer, producing the
+    // saw-tooth / refresh-like shimmer visible along the selected file edges.
+    if (entry.frameGroup) entry.frameGroup.visible = hasFrame && !focusedDetailActive
+    entry.nearGroup.visible = isNear && !focusedDetailActive
     // Full latch/fastener/decrypt hardware is an "open file" detail, not a
     // browse-state decoration. Hover may still preview it for affordance.
-    entry.focusGroup.visible = (isFocused && extraction > 0.14) || entry === hoveredEntry
-    if (entry.body) entry.body.castShadow = Boolean(qualityProfile?.shadows && isNear)
+    // Do not introduce the focus hardware after the click has already started
+    // moving the card. Keep the stable hardware visible as soon as the archive
+    // reaches FOCUSED so extraction itself only changes transforms, not the
+    // selected card's silhouette.
+    const focusPreviewVisible = (isFocused && (props.retrievalState === 'FOCUSED' || extraction > 0.001))
+      || entry === hoveredEntry
+    entry.focusGroup.visible = focusPreviewVisible
+    if (entry.focusGroup) {
+      for (const child of entry.focusGroup.children) {
+        if (child === entry.decryptA || child === entry.decryptB) continue
+        child.visible = !focusedDetailActive && !child.userData?.archiveGlassEdge
+      }
+    }
+    if (entry.body) entry.body.castShadow = false
 
     if (entry.decryptA && entry.decryptB) {
       const decryptProgress = isFocused ? smoothstep(Math.max(0, (extraction - 0.46) / 0.36)) : 0
@@ -1094,14 +1139,17 @@ function renderFrame(time) {
     baseInstances.mark.instanceMatrix.needsUpdate = true
   }
 
-  if (composerBundle && extractionDetail > 0.72) composerBundle.composer.render()
-  else renderer.render(scene, camera)
+  renderer.render(scene, camera)
   // Keep optional post-processing completely off the browse path. Allocating
   // and probing fullscreen render targets while the user is simply browsing
   // can still cause a one-frame GPU/compositor disturbance on some drivers.
   // If post is ever needed, defer that work until the file is actually being
   // extracted; direct rendering remains the stable fallback throughout browse.
-  if (extraction > 0.52 && !postProbeAttempted && qualityProfile?.postCandidate && renderedFrames > 24) {
+  if (!STABLE_DIRECT_EXTRACTION
+    && extraction > 0.52
+    && !postProbeAttempted
+    && qualityProfile?.postCandidate
+    && renderedFrames > 24) {
     const rect = renderer.domElement.getBoundingClientRect()
     schedulePostProcessingProbe(Math.max(1, rect.width), Math.max(1, rect.height), qualityProfile)
   }
@@ -1136,6 +1184,7 @@ function init() {
     renderer = new WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' })
     qualityProfile = archiveQualityProfile(element.clientWidth || 1440, window.devicePixelRatio || 1)
     configureArchiveRenderer(renderer, qualityProfile)
+    renderer.shadowMap.enabled = false
     renderer.setClearColor('#eae5e1', 1)
     renderer.domElement.style.touchAction = 'none'
     element.appendChild(renderer.domElement)
@@ -1149,7 +1198,7 @@ function init() {
     scene.add(new HemisphereLight(0xfffbf4, 0xa79f92, 0.82))
     keyLight = new DirectionalLight(0xfffbf1, 2.35)
     keyLight.position.set(-11, 18, 13)
-    keyLight.castShadow = Boolean(qualityProfile.shadows)
+    keyLight.castShadow = false
     keyLight.shadow.mapSize.set(qualityProfile.name === 'HIGH' ? 2048 : 1024, qualityProfile.name === 'HIGH' ? 2048 : 1024)
     keyLight.shadow.camera.left = -28
     keyLight.shadow.camera.right = 28
@@ -1172,7 +1221,7 @@ function init() {
     const floor = new Mesh(floorGeometry, floorMaterial)
     floor.rotation.x = -Math.PI / 2
     floor.position.y = -4.63
-    floor.receiveShadow = true
+    floor.receiveShadow = false
     scene.add(floor)
     sceneDisposables.push(floorGeometry, floorMaterial)
 
@@ -1190,7 +1239,7 @@ function init() {
     } else {
       labelPrewarmTimer = window.setTimeout(labelPrewarm, 180)
     }
-    if (qualityProfile?.name !== 'MOBILE') loadFocusedArchiveAsset()
+    if (USE_FOCUSED_GLB_IN_TRANSITION && qualityProfile?.name !== 'MOBILE') loadFocusedArchiveAsset()
 
     renderer.domElement.addEventListener('pointerdown', onPointerDown)
     renderer.domElement.addEventListener('pointermove', onPointerMove)
