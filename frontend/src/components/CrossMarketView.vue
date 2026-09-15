@@ -607,7 +607,7 @@ onMounted(async () => {
 .headline-quote > b { color: var(--accent-strong); font-size: 24px; line-height: 1; font-weight: 680; letter-spacing: -.025em; font-variant-numeric: tabular-nums; }
 .headline-quote span { font-size: 10px; font-variant-numeric: tabular-nums; }
 .chart-shell { position: relative; margin-top: 10px; }
-.chart { width: 100%; background: rgba(232,229,225,.5); border: 1px solid var(--line); border-radius: 0; }
+.chart { width: 100%; background: var(--workspace-chart-bg, transparent); border: 1px solid var(--line); border-radius: 0; }
 .chart.tall { height: 520px; }
 .chart-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 7px; color: var(--subtle); font-size: 9px; }
 .right-rail { display: flex; flex-direction: column; gap: 0; min-width: 0; border-left: 1px solid var(--line); }
