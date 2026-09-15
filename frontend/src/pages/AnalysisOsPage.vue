@@ -6,10 +6,11 @@ import { useArchiveAudio } from '../analysis-os/audio/useArchiveAudio'
 import { useArchiveIdle } from '../analysis-os/motion/useArchiveIdle'
 import { useArchiveTransition } from '../analysis-os/motion/useArchiveTransition'
 
-const emit = defineEmits(['navigate', 'focus-change'])
+const emit = defineEmits(['navigate', 'focus-change', 'toggle-night-mode'])
 const AnalysisArchiveScene = defineAsyncComponent(() => import('../components/analysis/AnalysisArchiveScene.vue'))
 const props = defineProps({
   active: { type: Boolean, default: false },
+  nightMode: { type: Boolean, default: false },
   requestedModuleKey: { type: String, default: '' },
   workspacePreload: { type: Function, default: null },
 })
@@ -550,6 +551,7 @@ onBeforeUnmount(() => {
       'is-extracting': extractionProgress > 0.001,
       'is-browsing': retrievalState !== 'FOCUSED' && extractionProgress < 0.01,
       'is-handoff': handoffPhase !== 'IDLE',
+      'is-night': props.nightMode,
     }"
     :style="analysisStyle"
     aria-label="JARVIS Analysis OS 模块档案终端"
@@ -589,6 +591,7 @@ onBeforeUnmount(() => {
         :sleep-amount="sleepAmount"
         :extraction-progress="extractionProgress"
         :active="props.active"
+        :night-mode="props.nightMode"
         @flow="handleSceneFlow"
         @step="handleSceneStep"
         @settled="handleSceneSettled"
@@ -596,6 +599,10 @@ onBeforeUnmount(() => {
         @interaction="archiveIdle.activity"
         @motion="handleSceneMotion"
       />
+    </div>
+
+    <div class="archive-aurora" aria-hidden="true">
+      <i class="archive-aurora-band"></i>
     </div>
 
     <header class="terminal-brand" aria-label="JARVIS Analysis OS">
@@ -635,6 +642,13 @@ onBeforeUnmount(() => {
         <button type="button" @click="emit('navigate', '智能报价')">QUOTE</button>
         <button type="button" :disabled="dataState === 'loading'" @click="syncSystemStatus">↻ SYNC</button>
         <button type="button" :aria-pressed="soundEnabled" @click="toggleSound">{{ soundEnabled ? '◉ SOUND' : '○ SOUND' }}</button>
+        <button
+          type="button"
+          class="archive-theme-toggle"
+          :aria-pressed="props.nightMode"
+          :aria-label="props.nightMode ? '切换到日间模式' : '切换到夜间模式'"
+          @click="emit('toggle-night-mode')"
+        >{{ props.nightMode ? '● NIGHT' : '○ NIGHT' }}</button>
         <span>{{ dataStateLabel }}</span>
         <time>{{ clock }}</time>
       </div>
@@ -754,11 +768,82 @@ onBeforeUnmount(() => {
   position: relative; width: 100%; height: 100dvh; min-height: 620px; overflow: hidden;
   color: var(--ink); background: var(--paper);
   font-family: "MiSans", "Mi Sans", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  transition: background-color .65s cubic-bezier(.22,1,.36,1), color .42s ease;
+}
+.analysis-os.is-night {
+  /* Midnight Atelier: near-monochrome graphite, ivory type and scarce champagne metal. */
+  --paper: #0c1013;
+  --ink: #eee8de;
+  --muted-ink: #aaa69f;
+  --faint-ink: #666a6c;
+  --rule: rgba(205,201,193,.115);
+  --accent: #ad956d;
 }
 .archive-stage {
   position: absolute; inset: 0; z-index: 0;
   opacity: var(--handoff-archive-opacity, 1);
   will-change: opacity;
+}
+.archive-aurora {
+  position: absolute;
+  inset: -7%;
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate3d(0, 0, 0) scale(1.015);
+  transition: opacity .8s cubic-bezier(.22,1,.36,1);
+  will-change: opacity, transform;
+}
+.archive-aurora::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at 55% 46%, rgba(212,184,137,.105) 0%, rgba(148,121,82,.032) 26%, transparent 50%),
+    linear-gradient(180deg, rgba(139,153,154,.022) 0%, rgba(111,126,129,.008) 20%, transparent 40%);
+  opacity: .62;
+  transform: translate3d(-.45%, -.15%, 0) scale(1.012);
+  animation: archive-aurora-drift 28s ease-in-out infinite alternate;
+  will-change: transform, opacity;
+}
+.archive-aurora::after {
+  content: '';
+  position: absolute;
+  left: -10%;
+  top: 3%;
+  width: 120%;
+  height: 26%;
+  background: linear-gradient(116deg, transparent 35%, rgba(147,158,158,.012) 47%, rgba(203,177,130,.012) 54%, transparent 68%);
+  transform: rotate(-.8deg) translate3d(-.5%, 0, 0);
+  opacity: .34;
+  animation: archive-dawn-band 30s ease-in-out infinite alternate;
+  will-change: transform, opacity;
+}
+.archive-aurora-band {
+  position: absolute;
+  right: 13%;
+  top: 25%;
+  width: 14%;
+  height: 18%;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, rgba(197,180,150,.019), rgba(145,149,147,.007) 48%, transparent 72%);
+  opacity: .18;
+  transform: translate3d(0, 0, 0);
+  animation: archive-assistant-glow 20s ease-in-out infinite alternate;
+  will-change: opacity, transform;
+}
+.analysis-os.is-night .archive-aurora { opacity: .62; }
+.analysis-os.is-night::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at 54% 47%, transparent 35%, rgba(3,5,6,.075) 72%, rgba(2,3,4,.16) 100%),
+    linear-gradient(180deg, rgba(255,247,232,.018), transparent 8%, transparent 88%, rgba(0,0,0,.08));
+  box-shadow: inset 0 1px rgba(236,223,200,.035);
 }
 .boot-layer {
   position: fixed; inset: 0; z-index: 200; overflow: hidden;
@@ -857,6 +942,7 @@ onBeforeUnmount(() => {
 .module-index-tools button { border: 0; background: transparent; color: inherit; cursor: pointer; font: inherit; letter-spacing: inherit; }
 .module-index-tools button:hover { color: #20221d; }
 .module-index-tools button:disabled { opacity: .4; }
+.archive-theme-toggle[aria-pressed="true"] { color: #796644; }
 .module-index-tools time { color: #4d4c46; }
 
 .data-warning { position: absolute; z-index: 11; right: 42px; top: 118px; margin: 0; max-width: 470px; color: #8b6944; font: 600 7px/1.5 ui-monospace, monospace; text-align: right; letter-spacing: .05em; opacity: .56; transition: opacity .18s ease; }
@@ -972,9 +1058,204 @@ onBeforeUnmount(() => {
 .powered b { color: #20221d; font-weight: 760; }
 .powered i { display: inline-block; width: 18px; height: 3px; margin-left: 8px; background: #34362f; }
 
+/* Midnight Atelier keeps the scene nearly monochrome. Lighting and material
+   finish create hierarchy; champagne metal is reserved for the active file. */
+.analysis-os.is-night .boot-layer {
+  background: #0d1114;
+  color: #ece7de;
+}
+.analysis-os.is-night .boot-layer::after {
+  background:
+    radial-gradient(circle at 50% 48%, rgba(199,168,111,.085), transparent 38%),
+    radial-gradient(circle at 20% 12%, rgba(116,160,173,.035), transparent 38%),
+    linear-gradient(180deg, rgba(139,157,161,.018), transparent 46%);
+}
+.analysis-os.is-night .boot-scan-grid {
+  background-image:
+    linear-gradient(rgba(188,190,185,.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(188,190,185,.035) 1px, transparent 1px);
+}
+.analysis-os.is-night .boot-orbit { border-color: rgba(218,204,174,.38); }
+.analysis-os.is-night .boot-orbit::before,
+.analysis-os.is-night .boot-orbit::after { border-color: rgba(200,167,106,.28); }
+.analysis-os.is-night .boot-orbit span { background: #b99a61; }
+.analysis-os.is-night .boot-orbit i { background: #e0d7c7; box-shadow: 0 0 0 11px rgba(200,167,106,.06); }
+.analysis-os.is-night .boot-axis,
+.analysis-os.is-night .boot-line { background: rgba(230,213,181,.17); }
+.analysis-os.is-night .boot-line i { background: #c8a76a; }
+.analysis-os.is-night .boot-copy > span,
+.analysis-os.is-night .boot-copy p,
+.analysis-os.is-night .boot-copy small,
+.analysis-os.is-night .boot-readout,
+.analysis-os.is-night .boot-permission span,
+.analysis-os.is-night .boot-layer > button { color: #9b9387; }
+.analysis-os.is-night .boot-copy h1,
+.analysis-os.is-night .boot-readout strong,
+.analysis-os.is-night .boot-permission span.active { color: #f0ebe1; }
+.analysis-os.is-night .boot-permission { border-color: rgba(230,213,181,.16); }
+.analysis-os.is-night .boot-permission span::before { background: #c8a76a; }
+.analysis-os.is-night .boot-layer[data-phase="ARCHIVE"] { background: rgba(13,17,20,.94); }
+.analysis-os.is-night .boot-layer[data-phase="READY"] { background: rgba(13,17,20,.34); }
+
+.analysis-os.is-night .terminal-brand,
+.analysis-os.is-night .archive-callout,
+.analysis-os.is-night .access-sequence,
+.analysis-os.is-night .archive-counter { color: var(--ink); }
+.analysis-os.is-night .module-index-label,
+.analysis-os.is-night .module-index-tools,
+.analysis-os.is-night .module-index-tools time,
+.analysis-os.is-night .archive-counter > span,
+.analysis-os.is-night .archive-hint,
+.analysis-os.is-night .column-navigation span,
+.analysis-os.is-night .powered { color: var(--muted-ink); }
+.analysis-os.is-night .module-index-label span,
+.analysis-os.is-night .module-index-track button > span,
+.analysis-os.is-night .module-index-track button small,
+.analysis-os.is-night .counter-line i { color: var(--faint-ink); }
+.analysis-os.is-night .module-index-tools button:hover,
+.analysis-os.is-night .module-index-track button.active,
+.analysis-os.is-night .module-index-track button:hover,
+.analysis-os.is-night .archive-theme-toggle[aria-pressed="true"] { color: var(--accent); }
+.analysis-os.is-night .module-index-tools > button:not(.archive-theme-toggle) { opacity: .68; }
+.analysis-os.is-night .module-index-tools > button:not(.archive-theme-toggle):hover { opacity: 1; }
+.analysis-os.is-night .module-index-track {
+  background: rgba(16,20,23,.95);
+  border-color: rgba(195,198,194,.14);
+}
+.analysis-os.is-night .module-index-track button {
+  border-color: rgba(195,198,194,.10);
+  color: #9d9d98;
+}
+.analysis-os.is-night .module-index-track button.active { background: rgba(184,151,99,.075); }
+.analysis-os.is-night .module-index-track button::after { background: var(--accent); }
+.analysis-os.is-night .data-warning { color: #d0af70; opacity: .76; }
+.analysis-os.is-night .archive-theme-toggle[aria-pressed="true"] {
+  text-shadow: 0 0 8px rgba(203,177,128,.12);
+}
+.analysis-os.is-night .archive-callout {
+  text-shadow: 0 1px 0 rgba(0,0,0,.28);
+}
+
+.analysis-os.is-night .archive-callout .file-number,
+.analysis-os.is-night .archive-callout > button,
+.analysis-os.is-night .access-sequence strong { color: var(--ink); }
+.analysis-os.is-night .archive-callout .file-number {
+  color: #f1ebe1;
+  font-weight: 600;
+  letter-spacing: .005em;
+  text-shadow: 0 0 10px rgba(203,177,128,.095);
+}
+.analysis-os.is-night .archive-callout.is-settled .file-number {
+  animation: archive-focus-breathe 4.4s ease-in-out infinite;
+}
+.analysis-os.is-night .callout-meta,
+.analysis-os.is-night .callout-meta span,
+.analysis-os.is-night .access-sequence p { color: var(--muted-ink); }
+.analysis-os.is-night .callout-meta strong,
+.analysis-os.is-night .column-navigation strong { color: #c8c2b8; }
+.analysis-os.is-night .archive-callout > button {
+  color: #cbc5bb;
+  letter-spacing: .12em;
+  text-shadow: none;
+}
+.analysis-os.is-night .callout-rule {
+  background: linear-gradient(90deg, rgba(203,177,128,.31), rgba(184,181,173,.11) 58%, rgba(184,181,173,.015));
+}
+.analysis-os.is-night .callout-rule::before {
+  background: var(--accent);
+  box-shadow: 0 0 6px rgba(203,177,128,.14);
+}
+.analysis-os.is-night .archive-callout > button:hover {
+  color: #ceb480;
+  text-shadow: 0 0 9px rgba(203,177,128,.10);
+}
+.analysis-os.is-night .access-sequence > span,
+.analysis-os.is-night .access-sequence small { color: #9a9286; }
+.analysis-os.is-night .access-progress { background: rgba(230,213,181,.18); }
+.analysis-os.is-night .access-progress i { background: var(--accent); }
+
+.analysis-os.is-night .document-reveal {
+  border-color: rgba(195,198,194,.15);
+  background: linear-gradient(90deg, rgba(15,19,23,.68), rgba(27,31,34,.94));
+}
+.analysis-os.is-night .document-reveal::before { background: rgba(200,167,106,.38); }
+.analysis-os.is-night .document-reveal::after {
+  background: linear-gradient(90deg, transparent, rgba(197,190,178,.045), rgba(199,168,111,.04), transparent);
+}
+.analysis-os.is-night .document-reveal header span,
+.analysis-os.is-night .document-reveal footer { color: #9a9286; }
+.analysis-os.is-night .document-reveal header strong { color: var(--ink); }
+.analysis-os.is-night .document-reveal header small,
+.analysis-os.is-night .document-grid span { color: var(--muted-ink); }
+.analysis-os.is-night .document-grid,
+.analysis-os.is-night .document-grid span { border-color: rgba(230,213,181,.15); }
+
+.analysis-os.is-night .archive-navigation button {
+  border-color: rgba(195,198,194,.20);
+  color: #b9b5ac;
+}
+.analysis-os.is-night .archive-navigation button:hover {
+  background: rgba(184,151,99,.09);
+  color: var(--ink);
+}
+.analysis-os.is-night .archive-hint i { background: rgba(195,198,194,.18); }
+.analysis-os.is-night .counter-line strong {
+  color: #ddd7cd;
+  text-shadow: none;
+}
+
+.analysis-os.is-night .module-directory {
+  background: rgba(17,21,24,.985);
+  border-color: rgba(195,198,194,.18);
+  box-shadow: 0 30px 100px rgba(0,0,0,.34);
+}
+.analysis-os.is-night .module-directory > header div,
+.analysis-os.is-night .module-directory > header button { color: #d2cabd; }
+.analysis-os.is-night .module-directory > header strong,
+.analysis-os.is-night .module-search kbd,
+.analysis-os.is-night .module-directory-list button > span,
+.analysis-os.is-night .module-directory-list small { color: #91897e; }
+.analysis-os.is-night .module-search { border-color: rgba(230,213,181,.28); }
+.analysis-os.is-night .module-search > span { border-color: #a79d8f; }
+.analysis-os.is-night .module-search > span::after { background: #a79d8f; }
+.analysis-os.is-night .module-search input { color: var(--ink); }
+.analysis-os.is-night .module-directory-list { border-color: rgba(230,213,181,.15); }
+.analysis-os.is-night .module-directory-list button {
+  border-color: rgba(230,213,181,.15);
+  color: #bbb2a5;
+}
+.analysis-os.is-night .module-directory-list button:hover,
+.analysis-os.is-night .module-directory-list button.active {
+  background: rgba(184,151,99,.09);
+  color: var(--ink);
+}
+.analysis-os.is-night .powered { opacity: .72; }
+.analysis-os.is-night .powered { opacity: .54; }
+.analysis-os.is-night .powered b { color: #c6c0b7; }
+.analysis-os.is-night .powered i {
+  background: var(--accent);
+  box-shadow: 0 0 6px rgba(203,177,128,.10);
+}
+
 @keyframes boot-line { from { transform: translateX(-100%); } to { transform: translateX(0); } }
 @keyframes orbit-line { from { opacity: 0; transform: rotate(-70deg) scaleY(.2); } to { opacity: 1; transform: rotate(36deg) scaleY(1); } }
 @keyframes retrieval-scan { 0% { transform: translateX(-120%); } 100% { transform: translateX(420%); } }
+@keyframes archive-aurora-drift {
+  from { transform: translate3d(-.45%, -.15%, 0) scale(1.012); opacity: .56; }
+  to { transform: translate3d(.45%, .28%, 0) scale(1.019); opacity: .66; }
+}
+@keyframes archive-dawn-band {
+  from { transform: rotate(-.8deg) translate3d(-.5%, 0, 0); opacity: .28; }
+  to { transform: rotate(-.8deg) translate3d(.45%, .25%, 0); opacity: .38; }
+}
+@keyframes archive-assistant-glow {
+  from { transform: translate3d(-.4%, 0, 0) scale(.99); opacity: .34; }
+  to { transform: translate3d(.45%, -.35%, 0) scale(1.015); opacity: .44; }
+}
+@keyframes archive-focus-breathe {
+  0%, 100% { text-shadow: 0 0 9px rgba(203,177,128,.07); }
+  50% { text-shadow: 0 0 12px rgba(203,177,128,.12); }
+}
 
 @media (max-width: 1100px) {
   .terminal-brand { left: 28px; top: 52px; transform: scale(.82); transform-origin: top left; }
@@ -999,6 +1280,7 @@ onBeforeUnmount(() => {
   .boot-layer[data-phase="ARCHIVE"] .boot-system-mark { transform: translate(-50%, -50%) scale(.72); }
   .terminal-brand { left: 18px; top: 16px; transform: scale(.58); }
   .module-index-shell { left: 0; right: 0; top: auto; bottom: 0; grid-template-columns: 1fr; gap: 0; padding: 0 0 env(safe-area-inset-bottom); background: rgba(232,229,225,.94); border-top: 1px solid #c3bdb2; border-bottom: 0; }
+  .analysis-os.is-night .module-index-shell { background: rgba(15,19,23,.96); border-top-color: rgba(195,198,194,.15); }
   .module-index-label, .module-index-tools { display: none; }
   .module-index-track { position: static; width: 100%; max-width: none; opacity: 1; pointer-events: auto; overflow-x: auto; background: transparent; border: 0; }
   .module-index-track button { min-width: 102px; height: 54px; padding: 7px 12px; }

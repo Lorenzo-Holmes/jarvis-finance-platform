@@ -58,24 +58,42 @@ const workspaceWarmers = Object.freeze({
 const session = useAuthSession()
 const { user: sessionUser, isLoggedIn: sessionLoggedIn, sessionState } = session
 const previewMode = ref(false)
-const NIGHT_MODE_KEY = 'jarvis-ui-night-mode'
+const THEME_MODE_KEY = 'jarvis-theme'
+const LEGACY_NIGHT_MODE_KEY = 'jarvis-ui-night-mode'
 function readNightModePreference() {
   try {
-    return window.localStorage.getItem(NIGHT_MODE_KEY) === 'true'
+    const storedTheme = window.localStorage.getItem(THEME_MODE_KEY)
+    if (storedTheme === 'night') return true
+    if (storedTheme === 'day') return false
+
+    const legacyNightMode = window.localStorage.getItem(LEGACY_NIGHT_MODE_KEY)
+    if (legacyNightMode === 'true' || legacyNightMode === 'false') {
+      const migratedTheme = legacyNightMode === 'true' ? 'night' : 'day'
+      window.localStorage.setItem(THEME_MODE_KEY, migratedTheme)
+      return migratedTheme === 'night'
+    }
   } catch (_) {
-    return false
+    // Fall through to the first-paint theme applied by index.html.
   }
+  return document.documentElement.dataset.theme === 'night'
 }
 const nightMode = ref(readNightModePreference())
 
-function toggleNightMode() {
-  nightMode.value = !nightMode.value
+function applyThemePreference(value) {
+  const theme = value ? 'night' : 'day'
+  document.documentElement.dataset.theme = theme
   try {
-    window.localStorage.setItem(NIGHT_MODE_KEY, String(nightMode.value))
+    window.localStorage.setItem(THEME_MODE_KEY, theme)
   } catch (_) {
     // 当前会话仍可切换主题；存储受限时不阻塞界面。
   }
 }
+
+function toggleNightMode() {
+  nightMode.value = !nightMode.value
+  applyThemePreference(nightMode.value)
+}
+applyThemePreference(nightMode.value)
 
 const LOCAL_PREVIEW_USER = Object.freeze({
   id: -1,
@@ -333,10 +351,12 @@ onBeforeUnmount(() => {
       v-if="visitedTabs.has('研究终端')"
       v-show="activeTab === '研究终端' || archiveHandoffHold"
       :active="activeTab === '研究终端'"
+      :night-mode="nightMode"
       :requested-module-key="archiveModuleKey"
       :workspace-preload="preloadWorkspace"
       @focus-change="syncArchiveModule"
       @navigate="navigateWorkspace"
+      @toggle-night-mode="toggleNightMode"
     />
 
     <ArchiveWorkspaceShell

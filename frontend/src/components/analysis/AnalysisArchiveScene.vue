@@ -30,6 +30,7 @@ import {
   poolKeyForCell,
 } from '../../analysis-os/motion/archiveLoop'
 import {
+  applyArchiveTheme,
   createArchiveAssembly,
   createArchiveAssetLibrary,
   createFocusedGlassMaterial,
@@ -69,6 +70,44 @@ const USE_FOCUSED_GLB_IN_TRANSITION = false
 // visible "sharpening" step on some GPUs. Keep extraction on direct rendering
 // and pre-resident focused geometry instead.
 const STABLE_DIRECT_EXTRACTION = true
+const ARCHIVE_SCENE_THEMES = Object.freeze({
+  day: Object.freeze({
+    background: '#eae5e1',
+    exposure: 0.94,
+    ambientColor: 0xfffbf5,
+    ambientIntensity: 0.24,
+    hemisphereSky: 0xfffbf4,
+    hemisphereGround: 0xa79f92,
+    hemisphereIntensity: 0.82,
+    keyColor: 0xfffbf1,
+    keyIntensity: 2.35,
+    fillColor: 0xcabda9,
+    fillIntensity: 0.72,
+    rimColor: 0xe6d8c5,
+    rimIntensity: 0.66,
+    auroraColor: 0x75b7c6,
+    auroraIntensity: 0,
+    floorColor: '#d8c9b9',
+  }),
+  night: Object.freeze({
+    background: '#0c1013',
+    exposure: 1.26,
+    ambientColor: 0xd9d6d0,
+    ambientIntensity: 0.38,
+    hemisphereSky: 0xb7bab9,
+    hemisphereGround: 0x15191c,
+    hemisphereIntensity: 0.66,
+    keyColor: 0xffe7c8,
+    keyIntensity: 1.72,
+    fillColor: 0x929899,
+    fillIntensity: 0.27,
+    rimColor: 0xb99e72,
+    rimIntensity: 0.34,
+    auroraColor: 0x8aa2a8,
+    auroraIntensity: 0.06,
+    floorColor: '#101417',
+  }),
+})
 
 const ANONYMOUS_ARCHIVE = {
   id: 'archive:anonymous',
@@ -88,6 +127,7 @@ const props = defineProps({
   sleepAmount: { type: Number, default: 0 },
   extractionProgress: { type: Number, default: 0 },
   active: { type: Boolean, default: true },
+  nightMode: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['step', 'settled', 'flow', 'activate', 'interaction', 'motion'])
@@ -123,6 +163,12 @@ let focusedGlassMaterial = null
 let composerBundle = null
 let qualityProfile = null
 let keyLight = null
+let ambientLight = null
+let hemisphereLight = null
+let fillLight = null
+let rimLight = null
+let auroraLight = null
+let floorMaterial = null
 let renderedFrames = 0
 let composerRevision = 0
 let postProbeTimer = 0
@@ -153,6 +199,13 @@ const materialCache = new Map()
 const sceneDisposables = []
 const baseInstanceGeometries = []
 const hiddenInstanceTransform = new Object3D()
+const neutralInstanceColor = new Color('#ffffff')
+// Per-instance colors multiply the shared material. Keep the focused body near
+// white so it stops being slightly dimmer than the surrounding neutral files,
+// while the small archive marker receives the stronger champagne cue.
+const focusedBodyInstanceColor = new Color('#fffdf8')
+const focusedInsetInstanceColor = new Color('#fff8ec')
+const focusedMarkInstanceColor = new Color('#dec08a')
 const cameraAim = new Vector3(-5.13, -2.03, 0.481)
 const cameraBase = new Vector3(-101.635, 11.023, 23.205)
 const cameraAimBase = new Vector3(-5.13, -2.03, 0.481)
@@ -268,42 +321,57 @@ function setDesktopBrowseCamera(width, height) {
   cameraBaseFov = 2 * Math.atan(span / (2 * referenceDistance)) * 180 / Math.PI
 }
 
-function makeLabelTexture(module) {
-  if (textureCache.has(module.id)) return textureCache.get(module.id)
-  const canvas = document.createElement('canvas')
-  canvas.width = 1024
-  canvas.height = 260
+function paintLabelTexture(canvas, module) {
   const ctx = canvas.getContext('2d')
-  ctx.fillStyle = 'rgba(244, 241, 234, .78)'
+  const night = props.nightMode
+  ctx.clearRect(0, 0, canvas.width, canvas.height)
+  ctx.fillStyle = night ? 'rgba(35, 39, 42, .965)' : 'rgba(244, 241, 234, .78)'
   ctx.fillRect(0, 0, canvas.width, canvas.height)
-  ctx.strokeStyle = 'rgba(112, 108, 99, .72)'
+  ctx.strokeStyle = night ? 'rgba(184, 158, 112, .34)' : 'rgba(112, 108, 99, .72)'
   ctx.lineWidth = 3
   ctx.strokeRect(8, 8, canvas.width - 16, canvas.height - 16)
 
-  ctx.fillStyle = '#817c72'
+  ctx.fillStyle = night ? '#969692' : '#817c72'
   ctx.font = '600 24px ui-monospace, SFMono-Regular, Menlo, monospace'
   ctx.fillText(`MODULE / ${String(module.no).padStart(2, '0')}`, 40, 52)
   ctx.textAlign = 'right'
   ctx.fillText(module.code, 975, 52)
   ctx.textAlign = 'left'
 
-  ctx.fillStyle = '#1e211c'
+  ctx.fillStyle = night ? '#eee8de' : '#1e211c'
   ctx.font = '700 54px ui-monospace, SFMono-Regular, Menlo, monospace'
   ctx.fillText(module.labelEn, 40, 126)
 
-  ctx.fillStyle = '#4b4d46'
+  ctx.fillStyle = night ? '#c8c1b6' : '#4b4d46'
   ctx.font = '600 28px system-ui, sans-serif'
   ctx.fillText(module.labelZh, 40, 178)
 
-  ctx.fillStyle = '#8c877d'
+  ctx.fillStyle = night ? '#7b7d7c' : '#8c877d'
   ctx.font = '500 19px ui-monospace, SFMono-Regular, Menlo, monospace'
   ctx.fillText(module.capabilities.slice(0, 3).join(' · '), 40, 224)
+}
+
+function makeLabelTexture(module) {
+  if (textureCache.has(module.id)) return textureCache.get(module.id)
+  const canvas = document.createElement('canvas')
+  canvas.width = 1024
+  canvas.height = 260
+  paintLabelTexture(canvas, module)
 
   const texture = new CanvasTexture(canvas)
   texture.colorSpace = SRGBColorSpace
   texture.anisotropy = Math.min(renderer?.capabilities?.getMaxAnisotropy?.() || 1, 8)
   textureCache.set(module.id, texture)
   return texture
+}
+
+function refreshLabelTextures() {
+  for (const module of [ANONYMOUS_ARCHIVE, ...(props.modules || [])]) {
+    const texture = textureCache.get(module.id)
+    if (!texture?.image) continue
+    paintLabelTexture(texture.image, module)
+    texture.needsUpdate = true
+  }
 }
 
 function labelMaterial(module) {
@@ -349,6 +417,21 @@ function createBaseInstances() {
   mark.name = 'ARCHIVE_BASE_MARK_INSTANCED'
   body.castShadow = false
   baseInstances = { body, inset, mark }
+  updateBaseInstanceFocusColors()
+}
+
+function updateBaseInstanceFocusColors() {
+  if (!baseInstances || !entries.length) return
+  const focused = focusedEntry()
+  for (const entry of entries) {
+    const highlight = props.nightMode && entry === focused
+    baseInstances.body.setColorAt(entry.instanceIndex, highlight ? focusedBodyInstanceColor : neutralInstanceColor)
+    baseInstances.inset.setColorAt(entry.instanceIndex, highlight ? focusedInsetInstanceColor : neutralInstanceColor)
+    baseInstances.mark.setColorAt(entry.instanceIndex, highlight ? focusedMarkInstanceColor : neutralInstanceColor)
+  }
+  if (baseInstances.body.instanceColor) baseInstances.body.instanceColor.needsUpdate = true
+  if (baseInstances.inset.instanceColor) baseInstances.inset.instanceColor.needsUpdate = true
+  if (baseInstances.mark.instanceColor) baseInstances.mark.instanceColor.needsUpdate = true
 }
 
 function clearArchive() {
@@ -467,6 +550,7 @@ function updateFocusVisuals() {
         ? 0.40
         : 0.08
   const module = focusedModuleData()
+  updateBaseInstanceFocusColors()
   for (const entry of entries) {
     const isFocused = entry === focused
     const isHovered = entry === hoveredEntry
@@ -491,6 +575,12 @@ function updateFocusVisuals() {
     if (entry.identityGroup) {
       entry.identityGroup.position.z = isFocused && identified ? (detailVisible ? 0.22 : 0.09) : 0
       entry.identityGroup.visible = Boolean(isFocused && identified)
+    }
+    if (entry.frameGroup) {
+      const frameMaterial = isFocused && identified
+        ? archiveLibrary.materials.focusFrame
+        : archiveLibrary.materials.frame
+      for (const child of entry.frameGroup.children) child.material = frameMaterial
     }
     if (entry.nearGroup && isFocused && detailAsset && detailVisible) entry.nearGroup.visible = false
   }
@@ -1169,6 +1259,49 @@ function stopRendering() {
   rendering = false
 }
 
+function applySceneTheme() {
+  if (!scene || !renderer) return
+  const mode = props.nightMode ? 'night' : 'day'
+  const theme = ARCHIVE_SCENE_THEMES[mode]
+
+  scene.background?.set?.(theme.background)
+  if (scene.fog?.color) scene.fog.color.set(theme.background)
+  renderer.setClearColor(theme.background, 1)
+  renderer.toneMappingExposure = theme.exposure
+
+  if (ambientLight) {
+    ambientLight.color.setHex(theme.ambientColor)
+    ambientLight.intensity = theme.ambientIntensity
+  }
+  if (hemisphereLight) {
+    hemisphereLight.color.setHex(theme.hemisphereSky)
+    hemisphereLight.groundColor.setHex(theme.hemisphereGround)
+    hemisphereLight.intensity = theme.hemisphereIntensity
+  }
+  if (keyLight) {
+    keyLight.color.setHex(theme.keyColor)
+    keyLight.intensity = theme.keyIntensity
+  }
+  if (fillLight) {
+    fillLight.color.setHex(theme.fillColor)
+    fillLight.intensity = theme.fillIntensity
+  }
+  if (rimLight) {
+    rimLight.color.setHex(theme.rimColor)
+    rimLight.intensity = theme.rimIntensity
+  }
+  if (auroraLight) {
+    auroraLight.color.setHex(theme.auroraColor)
+    auroraLight.intensity = theme.auroraIntensity
+  }
+  if (floorMaterial) floorMaterial.color.set(theme.floorColor)
+
+  applyArchiveTheme(archiveLibrary, mode, focusedGlassMaterial)
+  refreshLabelTextures()
+  updateBaseInstanceFocusColors()
+  lastRenderedAt = 0
+}
+
 function init() {
   const element = mountRef.value
   if (!element) return
@@ -1194,8 +1327,10 @@ function init() {
     archiveLibrary = createArchiveAssetLibrary()
     focusedGlassMaterial = createFocusedGlassMaterial(archiveLibrary)
 
-    scene.add(new AmbientLight(0xfffbf5, 0.24))
-    scene.add(new HemisphereLight(0xfffbf4, 0xa79f92, 0.82))
+    ambientLight = new AmbientLight(0xfffbf5, 0.24)
+    hemisphereLight = new HemisphereLight(0xfffbf4, 0xa79f92, 0.82)
+    scene.add(ambientLight)
+    scene.add(hemisphereLight)
     keyLight = new DirectionalLight(0xfffbf1, 2.35)
     keyLight.position.set(-11, 18, 13)
     keyLight.castShadow = false
@@ -1209,21 +1344,28 @@ function init() {
     keyLight.shadow.bias = -0.0004
     keyLight.shadow.radius = 2.2
     scene.add(keyLight)
-    const fill = new DirectionalLight(0xcabda9, 0.72)
-    fill.position.set(14, 8, -10)
-    scene.add(fill)
-    const rim = new DirectionalLight(0xe6d8c5, 0.66)
-    rim.position.set(7, 4, 18)
-    scene.add(rim)
+    fillLight = new DirectionalLight(0xcabda9, 0.72)
+    fillLight.position.set(14, 8, -10)
+    scene.add(fillLight)
+    rimLight = new DirectionalLight(0xe6d8c5, 0.66)
+    rimLight.position.set(7, 4, 18)
+    scene.add(rimLight)
+    // Allocate the distant dawn fill once. Day keeps it at zero intensity;
+    // Night only updates color/intensity so theme changes never rebuild WebGL
+    // resources or wash the near archive field in cyan.
+    auroraLight = new DirectionalLight(0x8aa2a8, 0)
+    auroraLight.position.set(-20, 14, -11)
+    scene.add(auroraLight)
 
     const floorGeometry = new PlaneGeometry(200, 200)
-    const floorMaterial = new MeshStandardMaterial({ color: '#d8c9b9', roughness: 0.95, metalness: 0.02 })
+    floorMaterial = new MeshStandardMaterial({ color: '#d8c9b9', roughness: 0.95, metalness: 0.02 })
     const floor = new Mesh(floorGeometry, floorMaterial)
     floor.rotation.x = -Math.PI / 2
     floor.position.y = -4.63
     floor.receiveShadow = false
     scene.add(floor)
     sceneDisposables.push(floorGeometry, floorMaterial)
+    applySceneTheme()
 
     raycaster = new Raycaster()
     pointer = new Vector2()
@@ -1291,6 +1433,8 @@ function dispose() {
   renderer?.dispose()
   renderer?.forceContextLoss?.()
   renderer?.domElement?.remove()
+  ambientLight = hemisphereLight = keyLight = fillLight = rimLight = null
+  floorMaterial = null
   renderer = scene = camera = root = raycaster = pointer = null
 }
 
@@ -1363,6 +1507,10 @@ watch(() => props.sleepAmount, amount => {
   if (amount <= 0.001) suppressSleepMotion = false
 })
 watch(() => props.extractionProgress, updateFocusVisuals)
+watch(() => props.nightMode, () => {
+  applySceneTheme()
+  if (props.active) startRendering()
+})
 
 onMounted(init)
 onBeforeUnmount(dispose)
@@ -1371,7 +1519,7 @@ defineExpose({ getDebugState, shiftRows })
 </script>
 
 <template>
-  <div ref="mountRef" class="analysis-scene" aria-hidden="true">
+  <div ref="mountRef" class="analysis-scene" :class="{ 'is-night': props.nightMode }" aria-hidden="true">
     <div v-if="failed" class="scene-fallback">
       <strong>WEBGL FALLBACK</strong>
       <span>三维档案场不可用，仍可使用顶部 MODULE INDEX 进入各业务模块。</span>
@@ -1385,7 +1533,9 @@ defineExpose({ getDebugState, shiftRows })
   inset: 0;
   overflow: hidden;
   background: #e8e5e1;
+  transition: background-color .65s cubic-bezier(.22,1,.36,1);
 }
+.analysis-scene.is-night { background: #0c1013; }
 .analysis-scene::after {
   content: '';
   position: absolute;
@@ -1395,10 +1545,17 @@ defineExpose({ getDebugState, shiftRows })
     linear-gradient(180deg, rgba(248,246,240,.08), transparent 20%, transparent 82%, rgba(234,229,225,.03)),
     radial-gradient(ellipse at 48% 48%, transparent 62%, rgba(234,229,225,.025) 82%, rgba(234,229,225,.08) 100%);
 }
+.analysis-scene.is-night::after {
+  background:
+    radial-gradient(ellipse at 56% 47%, rgba(218,190,143,.052) 0%, rgba(158,131,88,.018) 31%, transparent 56%),
+    linear-gradient(180deg, rgba(151,161,160,.012), transparent 22%, transparent 80%, rgba(5,7,8,.07));
+}
 .analysis-scene :deep(canvas) { width: 100%; height: 100%; display: block; }
 .scene-fallback {
   position: absolute; inset: 0; display: grid; place-content: center; gap: 8px;
   color: #625f57; text-align: center; font-size: 12px;
 }
 .scene-fallback strong { color: #292b25; letter-spacing: .12em; }
+.analysis-scene.is-night .scene-fallback { color: #96938a; }
+.analysis-scene.is-night .scene-fallback strong { color: #e8e4da; }
 </style>
