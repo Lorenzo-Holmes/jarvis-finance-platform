@@ -19,8 +19,9 @@ export function useArchiveIdle(options = {}) {
   const lastReason = ref('init')
   const enabled = ref(true)
   const reduced = ref(Boolean(options.reduced))
-  let timer = 0
+  let frame = 0
   let lastTick = performance.now()
+  let lastCoarseTick = 0
 
   const hudDim = computed(() => {
     if (environmentState.value === 'AWAKE') return 0
@@ -35,8 +36,15 @@ export function useArchiveIdle(options = {}) {
     }
   }
 
-  function tick() {
-    const now = performance.now()
+  function tick(now = performance.now()) {
+    frame = window.requestAnimationFrame(tick)
+
+    const idleMs = now - lastInteractionAt.value
+    const needsFrameRateUpdates = environmentState.value === 'WAKE_SETTLE'
+      || idleMs >= ARCHIVE_IDLE_TIMING.motionStartMs
+    if (!needsFrameRateUpdates && now - lastCoarseTick < 80) return
+    lastCoarseTick = now
+
     const dt = Math.min(100, Math.max(0, now - lastTick))
     lastTick = now
 
@@ -57,7 +65,6 @@ export function useArchiveIdle(options = {}) {
       return
     }
 
-    const idleMs = now - lastInteractionAt.value
     if (idleMs < ARCHIVE_IDLE_TIMING.dimStartMs) {
       environmentState.value = 'AWAKE'
       sleepAmount.value = 0
@@ -81,15 +88,16 @@ export function useArchiveIdle(options = {}) {
   }
 
   function start() {
-    if (timer) return
+    if (frame) return
     lastTick = performance.now()
+    lastCoarseTick = 0
     lastInteractionAt.value = lastTick
-    timer = window.setInterval(tick, 80)
+    frame = window.requestAnimationFrame(tick)
   }
 
   function stop() {
-    if (timer) window.clearInterval(timer)
-    timer = 0
+    if (frame) window.cancelAnimationFrame(frame)
+    frame = 0
     environmentState.value = 'AWAKE'
     sleepAmount.value = 0
   }
