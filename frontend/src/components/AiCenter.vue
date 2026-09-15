@@ -2,6 +2,7 @@
 import { computed, ref, onMounted, nextTick, watch } from 'vue'
 import { api } from '../api/client'
 import DataState from './common/DataState.vue'
+import MarkdownContent from './common/MarkdownContent.vue'
 
 const props = defineProps({
   researchContext: { type: Object, default: null },
@@ -226,7 +227,7 @@ onMounted(() => {
           </div>
           <DataState v-if="quoteLoading" state="loading" title="正在生成行情摘要" compact />
           <DataState v-else-if="quoteError" state="error" title="行情研究失败" :message="quoteError" compact retryable @retry="runQuote" />
-          <div v-else-if="quoteResult" class="tool-output">{{ quoteResult }}</div>
+          <MarkdownContent v-else-if="quoteResult" class="tool-output" :content="quoteResult" />
           <div v-else class="tool-empty">获取当前黄金ETF行情并生成研究摘要。</div>
         </section>
 
@@ -235,7 +236,7 @@ onMounted(() => {
           <textarea v-model="reportText" aria-label="财报文本" placeholder="粘贴财报内容或关键数据…" rows="5"></textarea>
           <DataState v-if="reportLoading" state="loading" title="正在解析财报" compact />
           <DataState v-else-if="reportError" state="error" title="财报解析失败" :message="reportError" compact retryable @retry="runReport" />
-          <div v-else-if="reportResult" class="tool-output">{{ reportResult }}</div>
+          <MarkdownContent v-else-if="reportResult" class="tool-output" :content="reportResult" />
         </section>
 
         <section class="tool-section">
@@ -243,7 +244,7 @@ onMounted(() => {
           <input v-model="chainNode" class="input" aria-label="产业链主题" placeholder="黄金 / 铜 / 芯片…" />
           <DataState v-if="chainLoading" state="loading" title="正在分析产业链" compact />
           <DataState v-else-if="chainError" state="error" title="产业链分析失败" :message="chainError" compact retryable @retry="runChain" />
-          <div v-else-if="chainResult" class="tool-output">{{ chainResult }}</div>
+          <MarkdownContent v-else-if="chainResult" class="tool-output" :content="chainResult" />
         </section>
       </aside>
 
@@ -261,7 +262,8 @@ onMounted(() => {
         <div class="chat-window" ref="chatBox" role="log" aria-live="polite" aria-relevant="additions text" aria-label="研究会话记录">
           <div v-for="(m, i) in messages" :key="i" class="message-row" :class="m.role">
             <div class="message-meta"><span>{{ m.role === 'user' ? 'RESEARCH QUESTION' : 'JARVIS NOTE' }}</span><i></i></div>
-            <div class="message-content">{{ m.content }}</div>
+            <MarkdownContent v-if="m.role === 'assistant'" class="message-content" :content="m.content" />
+            <div v-else class="message-content">{{ m.content }}</div>
           </div>
         </div>
 
@@ -308,7 +310,7 @@ onMounted(() => {
 textarea { padding: 8px 4px; margin-top: 9px; resize: vertical; line-height: 1.5; }
 .input:focus, textarea:focus { border-color: #695b40; }
 .tool-section :deep(.data-state) { margin-top: 9px; }
-.tool-output { margin-top: 9px; max-height: 170px; overflow: auto; border-left: 2px solid var(--accent); background: rgba(232,229,225,.58); padding: 8px 9px; color: var(--text); font-size: 9px; line-height: 1.6; white-space: pre-wrap; }
+.tool-output { margin-top: 9px; max-height: 170px; overflow: auto; border-left: 2px solid var(--accent); background: var(--surface); padding: 8px 9px; color: var(--text); font-size: 9px; line-height: 1.6; }
 .tool-empty { margin-top: 9px; color: var(--subtle); font-size: 9px; line-height: 1.55; }
 .conversation-panel { display: flex; flex-direction: column; min-width: 0; padding: 13px; background: rgba(245,242,235,.35) !important; }
 .conversation-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
@@ -328,7 +330,7 @@ textarea { padding: 8px 4px; margin-top: 9px; resize: vertical; line-height: 1.5
 .message-meta { display: flex; align-items: flex-start; gap: 6px; color: var(--subtle); font-size: 8px; letter-spacing: .045em; }
 .message-meta i { width: 4px; height: 4px; margin-top: 4px; border-radius: 50%; background: #555a60; }
 .message-row.assistant .message-meta i { background: var(--accent); }
-.message-content { color: var(--text); font-size: 11px; line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; }
+.message-content { color: var(--text); font-size: 11px; line-height: 1.75; overflow-wrap: anywhere; }
 .composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; margin-top: 9px; }
 .composer input { width: 100%; height: 38px; background: transparent; border: 0; border-bottom: 1px solid var(--line-strong); border-radius: 0; color: var(--text); padding: 0 5px; font-size: 10px; outline: none; }
 .composer input:focus { border-color: #695b40; }

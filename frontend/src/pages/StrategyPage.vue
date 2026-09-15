@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { api } from '../api/client'
 import DataState from '../components/common/DataState.vue'
+import MarkdownContent from '../components/common/MarkdownContent.vue'
 
 const emit = defineEmits(['send-backtest'])
 
@@ -225,7 +226,7 @@ function sendToBacktest() {
             <div class="sg-report-head">
               <div><b>STRATEGY DOSSIER / AI 策略说明</b><span>基于确定性等级与配置比例生成，数值口径以配置区为准</span></div>
             </div>
-            <div class="sg-output">{{ result.content?.content || result.content || '（暂无策略说明）' }}</div>
+            <MarkdownContent class="sg-output" :content="result.content?.content || result.content || '（暂无策略说明）'" />
             <button type="button" class="sg-backtest-action" @click="sendToBacktest">
               SEND TO BACKTEST <span>→</span>
             </button>
@@ -305,7 +306,7 @@ function sendToBacktest() {
 .sg-report-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
 .sg-report-head b { color: var(--text); font-size: 12px; font-weight: 680; }
 .sg-report-head span { display: block; margin-top: 3px; color: var(--subtle); font-size: 9px; }
-.sg-output { margin-top: 10px; max-height: 420px; overflow: auto; background: transparent; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); border-radius: 0; padding: 14px 2px; color: var(--text); font-size: 11px; line-height: 1.78; white-space: pre-wrap; overflow-wrap: anywhere; }
+.sg-output { margin-top: 10px; max-height: 420px; overflow: auto; background: transparent; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); border-radius: 0; padding: 14px 2px; color: var(--text); font-size: 11px; line-height: 1.78; overflow-wrap: anywhere; }
 .sg-backtest-action { margin-top: 14px; min-height: 38px; padding: 0 14px; border: 1px solid #383b33; background: #383b33; color: #f2eee6; cursor: pointer; font: 700 8px/1 ui-monospace, monospace; letter-spacing: .09em; }
 .sg-backtest-action span { margin-left: 30px; font-size: 15px; vertical-align: -1px; }
 .sg-empty { display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 46px 20px; text-align: center; }

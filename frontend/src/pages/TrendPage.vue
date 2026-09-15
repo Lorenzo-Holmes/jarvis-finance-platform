@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { api } from '../api/client'
 import DataState from '../components/common/DataState.vue'
+import MarkdownContent from '../components/common/MarkdownContent.vue'
 
 // ---- 市场趋势预测参数（FR-12）----
 // 单资产日 K 统计基线：历史收盘价由 Java 服务端从自营 K 线库注入，前端不传。
@@ -270,7 +271,7 @@ function clearAll() {
             <div class="tr-report-head">
               <div><b>AI 趋势解读</b><span>基于确定性指标与趋势区间生成，数值口径以指标卡为准</span></div>
             </div>
-            <div class="tr-output">{{ result.content?.content || result.content || '（暂无解读）' }}</div>
+            <MarkdownContent class="tr-output" :content="result.content?.content || result.content || '（暂无解读）'" />
           </div>
         </template>
 
@@ -366,7 +367,7 @@ function clearAll() {
 .tr-report-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
 .tr-report-head b { color: var(--text); font-size: 12px; font-weight: 680; }
 .tr-report-head span { display: block; margin-top: 3px; color: var(--subtle); font-size: 9px; }
-.tr-output { margin-top: 10px; max-height: 420px; overflow: auto; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 12px 14px; color: var(--text); font-size: 11px; line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; }
+.tr-output { margin-top: 10px; max-height: 420px; overflow: auto; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 12px 14px; color: var(--text); font-size: 11px; line-height: 1.75; overflow-wrap: anywhere; }
 .tr-empty { display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 46px 20px; text-align: center; }
 .tr-empty-mark { color: var(--accent); border: 1px solid var(--line-strong); border-radius: 50%; width: 54px; height: 54px; display: grid; place-items: center; font-size: 12px; letter-spacing: .1em; }
 .tr-empty b { color: var(--text); font-size: 12px; font-weight: 650; }

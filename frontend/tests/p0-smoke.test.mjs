@@ -398,7 +398,8 @@ test('sentiment page renders dispute and section cards from backend-shaped data'
   assert.match(source, /多方论据/)
   assert.match(source, /空方论据/)
   // 模型原文仍保留，切分失败时页面不会丢信息
-  assert.match(source, /class="st-output">\{\{ result \}\}/)
+  assert.match(source, /class="st-output" :content="result"/)
+  assert.match(source, /MarkdownContent from '\.\.\/components\/common\/MarkdownContent\.vue'/)
 })
 
 test('quote page renders trend band from backend forecast and never sends closes', async () => {

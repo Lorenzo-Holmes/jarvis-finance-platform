@@ -31,6 +31,25 @@ const AdminView = defineAsyncComponent(() => import('./components/AdminView.vue'
 const session = useAuthSession()
 const { user: sessionUser, isLoggedIn: sessionLoggedIn, sessionState } = session
 const previewMode = ref(false)
+const NIGHT_MODE_KEY = 'jarvis-ui-night-mode'
+function readNightModePreference() {
+  try {
+    return window.localStorage.getItem(NIGHT_MODE_KEY) === 'true'
+  } catch (_) {
+    return false
+  }
+}
+const nightMode = ref(readNightModePreference())
+
+function toggleNightMode() {
+  nightMode.value = !nightMode.value
+  try {
+    window.localStorage.setItem(NIGHT_MODE_KEY, String(nightMode.value))
+  } catch (_) {
+    // 当前会话仍可切换主题；存储受限时不阻塞界面。
+  }
+}
+
 const LOCAL_PREVIEW_USER = Object.freeze({
   id: -1,
   email: 'preview@local.test',
@@ -196,11 +215,13 @@ onMounted(() => {
       :modules="JARVIS_MODULES"
       :user="user"
       :context="researchContext"
+      :night-mode="nightMode"
       @return="returnToArchive"
       @navigate-module="navigateWorkspace"
       @legacy-admin="openLegacyAdmin"
       @logout="logout"
       @update-profile="updateProfile"
+      @toggle-night-mode="toggleNightMode"
     >
       <MarketPage v-if="activeTab === '行情'" :active="true" @context-change="setResearchContext" />
 

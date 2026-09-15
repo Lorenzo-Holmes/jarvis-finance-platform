@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { api } from '../api/client'
 import DataState from '../components/common/DataState.vue'
+import MarkdownContent from '../components/common/MarkdownContent.vue'
 
 const props = defineProps({
   researchContext: { type: Object, default: null },
@@ -96,7 +97,7 @@ function clearAll() {
               <div><b>ANALYSIS DOSSIER{{ companyContextLabel ? ` / ${companyContextLabel}` : '' }}</b><span>基于输入文本的财务解读，仅供研究参考，请以原始财报为准</span></div>
               <span class="result-state">AI / COMPLETE</span>
             </div>
-            <div class="fr-output">{{ result }}</div>
+            <MarkdownContent class="fr-output" :content="result" />
           </div>
         </template>
 
@@ -153,7 +154,7 @@ function clearAll() {
 .fr-result-head b { color: var(--text); font: 650 10px/1 ui-monospace, monospace; letter-spacing: .1em; }
 .fr-result-head span { display: block; margin-top: 3px; color: var(--subtle); font-size: 9px; }
 .fr-result-head .result-state { color: #66705f; font: 600 8px/1 ui-monospace, monospace; letter-spacing: .08em; }
-.fr-output { margin-top: 0; min-height: 500px; max-height: 650px; overflow: auto; background: transparent; border: 0; border-radius: 0; padding: 20px 2px; color: var(--text); font-size: 11px; line-height: 1.82; white-space: pre-wrap; overflow-wrap: anywhere; }
+.fr-output { margin-top: 0; min-height: 500px; max-height: 650px; overflow: auto; background: transparent; border: 0; border-radius: 0; padding: 20px 2px; color: var(--text); font-size: 11px; line-height: 1.82; overflow-wrap: anywhere; }
 .fr-empty { min-height: 520px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px; padding: 46px 20px; text-align: center; border: 0; border-radius: 0; background: transparent; }
 .fr-empty-mark { color: var(--accent-strong); border: 1px solid var(--line-strong); border-radius: 0; width: 64px; height: 44px; display: grid; place-items: center; font: 600 9px/1 ui-monospace, monospace; letter-spacing: .12em; }
 .fr-empty b { color: var(--text); font-size: 12px; font-weight: 650; }

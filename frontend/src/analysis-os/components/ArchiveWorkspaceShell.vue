@@ -7,9 +7,10 @@ const props = defineProps({
   modules: { type: Array, default: () => [] },
   user: { type: Object, default: null },
   context: { type: Object, default: null },
+  nightMode: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['return', 'navigate-module', 'legacy-admin', 'logout', 'update-profile'])
+const emit = defineEmits(['return', 'navigate-module', 'legacy-admin', 'logout', 'update-profile', 'toggle-night-mode'])
 const returning = ref(false)
 const switching = ref(false)
 const entering = ref(true)
@@ -87,7 +88,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="workspace-shell" :class="{ returning, switching, entering }">
+  <section class="workspace-shell" :class="{ returning, switching, entering, 'is-night': props.nightMode }">
     <div v-if="entering" class="workspace-entry-bridge" aria-hidden="true">
       <section class="entry-file">
         <div class="entry-file-frame">
@@ -137,6 +138,16 @@ onBeforeUnmount(() => {
           <strong>{{ props.context?.symbol || 'NO GLOBAL CONTEXT' }}</strong>
         </div>
         <button type="button" class="return-button" @click="requestReturn">← RETURN TO ARCHIVE</button>
+        <button
+          type="button"
+          class="theme-toggle"
+          :aria-pressed="props.nightMode"
+          :aria-label="props.nightMode ? '关闭夜间模式' : '开启夜间模式'"
+          @click="emit('toggle-night-mode')"
+        >
+          <span class="theme-toggle-indicator" aria-hidden="true"></span>
+          夜间
+        </button>
         <button
           v-if="props.user?.role === 'ADMIN'"
           type="button"
@@ -214,7 +225,7 @@ onBeforeUnmount(() => {
   background: #e8e5e1;
   color: #20221d;
   transition: opacity .18s ease, transform .18s cubic-bezier(.4,0,1,1);
-  font-family: "MiSans", "Mi Sans", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  font-family: "IBM Plex Sans", "Noto Sans SC", "Microsoft YaHei", sans-serif;
 }
 .workspace-shell.entering { overflow: hidden; }
 .workspace-entry-bridge {
@@ -275,6 +286,14 @@ onBeforeUnmount(() => {
   min-height: 34px; border: 0; background: transparent; color: #5f5c55; cursor: pointer;
   font: 650 8px/1 ui-monospace, monospace; letter-spacing: .1em;
 }
+.theme-toggle {
+  min-height: 34px; display: inline-flex; align-items: center; gap: 7px; padding: 0 10px;
+  border: 1px solid var(--line-strong); background: transparent; color: var(--muted);
+  cursor: pointer; font: 650 8px/1 ui-monospace, monospace; letter-spacing: .06em; white-space: nowrap;
+}
+.theme-toggle:hover { color: var(--text); border-color: var(--accent); }
+.theme-toggle-indicator { width: 7px; height: 7px; border: 1px solid currentColor; border-radius: 50%; background: transparent; }
+.is-night .theme-toggle-indicator { border-color: var(--accent); background: var(--accent); box-shadow: 0 0 9px rgba(214,179,106,.5); }
 .return-button { padding: 0 12px; border-left: 1px solid #beb8ad; border-right: 1px solid #beb8ad; }
 .legacy-admin-button { padding: 0 10px; border-right: 1px solid #beb8ad; }
 .return-button:hover, .legacy-admin-button:hover, .account-strip button:hover { color: #20221d; background: rgba(209,201,188,.28); }
@@ -302,7 +321,7 @@ onBeforeUnmount(() => {
   border-bottom: 1px solid #d1cbc0; color: #8f8a80; font: 600 7px/1 ui-monospace, monospace; letter-spacing: .1em;
 }
 .workspace-status strong { margin-left: auto; color: #686c5d; }
-.workspace-body { min-height: calc(100dvh - 198px); padding: 14px 20px 26px; background: #e8e5e1; transition: opacity .18s ease, transform .18s ease; }
+.workspace-body { min-height: calc(100dvh - 198px); padding: 14px 20px 26px; background: var(--bg); transition: opacity .18s ease, transform .18s ease; }
 .workspace-body :deep(.panel) {
   border-radius: 0 !important;
   box-shadow: none !important;
@@ -339,6 +358,84 @@ onBeforeUnmount(() => {
   border-top: 1px solid #c6c0b5; color: #938e84; font: 500 7px/1 ui-monospace, monospace; letter-spacing: .08em;
 }
 .workspace-footer strong { margin-left: auto; color: #77736a; font-weight: 500; }
+
+.workspace-shell.is-night {
+  --bg: #0b0f13;
+  --panel: #141a20;
+  --surface: #11171d;
+  --surface-2: #1b2229;
+  --line: #252e37;
+  --line-strong: #3a4651;
+  --text: #eee9de;
+  --muted: #a5afb8;
+  --subtle: #7f8a94;
+  --accent: #d6b36a;
+  --accent-strong: #e6c77e;
+  --ok: #35b978;
+  --bad: #e46363;
+  --warn: #d3a64f;
+  background: var(--bg);
+  color: var(--text);
+}
+.workspace-shell.is-night .workspace-entry-bridge { background: var(--bg); color: var(--text); }
+.workspace-shell.is-night .entry-file { border-color: var(--line); }
+.workspace-shell.is-night .entry-file-frame { border-color: var(--line-strong); background: var(--panel); box-shadow: inset 0 0 0 8px var(--surface), inset 0 0 0 9px var(--line); }
+.workspace-shell.is-night .entry-file-frame header,
+.workspace-shell.is-night .entry-file-id span,
+.workspace-shell.is-night .entry-file-frame footer,
+.workspace-shell.is-night .entry-detail > span,
+.workspace-shell.is-night .entry-detail dt,
+.workspace-shell.is-night .entry-detail footer { color: var(--subtle); }
+.workspace-shell.is-night .entry-file-frame header strong,
+.workspace-shell.is-night .entry-file-id b,
+.workspace-shell.is-night .entry-detail h2 { color: var(--text); }
+.workspace-shell.is-night .entry-file-id small,
+.workspace-shell.is-night .entry-detail > small,
+.workspace-shell.is-night .entry-detail dd,
+.workspace-shell.is-night .entry-detail p { color: var(--muted); }
+.workspace-shell.is-night .entry-rings i { border-color: var(--accent); }
+.workspace-shell.is-night .entry-rings b { background: var(--accent); }
+.workspace-shell.is-night .entry-detail-rule { background: var(--line-strong); }
+.workspace-shell.is-night .entry-detail dl,
+.workspace-shell.is-night .entry-detail dl > div { border-color: var(--line); }
+.workspace-shell.is-night .workspace-header,
+.workspace-shell.is-night .workspace-module-index,
+.workspace-shell.is-night .workspace-status,
+.workspace-shell.is-night .workspace-footer { border-color: var(--line); }
+.workspace-shell.is-night .workspace-brand span,
+.workspace-shell.is-night .workspace-module > span,
+.workspace-shell.is-night .context-readout span,
+.workspace-shell.is-night .workspace-module-index button span,
+.workspace-shell.is-night .workspace-status { color: var(--subtle); }
+.workspace-shell.is-night .workspace-brand strong,
+.workspace-shell.is-night .workspace-module h1,
+.workspace-shell.is-night .workspace-module-index button.active,
+.workspace-shell.is-night .workspace-module-index button:hover { color: var(--text); }
+.workspace-shell.is-night .workspace-module small,
+.workspace-shell.is-night .context-readout strong,
+.workspace-shell.is-night .workspace-module-index button,
+.workspace-shell.is-night .workspace-footer strong,
+.workspace-shell.is-night .workspace-actions button,
+.workspace-shell.is-night .workspace-status strong { color: var(--muted); }
+.workspace-shell.is-night .return-button,
+.workspace-shell.is-night .legacy-admin-button,
+.workspace-shell.is-night .workspace-actions { border-color: var(--line); }
+.workspace-shell.is-night .workspace-module-index button,
+.workspace-shell.is-night .workspace-module-index button:last-child { border-color: var(--line); }
+.workspace-shell.is-night .workspace-module-index button.active,
+.workspace-shell.is-night .workspace-module-index button:hover { background: rgba(255,255,255,.045); }
+.workspace-shell.is-night .workspace-module-index button::after { background: var(--accent); }
+.workspace-shell.is-night .account-strip input { border-color: var(--line-strong); color: var(--text); }
+.workspace-shell.is-night .account-strip button:hover,
+.workspace-shell.is-night .return-button:hover,
+.workspace-shell.is-night .legacy-admin-button:hover,
+.workspace-shell.is-night .theme-toggle:hover { color: var(--text); background: rgba(255,255,255,.055); }
+.workspace-shell.is-night .workspace-body :deep(.panel),
+.workspace-shell.is-night .workspace-body :deep(.card),
+.workspace-shell.is-night .workspace-body :deep(.tool-section),
+.workspace-shell.is-night .workspace-body :deep(.conversation-panel) { background: var(--panel) !important; }
+.workspace-shell.is-night .workspace-body :deep(.tool-output) { background: var(--surface); }
+.workspace-shell.is-night .workspace-body :deep(.btn.primary) { border-color: var(--accent) !important; background: var(--accent) !important; color: #17140e !important; }
 
 @keyframes workspace-bridge-out {
   0%, 58% { opacity: 1; }

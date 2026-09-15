@@ -454,8 +454,8 @@ onBeforeUnmount(() => {
 
     <div class="quote-row">
       <div class="trade-actions">
-        <button type="button" class="quick buy" @click="openOrder('BUY')">Buy</button>
-        <button type="button" class="quick sell" @click="openOrder('SELL')">Sell</button>
+        <button type="button" class="quick buy" @click="openOrder('BUY')">买入</button>
+        <button type="button" class="quick sell" @click="openOrder('SELL')">卖出</button>
       </div>
       <div class="ohlcv">
         <span>O <b>{{ formatPrice(latestBar.open) }}</b></span>
@@ -517,30 +517,40 @@ onBeforeUnmount(() => {
     </footer>
 
     <div v-if="modalOpen" class="modal-layer" @mousedown.self="closeModal">
-      <section class="order-modal" role="dialog" aria-modal="true" aria-label="模拟交易订单">
-        <button type="button" class="modal-close" aria-label="关闭" @click="closeModal">×</button>
-        <div class="modal-title">
-          <b>{{ activeInstrument.ticker }}</b>
-          <span>{{ activeInstrument.currency }}{{ formatPrice(currentPrice) }}</span>
+      <section class="order-modal" role="dialog" aria-modal="true" aria-labelledby="order-modal-title">
+        <header class="modal-header">
+          <div class="modal-kicker"><span>JARVIS / SIMULATION</span><b>模拟交易 · 下单</b></div>
+          <button type="button" class="modal-close" aria-label="关闭" @click="closeModal">×</button>
+        </header>
+        <div class="modal-title" id="order-modal-title">
+          <div class="modal-instrument">
+            <small>{{ activeInstrument.name || '交易标的' }}</small>
+            <h2>{{ activeInstrument.ticker }}</h2>
+          </div>
+          <div class="modal-last-price">
+            <small>最新行情</small>
+            <strong>{{ activeInstrument.currency }}{{ formatPrice(currentPrice) }}</strong>
+            <span v-if="quoteStale" class="modal-stale">行情陈旧</span>
+          </div>
         </div>
 
         <div class="side-switch">
           <button type="button" :class="{ active: orderState.side === 'BUY', buy: orderState.side === 'BUY' }"
-                  :disabled="Boolean(editingOrderId)" @click="orderState.side = 'BUY'">Buy</button>
+                  :disabled="Boolean(editingOrderId)" @click="orderState.side = 'BUY'">买入</button>
           <button type="button" :class="{ active: orderState.side === 'SELL', sell: orderState.side === 'SELL' }"
-                  :disabled="Boolean(editingOrderId)" @click="orderState.side = 'SELL'">Sell</button>
+                  :disabled="Boolean(editingOrderId)" @click="orderState.side = 'SELL'">卖出</button>
         </div>
 
         <div class="order-grid">
-          <label>Order type</label>
+          <label>委托类型</label>
           <select v-model="orderState.orderType" :disabled="Boolean(editingOrderId)">
-            <option value="MARKET">Market</option>
-            <option value="STOP_MARKET">Stop market</option>
+            <option value="MARKET">市价单</option>
+            <option value="STOP_MARKET">止损市价单</option>
           </select>
 
           <div class="field-label">
-            <label>Quantity</label>
-            <small v-if="orderState.side === 'SELL'">{{ availableQuantity }} available</small>
+            <label>交易数量</label>
+            <small v-if="orderState.side === 'SELL'">可卖 {{ availableQuantity }}</small>
           </div>
           <div class="step-input">
             <input v-model.number="orderState.quantity" type="number" min="1" step="1" :disabled="Boolean(editingOrderId)" />
@@ -551,8 +561,8 @@ onBeforeUnmount(() => {
           </div>
 
           <div v-if="orderState.orderType === 'STOP_MARKET'" class="field-label">
-            <label>Stop price</label>
-            <small>Bid {{ formatPrice(currentQuote?.bid || currentPrice) }} · Ask {{ formatPrice(currentQuote?.ask || currentPrice) }}</small>
+            <label>止损触发价</label>
+            <small>买价 {{ formatPrice(currentQuote?.bid || currentPrice) }} · 卖价 {{ formatPrice(currentQuote?.ask || currentPrice) }}</small>
           </div>
           <div v-if="orderState.orderType === 'STOP_MARKET'" class="step-input" :class="{ invalid: stopRelationError }">
             <input v-model.number="orderState.stopPrice" type="number" min="0" :step="activeInstrument.kind === 'jd' ? '0.01' : '0.001'" />
@@ -562,16 +572,16 @@ onBeforeUnmount(() => {
             </div>
           </div>
 
-          <label>Time in force</label>
+          <label>订单有效期</label>
           <select v-model="orderState.timeInForce" :disabled="Boolean(editingOrderId)">
-            <option value="DAY">Good for day</option>
-            <option value="GTC">Good till cancelled</option>
+            <option value="DAY">当日有效</option>
+            <option value="GTC">撤销前有效</option>
           </select>
         </div>
 
         <div class="order-summary">
           <div class="summary-line">
-            <b>{{ orderState.side === 'SELL' ? 'Estimated credit' : 'Estimated debit' }}</b>
+            <b>{{ orderState.side === 'SELL' ? '预计卖出金额' : '预计买入金额' }}</b>
             <strong>{{ formatMoney(estimatedAmount) }}</strong>
           </div>
           <p v-if="orderState.orderType === 'STOP_MARKET'">
@@ -586,10 +596,10 @@ onBeforeUnmount(() => {
         <div v-if="message" class="order-message" :class="messageType">{{ message }}</div>
 
         <footer class="modal-actions">
-          <button type="button" class="cancel" @click="closeModal">Cancel</button>
+          <button type="button" class="cancel" @click="closeModal">取消</button>
           <button type="button" class="confirm" :class="orderState.side === 'SELL' ? 'sell' : 'buy'"
                   :disabled="!canSubmit" @click="submitOrder">
-            {{ props.submitting ? 'Submitting…' : editingOrderId ? 'Update order' : `${orderState.side === 'SELL' ? 'Sell' : 'Buy'} ${activeInstrument.ticker}` }}
+            {{ props.submitting ? '提交中…' : editingOrderId ? '更新挂单' : `${orderState.side === 'SELL' ? '确认卖出' : '确认买入'} ${activeInstrument.ticker}` }}
           </button>
         </footer>
       </section>
@@ -599,22 +609,19 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .trade-terminal {
-  --line: #2b2e32;
-  --line-strong: #3a3d41;
-  --text: #e7e9e8;
-  --muted: #a4a8aa;
-  --subtle: #74797c;
-  --accent-strong: #d0ad68;
-  --warn: #d8a14d;
-  --surface: #24272a;
-  --trade-bg: #111214;
-  --trade-panel: #1b1c1f;
+  --trade-bg: var(--surface);
+  --trade-panel: var(--panel);
+  --trade-surface: var(--surface);
+  --trade-elevated: var(--surface-2, var(--panel-raised, var(--surface)));
   --trade-border: var(--line);
+  --trade-border-strong: var(--line-strong);
   --trade-text: var(--text);
   --trade-muted: var(--muted);
   --trade-subtle: var(--subtle);
-  --trade-buy: #27c46b;
-  --trade-sell: #ef5350;
+  --trade-accent: var(--accent-strong);
+  --trade-warn: var(--warn);
+  --trade-buy: var(--ok);
+  --trade-sell: var(--bad);
   position: relative;
   min-height: 640px;
   overflow: hidden;
@@ -624,77 +631,90 @@ onBeforeUnmount(() => {
   color: var(--trade-text);
   box-shadow: none;
 }
-.terminal-topbar { height: 43px; display: flex; align-items: center; justify-content: flex-start; border-bottom: 1px solid var(--trade-border); background: #18191c; }
+.terminal-topbar { height: 48px; display: flex; align-items: center; justify-content: flex-start; border-bottom: 1px solid var(--trade-border); background: var(--trade-panel); }
 .symbol-block { height: 100%; display: flex; align-items: center; gap: 8px; padding: 0 16px; color: var(--trade-text); background: transparent; border: 0; border-right: 1px solid var(--trade-border); cursor: pointer; font-variant-numeric: tabular-nums; }
 .symbol-square { width: 16px; height: 16px; border-radius: 3px; background: #ff8a00; box-shadow: 0 0 0 1px rgba(255,255,255,.08) inset; }
 .symbol-block b { font-size: 15px; letter-spacing: .01em; }
-.symbol-price { color: var(--muted); font-size: 14px; }
+.symbol-price { color: var(--trade-muted); font-size: 14px; }
 .symbol-change { font-size: 13px; font-weight: 650; }
-.symbol-change.up, .position-marker strong.up { color: var(--trade-buy); }
-.symbol-change.down, .position-marker strong.down { color: var(--trade-sell); }
-.quote-row { height: 48px; display: flex; align-items: center; gap: 16px; padding: 0 12px; border-bottom: 1px solid #22252a; background: #151619; }
+.symbol-change.up { color: #ef5350; }
+.symbol-change.down { color: #27c46b; }
+.position-marker strong.up { color: var(--trade-buy); }
+.position-marker strong.down { color: var(--trade-sell); }
+.quote-row { min-height: 54px; display: flex; align-items: center; gap: 16px; padding: 0 14px; border-bottom: 1px solid var(--trade-border); background: var(--trade-surface); }
 .trade-actions { display: flex; gap: 6px; }
-.quick { min-width: 86px; height: 30px; border: 0; border-radius: 4px; background: #292a2e; font-size: 12px; font-weight: 750; cursor: pointer; }
+.quick { min-width: 86px; height: 32px; border: 1px solid var(--trade-border); border-radius: 4px; background: var(--trade-elevated); font-size: 12px; font-weight: 750; cursor: pointer; transition: background .15s ease, border-color .15s ease; }
 .quick.buy { color: var(--trade-buy); }
 .quick.sell { color: var(--trade-sell); }
-.quick:hover { background: #323338; }
-.ohlcv { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
-.ohlcv b { color: var(--accent-strong); }
-.stale-badge { margin-left: auto; color: var(--warn); font-size: 10px; }
-.chart-stage { position: relative; height: clamp(480px, calc(100vh - 264px), 760px); min-height: 480px; background: #111214; }
+.quick:hover { background: color-mix(in srgb, var(--trade-elevated), var(--trade-text) 6%); border-color: var(--trade-border-strong); }
+.ohlcv { display: flex; align-items: center; gap: 10px; color: var(--trade-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.ohlcv b { color: var(--trade-accent); }
+.stale-badge { margin-left: auto; color: var(--trade-warn); font-size: 10px; }
+.chart-stage { position: relative; height: clamp(480px, calc(100dvh - 286px), 760px); min-height: 480px; background: var(--trade-bg); }
 .terminal-chart { width: 100%; height: 100%; border: 0; background: transparent; }
-.chart-state { position: absolute; inset: 0; z-index: 12; display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--muted); background: rgba(17,18,20,.72); font-size: 12px; }
-.chart-state.error { color: #ef5350; }
-.chart-state button { border: 1px solid var(--trade-border); border-radius: 4px; background: #232529; color: var(--trade-text); padding: 5px 9px; cursor: pointer; }
+.chart-state { position: absolute; inset: 0; z-index: 12; display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--trade-muted); background: rgba(11,15,19,.78); font-size: 12px; }
+.chart-state.error { color: var(--trade-sell); }
+.chart-state button { border: 1px solid var(--trade-border); border-radius: 4px; background: var(--trade-elevated); color: var(--trade-text); padding: 5px 9px; cursor: pointer; }
 .chart-marker, .axis-price-tag { position: absolute; z-index: 9; transform: translateY(-50%); font-variant-numeric: tabular-nums; }
-.position-marker { right: 78px; display: flex; align-items: center; gap: 6px; min-height: 29px; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: 5px; background: #24272a; color: var(--text); font-size: 11px; font-weight: 700; pointer-events: none; box-shadow: 0 6px 18px rgba(0,0,0,.18); }
-.marker-close { color: var(--subtle); font-size: 15px; font-weight: 500; margin-left: 1px; }
-.stop-marker { right: 150px; min-width: 68px; height: 29px; border: 1px solid #3a3d41; border-radius: 5px; background: #25272a; color: var(--trade-sell); font-size: 11px; font-weight: 760; cursor: pointer; box-shadow: 0 6px 18px rgba(0,0,0,.18); }
-.axis-price-tag { right: 4px; min-width: 56px; padding: 4px 6px; border-radius: 4px; background: #394047; color: var(--text); text-align: center; font-size: 11px; font-weight: 750; pointer-events: none; }
-.stop-price-tag { background: #343940; }
-.terminal-rangebar { min-height: 49px; display: flex; align-items: center; gap: 18px; padding: 0 18px; border-top: 1px solid #25282c; background: #151619; }
+.position-marker { right: 78px; display: flex; align-items: center; gap: 6px; min-height: 29px; padding: 0 8px; border: 1px solid var(--trade-border-strong); border-radius: 5px; background: var(--trade-elevated); color: var(--trade-text); font-size: 11px; font-weight: 700; pointer-events: none; box-shadow: 0 6px 18px rgba(0,0,0,.18); }
+.marker-close { color: var(--trade-subtle); font-size: 15px; font-weight: 500; margin-left: 1px; }
+.stop-marker { right: 150px; min-width: 68px; height: 29px; border: 1px solid var(--trade-border-strong); border-radius: 5px; background: var(--trade-elevated); color: var(--trade-sell); font-size: 11px; font-weight: 760; cursor: pointer; box-shadow: 0 6px 18px rgba(0,0,0,.18); }
+.axis-price-tag { right: 4px; min-width: 56px; padding: 4px 6px; border-radius: 4px; background: var(--trade-elevated); color: var(--trade-text); text-align: center; font-size: 11px; font-weight: 750; pointer-events: none; }
+.stop-price-tag { background: color-mix(in srgb, var(--trade-elevated), var(--trade-sell) 17%); }
+.terminal-rangebar { min-height: 49px; display: flex; align-items: center; gap: 18px; padding: 0 18px; border-top: 1px solid var(--trade-border); background: var(--trade-surface); }
 .range-list { display: flex; align-items: center; gap: 4px; }
-.range-list button { border: 0; background: transparent; color: var(--muted); padding: 7px 8px; font-size: 11px; font-weight: 650; cursor: pointer; }
-.range-list button.active { color: var(--text); }
-.interval-picker { display: flex; align-items: center; gap: 5px; border-left: 1px solid var(--line-strong); padding-left: 17px; color: var(--muted); font-size: 11px; }
-.interval-picker select { appearance: none; border: 0; outline: none; background: transparent; color: var(--text); font-weight: 750; padding: 4px 18px 4px 2px; cursor: pointer; }
-.interval-picker select option { color: var(--text); background: #202226; }
+.range-list button { border: 0; background: transparent; color: var(--trade-muted); padding: 7px 8px; font-size: 11px; font-weight: 650; cursor: pointer; }
+.range-list button.active { color: var(--trade-accent); }
+.interval-picker { display: flex; align-items: center; gap: 5px; border-left: 1px solid var(--trade-border-strong); padding-left: 17px; color: var(--trade-muted); font-size: 11px; }
+.interval-picker select { appearance: none; border: 0; outline: none; background: transparent; color: var(--trade-text); font-weight: 750; padding: 4px 18px 4px 2px; cursor: pointer; }
+.interval-picker select option { color: var(--trade-text); background: var(--trade-panel); }
 .open-order-chip { margin-left: auto; border: 1px solid rgba(239,83,80,.32); border-radius: 5px; background: rgba(239,83,80,.08); color: #ef5350; padding: 5px 9px; font-size: 10px; font-weight: 700; cursor: pointer; }
-.modal-layer { position: absolute; inset: 0; z-index: 20; display: grid; place-items: center; background: rgba(0,0,0,.10); backdrop-filter: blur(1.5px); }
-.order-modal { position: relative; width: min(432px, calc(100% - 28px)); transform: translateY(-2%); border: 1px solid #34363a; border-radius: 7px; background: rgba(28,29,31,.972); box-shadow: 0 28px 80px rgba(0,0,0,.58); overflow: hidden; }
-.modal-close { position: absolute; top: 10px; right: 13px; width: 30px; height: 30px; border: 0; background: transparent; color: var(--muted); font-size: 25px; line-height: 1; cursor: pointer; }
-.modal-title { display: flex; align-items: baseline; gap: 8px; padding: 36px 22px 15px; font-variant-numeric: tabular-nums; }
-.modal-title b { font-size: 20px; }
-.modal-title span { color: var(--muted); font-size: 20px; }
-.side-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin: 0 22px 18px; padding: 4px; border-radius: 6px; background: #26272b; }
-.side-switch button { height: 38px; border: 0; border-radius: 5px; background: transparent; color: var(--text); font-size: 13px; cursor: pointer; }
+.modal-layer { position: absolute; inset: 0; z-index: 20; display: grid; place-items: center; padding: 18px; background: rgba(4,7,10,.62); backdrop-filter: blur(5px); }
+.order-modal { position: relative; width: min(480px, 100%); max-height: min(88vh, 760px); overflow: auto; border: 1px solid var(--trade-border-strong); border-radius: 11px; background: var(--trade-panel); color: var(--trade-text); box-shadow: 0 30px 90px rgba(0,0,0,.46); }
+.modal-header { min-height: 48px; display: flex; align-items: center; justify-content: space-between; padding: 11px 20px 0 24px; }
+.modal-kicker { display: flex; flex-direction: column; gap: 5px; }
+.modal-kicker span { color: var(--trade-subtle); font: 650 8px/1 ui-monospace, monospace; letter-spacing: .12em; }
+.modal-kicker b { color: var(--trade-muted); font-size: 11px; font-weight: 600; }
+.modal-close { width: 32px; height: 32px; border: 1px solid var(--trade-border); border-radius: 50%; background: transparent; color: var(--trade-muted); font-size: 21px; line-height: 1; cursor: pointer; }
+.modal-close:hover { border-color: var(--trade-border-strong); background: var(--trade-elevated); color: var(--trade-text); }
+.modal-title { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 15px 24px 20px; font-variant-numeric: tabular-nums; }
+.modal-instrument small, .modal-last-price small { display: block; color: var(--trade-subtle); font-size: 10px; }
+.modal-instrument h2 { margin: 5px 0 0; color: var(--trade-text); font-size: 22px; line-height: 1.15; letter-spacing: .01em; }
+.modal-last-price { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.modal-last-price strong { color: var(--trade-accent); font-size: 20px; font-weight: 700; }
+.modal-stale { color: var(--trade-warn); font-size: 9px; }
+.side-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin: 0 24px 18px; padding: 4px; border: 1px solid var(--trade-border); border-radius: 6px; background: var(--trade-bg); }
+.side-switch button { height: 39px; border: 0; border-radius: 4px; background: transparent; color: var(--trade-muted); font-size: 12px; font-weight: 650; cursor: pointer; }
 .side-switch button.active.sell { background: var(--trade-sell); color: #17140e; font-weight: 800; }
 .side-switch button.active.buy { background: var(--trade-buy); color: #17140e; font-weight: 800; }
 .side-switch button:disabled { cursor: default; }
-.order-grid { display: grid; grid-template-columns: 1fr 190px; gap: 14px 18px; align-items: center; padding: 0 22px 18px; }
-.order-grid > label, .field-label > label { color: var(--muted); font-size: 13px; }
+.order-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(145px, 185px); gap: 12px 18px; align-items: center; padding: 0 24px 20px; }
+.order-grid > label, .field-label > label { color: var(--trade-muted); font-size: 11px; }
 .field-label { display: flex; flex-direction: column; gap: 2px; }
-.field-label small { color: var(--subtle); font-size: 11px; }
-.order-grid select, .step-input { min-height: 42px; border: 1px solid var(--line-strong); border-radius: 5px; background: #303135; color: var(--text); }
+.field-label small { color: var(--trade-subtle); font-size: 9px; }
+.order-grid select, .step-input { min-height: 42px; border: 1px solid var(--trade-border-strong); border-radius: 5px; background: var(--trade-elevated); color: var(--trade-text); }
 .order-grid select { padding: 0 12px; outline: none; }
+.order-grid select:focus, .step-input:focus-within { border-color: var(--trade-accent); }
 .step-input { display: grid; grid-template-columns: 1fr 34px; overflow: hidden; }
 .step-input.invalid { border-color: #784046; }
-.step-input input { width: 100%; border: 0; outline: none; background: transparent; color: var(--text); padding: 0 11px; font-variant-numeric: tabular-nums; }
-.step-buttons { display: grid; grid-template-rows: 1fr 1fr; border-left: 1px solid #44464b; }
-.step-buttons button { border: 0; background: #3a3b3f; color: var(--muted); line-height: 1; cursor: pointer; }
-.step-buttons button + button { border-top: 1px solid #4b4d52; }
-.order-summary { border-top: 1px solid #393b3f; border-bottom: 1px solid #393b3f; padding: 18px 22px; }
+.step-input input { width: 100%; border: 0; outline: none; background: transparent; color: var(--trade-text); padding: 0 11px; font-variant-numeric: tabular-nums; }
+.step-buttons { display: grid; grid-template-rows: 1fr 1fr; border-left: 1px solid var(--trade-border); }
+.step-buttons button { border: 0; background: var(--trade-surface); color: var(--trade-muted); line-height: 1; cursor: pointer; }
+.step-buttons button + button { border-top: 1px solid var(--trade-border); }
+.step-buttons button:disabled { opacity: .45; cursor: not-allowed; }
+.order-summary { border-top: 1px solid var(--trade-border); border-bottom: 1px solid var(--trade-border); padding: 16px 24px; background: color-mix(in srgb, var(--trade-surface), transparent 30%); }
 .summary-line { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.summary-line b, .summary-line strong { color: var(--text); font-size: 14px; }
-.order-summary p { margin: 15px 0 0; color: var(--subtle); font-size: 11px; line-height: 1.55; }
-.order-summary .validation-hint { margin-top: 8px; color: #ef5350; }
-.cancel-order-link { margin-top: 10px; padding: 0; border: 0; background: transparent; color: #ef5350; text-decoration: underline; font-size: 10px; cursor: pointer; }
-.order-message { margin: 12px 22px 0; border-radius: 4px; padding: 8px 10px; background: var(--surface); color: var(--muted); font-size: 10px; }
-.order-message.ok { color: #27c46b; }
-.order-message.error { color: #ef5350; }
-.modal-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 14px 14px 22px; }
-.modal-actions button { min-width: 92px; height: 40px; border: 0; border-radius: 5px; font-weight: 750; cursor: pointer; }
-.modal-actions .cancel { background: var(--surface); color: var(--text); }
+.summary-line b, .summary-line strong { color: var(--trade-text); font-size: 12px; }
+.summary-line strong { color: var(--trade-accent); font-variant-numeric: tabular-nums; }
+.order-summary p { margin: 11px 0 0; color: var(--trade-subtle); font-size: 10px; line-height: 1.6; }
+.order-summary .validation-hint { margin-top: 8px; color: var(--trade-sell); }
+.cancel-order-link { margin-top: 10px; padding: 0; border: 0; background: transparent; color: var(--trade-sell); text-decoration: underline; font-size: 10px; cursor: pointer; }
+.order-message { margin: 12px 24px 0; border-radius: 4px; padding: 8px 10px; background: var(--trade-surface); color: var(--trade-muted); font-size: 10px; }
+.order-message.ok { color: var(--trade-buy); }
+.order-message.error { color: var(--trade-sell); }
+.modal-actions { position: sticky; bottom: 0; display: flex; justify-content: flex-end; gap: 10px; padding: 14px 24px max(14px, env(safe-area-inset-bottom)); border-top: 1px solid var(--trade-border); background: var(--trade-panel); }
+.modal-actions button { min-width: 108px; min-height: 40px; border: 0; border-radius: 5px; font-size: 11px; font-weight: 750; cursor: pointer; }
+.modal-actions .cancel { background: var(--trade-surface); color: var(--trade-text); }
 .modal-actions .confirm.sell { background: var(--trade-sell); color: #17140e; }
 .modal-actions .confirm.buy { background: var(--trade-buy); color: #17140e; }
 .modal-actions .confirm:disabled { opacity: .45; cursor: not-allowed; }
@@ -720,7 +740,17 @@ onBeforeUnmount(() => {
   .ohlcv { width: 100%; }
   .chart-stage { height: 450px; min-height: 450px; }
   .order-grid { grid-template-columns: 1fr; }
-  .order-grid > label, .field-label { margin-bottom: -6px; }
+  .order-grid { gap: 8px; }
+  .order-grid > label, .field-label { margin: 3px 0 -3px; }
   .chart-marker, .axis-price-tag { display: none; }
+  .modal-layer { position: fixed; inset: 0; align-items: end; padding: 0; }
+  .order-modal { width: 100%; max-height: 90dvh; border-radius: 16px 16px 0 0; border-bottom: 0; }
+  .modal-header { padding: 16px 18px 0 20px; }
+  .modal-title { padding: 14px 20px 16px; }
+  .side-switch { margin-right: 20px; margin-left: 20px; }
+  .order-grid { padding-right: 20px; padding-left: 20px; }
+  .order-summary { padding-right: 20px; padding-left: 20px; }
+  .order-message { margin-right: 20px; margin-left: 20px; }
+  .modal-actions { padding-right: 20px; padding-left: 20px; }
 }
 </style>

@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { api } from '../api/client'
 import DataState from '../components/common/DataState.vue'
+import MarkdownContent from '../components/common/MarkdownContent.vue'
 
 const props = defineProps({
   researchContext: { type: Object, default: null },
@@ -200,7 +201,7 @@ function clearAll() {
             <div class="rk-report-head">
               <div><b>RISK REPORT</b><span>AI 基于确定性指标生成，数值口径以指标区为准</span></div>
             </div>
-            <div class="rk-output">{{ result.content?.content || result.content || '（暂无报告）' }}</div>
+            <MarkdownContent class="rk-output" :content="result.content?.content || result.content || '（暂无报告）'" />
           </div>
         </template>
 
@@ -273,7 +274,7 @@ function clearAll() {
 .rk-report-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
 .rk-report-head b { color: var(--text); font-size: 12px; font-weight: 680; }
 .rk-report-head span { display: block; margin-top: 3px; color: var(--subtle); font-size: 9px; }
-.rk-output { margin-top: 10px; max-height: 420px; overflow: auto; background: transparent; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); border-radius: 0; padding: 14px 2px; color: var(--text); font-size: 11px; line-height: 1.78; white-space: pre-wrap; overflow-wrap: anywhere; }
+.rk-output { margin-top: 10px; max-height: 420px; overflow: auto; background: transparent; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); border-radius: 0; padding: 14px 2px; color: var(--text); font-size: 11px; line-height: 1.78; overflow-wrap: anywhere; }
 .rk-empty { display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 46px 20px; text-align: center; }
 .rk-empty-mark { color: var(--accent-strong); border: 1px solid var(--line-strong); border-radius: 0; width: 58px; height: 40px; display: grid; place-items: center; font: 650 9px/1 ui-monospace, monospace; letter-spacing: .08em; }
 .rk-empty b { color: var(--text); font-size: 12px; font-weight: 650; }

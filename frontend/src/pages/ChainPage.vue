@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { api } from '../api/client'
 import DataState from '../components/common/DataState.vue'
+import MarkdownContent from '../components/common/MarkdownContent.vue'
 
 const props = defineProps({
   researchContext: { type: Object, default: null },
@@ -173,7 +174,7 @@ function clearAll() {
 
           <div v-if="result" class="ch-result-panel">
             <div class="ch-result-head"><div><b>ANALYSIS DOSSIER</b><span>模型分析原文，不从文本中伪造结构化关系</span></div></div>
-            <div class="ch-output">{{ result }}</div>
+            <MarkdownContent class="ch-output" :content="result" />
           </div>
           <DataState v-else-if="analyzing" state="loading" title="正在分析产业链" message="梳理上下游与供需格局，通常需要数十秒" />
           <DataState v-else-if="error" state="error" title="产业链分析失败" :message="error" retryable @retry="analyze" />
@@ -252,7 +253,7 @@ function clearAll() {
 .ch-result-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
 .ch-result-head b { color: var(--text); font-size: 12px; font-weight: 680; }
 .ch-result-head span { display: block; margin-top: 3px; color: var(--subtle); font-size: 9px; }
-.ch-output { margin-top: 10px; max-height: 330px; overflow: auto; background: transparent; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); border-radius: 0; padding: 12px 2px; color: var(--text); font-size: 10px; line-height: 1.72; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ch-output { margin-top: 10px; max-height: 330px; overflow: auto; background: transparent; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); border-radius: 0; padding: 12px 2px; color: var(--text); font-size: 10px; line-height: 1.72; overflow-wrap: anywhere; }
 .ch-empty { display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 28px 8px; text-align: center; }
 .ch-empty-mark { color: var(--accent-strong); border: 1px solid var(--line-strong); border-radius: 0; width: 58px; height: 40px; display: grid; place-items: center; font: 650 9px/1 ui-monospace, monospace; letter-spacing: .08em; }
 .ch-empty b { color: var(--text); font-size: 12px; font-weight: 650; }

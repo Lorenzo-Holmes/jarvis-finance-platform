@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { api } from '../api/client'
 import DataState from '../components/common/DataState.vue'
+import MarkdownContent from '../components/common/MarkdownContent.vue'
 
 // ---- 研报输入 ----
 // 后端约束: reports 1-20 篇, 总长度 <= 100000 字符 (backend/app/ai_routes.py SentimentReq)
@@ -147,7 +148,7 @@ async function analyze() {
           <div v-if="sectionCards.length" class="st-sections">
             <div v-for="card in sectionCards" :key="card.id" class="panel st-section">
               <div class="st-block-head"><b>{{ card.title }}</b></div>
-              <div class="st-section-body">{{ card.text }}</div>
+              <MarkdownContent class="st-section-body" :content="card.text" />
             </div>
           </div>
 
@@ -155,7 +156,7 @@ async function analyze() {
             <div class="st-result-head">
               <div><b>SYNTHESIS / 完整分析</b><span>模型原文，多空倾向自动识别，仅供参考，请结合原文独立判断</span></div>
             </div>
-            <div class="st-output">{{ result }}</div>
+            <MarkdownContent class="st-output" :content="result" />
           </div>
         </template>
 
@@ -221,12 +222,12 @@ async function analyze() {
 .st-side p { margin: 0; color: var(--text); font-size: 10px; line-height: 1.6; }
 .st-sections { display: flex; flex-direction: column; gap: 8px; }
 .st-section { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; }
-.st-section-body { color: var(--text); font-size: 11px; line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; }
+.st-section-body { color: var(--text); font-size: 11px; line-height: 1.75; overflow-wrap: anywhere; }
 .st-result-panel { display: flex; flex-direction: column; }
 .st-result-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
 .st-result-head b { color: var(--text); font-size: 12px; font-weight: 680; }
 .st-result-head span { display: block; margin-top: 3px; color: var(--subtle); font-size: 9px; }
-.st-output { margin-top: 10px; max-height: 520px; overflow: auto; background: transparent; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); border-radius: 0; padding: 14px 2px; color: var(--text); font-size: 11px; line-height: 1.78; white-space: pre-wrap; overflow-wrap: anywhere; }
+.st-output { margin-top: 10px; max-height: 520px; overflow: auto; background: transparent; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); border-radius: 0; padding: 14px 2px; color: var(--text); font-size: 11px; line-height: 1.78; overflow-wrap: anywhere; }
 .st-empty { display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 46px 20px; text-align: center; }
 .st-empty-mark { color: var(--accent-strong); border: 1px solid var(--line-strong); border-radius: 0; width: 58px; height: 40px; display: grid; place-items: center; font: 650 9px/1 ui-monospace, monospace; letter-spacing: .08em; }
 .st-empty b { color: var(--text); font-size: 12px; font-weight: 650; }
