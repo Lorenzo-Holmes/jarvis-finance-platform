@@ -28,15 +28,27 @@
 - Python：`ai_service.analyze_risk(..., metrics=None)` 有则**复制后引用**（既有实现会
   `pop("alerts")`，直接引用会改到调用方对象）；`ai_routes.RiskReq` 加可选 `metrics` 字段
 
-## 3.  剩余配方（quote / trend / chat）
+## 3.  剩余配方（quote / trend / chat）——**注意量级，与风险面不同**
 
-Java 侧挂载点**都现成**（`AiController` 内）：`enrichQuoteBody`、`enrichTrendBody`、
-`enrichChatBody`，且都已从自营行情库取数。每个面照风险面做四件事：
+**关键前提（已核实，勿低估）**：Java 侧只有 `MarketMetrics` 与 `RiskMetrics` 两个指标类，
+**没有** quote / trend 的对应实现（`com/jarvis/research/ai/` 包已逐个文件确认；
+`market/` 包只有 `QuoteDTO`，那是 DTO 不是算法）。
+而 Python 侧要迁的是 `research_tools.quote_metrics`（约 80 行）与
+`kline_metrics`（约 130 行，还含多周期聚合与预测区间）。
 
-1. 该 hook 里用**同一次取数**的结果算出指标 → 作为 `metrics` 附进 payload
-2. 对应 Python 函数增加可选 `metrics` 参数：有则复制引用，无则回退本地
-3. 对应 `*Req` 加可选字段并透传
-4. 补三层测试（数值 / 接线 / 等价性）
+所以每个面的**第一步是把计算移植到 Java**（沿用既有格式化字符串契约：金额 6 位小数、
+百分比 4 位小数、`ROUND_HALF_UP`、`toPlainString`），**之后**才是接线四步：
+
+1. 移植计算 → `QuoteMetrics` / `TrendMetrics`，配跨语言同向量测试（做法同 `RiskMetricsTest`
+   与 `test_risk_metrics_contract.py`：期望值**独立推导**，不要抄实现输出）
+2. 该 hook（`enrichQuoteBody` / `enrichTrendBody`）用**同一次取数**的结果算出指标 → 附进 payload
+3. Python 对应函数（quote 入口在 `ai_service.py:400` 一带）增加可选 `metrics` 参数：
+   有则**复制后**引用（既有实现有 `pop("alerts")` 这类就地修改，直接引用会改到调用方对象），
+   无则回退本地
+4. 补三层测试（数值一致 / 接线正确 / 换来源不改响应）
+
+chat 面**放到最后**：它的 `deterministic_context` 同时依赖 quote 与 kline 两套指标
+（`research_tools.py:259`、`:264`），要等那两个面都就位。
 
 全迁完后才删 Python 侧的本地自算与那份跨语言契约测试。
 
