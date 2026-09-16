@@ -13,6 +13,7 @@ from typing import Iterator, List, Dict, Optional, Any
 
 import requests
 
+from . import research_report as research_report_prompts
 from .research_tools import (
     deterministic_context,
     market_trend as trend_metrics,
@@ -208,6 +209,40 @@ def chat(messages: List[Dict[str, str]], temperature: float = 0.7,
     return _chat_request(full, temperature=temperature)
 
 
+def research_report(task: Dict[str, Any], metrics: Optional[Dict[str, Any]] = None,
+                    quote: Optional[Dict[str, Any]] = None,
+                    warnings: Optional[List[str]] = None) -> Dict[str, Any]:
+    """研究任务报告：让模型解释 Java 确定性计算层给出的数值。
+
+    与 chat 的口径差别是**有意的**：chat 走 Python 的确定性计算层
+    （research_tools.deterministic_context，接收原始 prices/klines 后自行计算），
+    研究任务则直接引用 Java 算好的 metrics，不做任何重算——
+    报告里的数字必须与任务详情页里展示的数字逐字相同，否则同一份研究会有两个口径。
+
+    数值与数据缺口都原样回传（metrics_used / data_gaps），
+    落库后能回答"这份报告当时看到的是哪些数、缺了哪些数"。
+    """
+    messages = research_report_prompts.build_messages(
+        task=task, metrics=metrics, quote=quote, warnings=warnings,
+    )
+    # 研究报告要的是稳定而不是文采：温度压低，长度给足
+    response = _chat_request(messages, temperature=0.3, max_tokens=3000)
+    parsed = research_report_prompts.parse_report(response.get("content"))
+
+    return {
+        "task_type": str(task.get("task_type") or "REPORT").upper(),
+        "model": response.get("model"),
+        "usage": response.get("usage"),
+        "summary": parsed["summary"],
+        "sections": parsed["sections"],
+        "risks": parsed["risks"],
+        "parsed": parsed["parsed"],
+        # 原样回传，便于落库存档；模型无权改动这两项
+        "metrics_used": metrics or {},
+        "data_gaps": list(warnings or []),
+    }
+
+
 def capabilities() -> Dict[str, Any]:
     """能力探测: 是否可用 + 协议/模型信息"""
     ok = bool(AI_API_KEY)
@@ -231,6 +266,7 @@ def capabilities() -> Dict[str, Any]:
             "模拟盘持仓与杠杆风险分析",
             "个性化策略生成（风险偏好问卷）",
             "市场趋势预测（单资产日K统计基线）",
+            "研究任务报告（结构化、可归档，数值口径由 Java 计算层提供）",
         ],
     }
 

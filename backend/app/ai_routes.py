@@ -111,6 +111,23 @@ class TrendReq(BaseModel):
     symbol: Optional[str] = Field(default=None, max_length=32)
 
 
+class ResearchReportReq(BaseModel):
+    """研究任务报告（Phase 2 AI Research Core）。
+
+    与其它端点最重要的区别：**metrics 由 Java 确定性计算层算好传进来，Python 不重算**。
+    报告里的数字必须与任务详情页展示的数字逐字相同，否则同一份研究会有两个口径。
+    warnings 同理——"缺了什么数据"由程序判断，不让模型自己猜自己缺什么。
+    """
+    task_type: Literal["REPORT", "SENTIMENT", "CHAIN", "RISK", "TREND", "STRATEGY"] = "REPORT"
+    title: Optional[str] = Field(default=None, max_length=200)
+    question: Optional[str] = Field(default=None, max_length=2000)
+    market: Optional[str] = Field(default=None, max_length=20)
+    symbol: Optional[str] = Field(default=None, max_length=32)
+    metrics: Dict[str, Any] = Field(default_factory=dict)
+    quote: Optional[Dict[str, Any]] = None
+    warnings: List[str] = Field(default_factory=list, max_length=20)
+
+
 def _guard(fn, **kw):
     """执行并统一把 RuntimeError 转 502"""
     try:
@@ -220,3 +237,15 @@ def smart_quote(req: QuoteReq):
                            horizon_days=req.horizon_days,
                            confidence=req.confidence,
                            symbol=req.symbol)}
+
+
+@router.post("/research/report")
+def research_report(req: ResearchReportReq):
+    return {"code": 200, "message": "ok",
+            "data": _guard(ai_service.research_report,
+                           task=req.model_dump(include={
+                               "task_type", "title", "question", "market", "symbol",
+                           }),
+                           metrics=req.metrics,
+                           quote=req.quote,
+                           warnings=req.warnings)}
