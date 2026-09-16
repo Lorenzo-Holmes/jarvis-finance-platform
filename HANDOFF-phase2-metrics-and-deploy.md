@@ -61,7 +61,29 @@ quote 的 forecast 字段）。
 chat 面**放到最后**：它的 `deterministic_context` 同时依赖 quote 与 kline 两套指标
 （`research_tools.py:259`、`:264`），要等那两个面都就位。
 
-全迁完后才删 Python 侧的本地自算与那份跨语言契约测试。
+**修订（第 31 轮，推翻上面这一行）**：原计划"全迁完后删 Python 侧本地自算与跨语言契约
+测试"经查调用图后**不成立，不执行**：
+
+- 每个面只被一个路由调用、且都已传 `metrics`，但**直连 Python 的调用方**、
+  以及 Java 侧 `marketDataService == null` 的守卫路径，都让本地分支**仍然可达**。
+  删掉它会让这些路径静默出错
+- 本地实现与 Java 实现已由七套契约测试钉成逐值相等，**漂移可被发现**；
+  删掉那份契约测试等于拆掉唯一的防漂移护栏
+- 因此 ⑧ 的收口不是"删代码"，而是：**Java 在有数据时是唯一数值来源，Python 引用之；
+  回退分支保留，但被契约钉死**
+
+## 3.1  完成状态（第 32 轮）
+
+- 五个计算单元全部移植到 Java：`RiskMetrics` / `QuoteMetrics` / `KlineMetrics` /
+  `TrendForecast` + `MarketTrend` / `PortfolioMetrics`，外加编排层 `DeterministicContext`
+- 四个面全部接通"Java 算、Python 引用"：**risk / quote / trend / chat**
+  （组合面无需单独接线——`portfolio_metrics` 只被 `deterministic_context` 调用，
+  而它只经 chat 路径到达）
+- 每面三层证据：一调用就失败的替身证明没自算；路由能收字段；同输入下换来源响应逐字相等
+- Java 侧另有 `AiControllerMetricsWiringTest` 钉住"确实发出去了"以及 K 线转 Map 的**键名**
+  （键名写错时 Python 读到空值但不报错，只会悄悄分叉）
+- 判据按面而异，且都写进了注释：risk/trend 看 `available` 是否存在，quote/chat 看字典
+  是否非空——因为 `quote_metrics` 与 chat 上下文**都没有** `available` 字段
 
 ## 4. 部署配方（**部分未经我核对**）
 
@@ -77,8 +99,21 @@ chat 面**放到最后**：它的 `deterministic_context` 同时依赖 quote 与
   发布是由服务器上那份**完整代码镜像**编排的，不在 release 目录里
 - 服务器目录布局：`/opt/jarvis/{build,current,releases,staging,venv}`；
   `staging/` 里是 2026-09-07 的**前端**暂存，而前端已改走 GitHub Pages（`§0`），属陈旧残留
-- **仍未核实**：把 `dist/releases/<id>/` 上传到服务器的那条命令（`scp`/`rsync` 形式），
-  以及 `promote-release.sh` 的参数列表。执行前请自己读脚本，不要依赖本文档
+- **已核实（第 32 轮读脚本原文）**：`promote-release.sh` 收**一个位置参数**
+  （`/opt/jarvis/releases/<release-id>`），切 symlink 后先重启 `jarvis-ai` 再重启
+  `jarvis-java`，各自健康检查（8100 `/api/ready`、8200 `/api/health/ready`），
+  **任一失败自动回滚旧 symlink 并重启旧版本**——发布本身是自保护的
+- 前置条件（脚本自检）：release 必须含 `java-backend/app.jar`、`backend/app/main.py`、
+  `backend/requirements.txt`；且服务器须有 `/etc/jarvis/java.env`、`/etc/jarvis/python.env`
+- `build-release.sh` 原文：从仓库根执行 `mvn clean test package` → migration jar →
+  `cd backend && pytest` → 前端构建，产物落 `dist/releases/<STAMP>-<sha12>/`。
+  Windows 上要用 Git Bash 并覆盖 `PYTHON=python`（脚本默认 `python3`）、
+  `JAVA_HOME` 用 Unix 形式路径。**从 `backend/` 目录跑 pytest 已验证同样 218 全过**
+- 部署目标主机（**SSH 记录**）：`~/.ssh/config` 里的 **`jarvis-remote`** → `43.111.49.27`
+  （User `root`，`IdentityFile ~/.ssh/id_ed25519`）。上传即
+  `scp -r dist/releases/<id> root@43.111.49.27:/opt/jarvis/releases/`
+- 服务器上 `/opt/jarvis/build/<完整sha>/` 是**上一次发布的完整代码镜像**，
+  当前为 `4f6108c84bac364ec83ef2d202867dd1c258e403`
 - `migrate-production-ubuntu.sh` 同 `run-h2-migration.sh` 属**历史迁移**用途，勿混入常规发布
 - **不要混入** `run-h2-migration.sh`：那是 H2 → PostgreSQL 的**一次性数据迁移**
   （目标表必须为空、逐表核对行数），与代码发布无关，误用后果严重
