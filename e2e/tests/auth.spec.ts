@@ -26,9 +26,9 @@ async function backendReady(request: APIRequestContext): Promise<boolean> {
  *   E2E_ADMIN_EMAIL / E2E_ADMIN_PASSWORD
  */
 test.describe('登录与权限', () => {
-  test('未登录时工作台外壳不应渲染', async ({ page, workspacePage }) => {
+  test('未登录时工作台外壳不应渲染', async ({ workspacePage }) => {
     // 纯前端判定，不依赖后端：即使 `/me` 请求失败，未登录也不该进入工作台。
-    await page.goto('/')
+    await workspacePage.goto()
     await workspacePage.expectShellHidden()
   })
 

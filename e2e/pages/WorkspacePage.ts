@@ -1,6 +1,7 @@
 import { expect, type Locator } from '@playwright/test'
 import { BasePage } from './BasePage'
 import { FALLBACK } from '../utils/selectors'
+import { PREVIEW_PARAMS } from '../utils/env'
 
 /**
  * 登录后的工作台外壳（`frontend/src/App.vue` 的 `container` 分支）。
@@ -15,7 +16,7 @@ export class WorkspacePage extends BasePage {
 
   /** 免登录进入工作台（预览用户，role=USER）。 */
   async openPreview(): Promise<void> {
-    await this.goto({ preview: '1' })
+    await this.goto(PREVIEW_PARAMS)
   }
 
   get shell(): Locator {

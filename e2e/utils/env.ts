@@ -9,9 +9,9 @@
  */
 
 /**
- * ⚠️ 默认用 `localhost` 而非 `127.0.0.1`：本机实测 Vite dev server 只监听 `localhost`
- * （`http://127.0.0.1:5173` 会 fetch failed，`http://localhost:5173` 返回 200）。
- * 两者都满足前端 `?preview=1` 预览模式对 host 的判定，故用 `localhost` 更保险。
+ * 默认用 `localhost` 而非 `127.0.0.1`：两者都满足前端 `?preview=1` 预览模式对 host 的判定
+ * （`App.vue` 的 `localPreview` 同时接受这两个 host），用 `localhost` 兼容性更好
+ * ——部分环境下 Vite dev server 只监听 `localhost`，此时 `127.0.0.1` 会连不上。
  */
 export const FRONTEND_URL = process.env.E2E_BASE_URL ?? 'http://localhost:5173'
 
@@ -50,5 +50,10 @@ export const STORAGE_STATE: Record<Role, string> = {
  * 本地预览模式开关：前端在 DEV + localhost 下支持 `?preview=1` 免登录进入工作台
  * （见 frontend/src/App.vue 的 localPreview 分支）。
  * 用于不依赖后端账号即可验证工作台外壳渲染的用例。
+ *
+ * `PREVIEW_PARAMS` 可直接交给 `BasePage.goto(query)`；`PREVIEW_QUERY` 用于拼裸 URL。
+ * 两者由同一份常量派生，避免参数名在多处手写漂移。
  */
-export const PREVIEW_QUERY = 'preview=1'
+export const PREVIEW_PARAMS = { preview: '1' } as const
+
+export const PREVIEW_QUERY = new URLSearchParams(PREVIEW_PARAMS).toString()
