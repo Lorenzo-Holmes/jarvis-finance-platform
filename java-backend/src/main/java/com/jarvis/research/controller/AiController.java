@@ -1,5 +1,6 @@
 package com.jarvis.research.controller;
 
+import com.jarvis.research.ai.MarketTrend;
 import com.jarvis.research.ai.QuoteMetrics;
 import com.jarvis.research.ai.RiskMetrics;
 import com.jarvis.research.market.MarketDataService;
@@ -278,7 +279,13 @@ public class AiController {
         }
 
         // 与报价端点一致：取足够历史供 Python 侧做波动率估计，绝不回退客户端传值。
-        trendPayload.put("closes", loadServerOwnedCloses(market, 250));
+        List<Double> closes = loadServerOwnedCloses(market, 250);
+        trendPayload.put("closes", closes);
+
+        // 与风险面/报价面同一套做法：用**这一份**服务端收盘价算出趋势结果一并下发，
+        // Python 侧随后改为引用，不再各自算一遍。下游此刻会忽略该字段，行为不变。
+        trendPayload.put("metrics", MarketTrend.compute(
+                closes, trendPayload.get("horizon_days"), trendPayload.get("confidence"), market));
         return trendPayload;
     }
 
