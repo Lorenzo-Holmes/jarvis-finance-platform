@@ -1,5 +1,7 @@
 package com.jarvis.research.market;
 
+import com.jarvis.research.market.dto.DailyKlineDTO;
+import com.jarvis.research.market.dto.KlineBarDTO;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.Pageable;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -44,13 +46,14 @@ class MarketDataServiceTest {
         when(klineRepo.findByMarketOrderByDateDesc(eq("gold_etf"), any(Pageable.class)))
                 .thenReturn(List.of(newest, older));
 
-        Map<String, Object> result = service.getDailyKline("gold_etf", 2);
+        DailyKlineDTO result = service.getDailyKline("gold_etf", 2);
 
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> data = (List<Map<String, Object>>) result.get("data");
+        List<KlineBarDTO> data = result.data();
         assertEquals(2, data.size());
-        assertEquals("2026-09-03", data.get(0).get("date"));
-        assertEquals("2026-09-04", data.get(1).get("date"));
+        assertEquals("2026-09-03", data.get(0).date());
+        assertEquals("2026-09-04", data.get(1).date());
+        assertEquals(2, result.count());
+        assertEquals("2026-09-04", result.asOf());
 
         verify(klineRepo).findByMarketOrderByDateDesc(eq("gold_etf"), any(Pageable.class));
         verify(klineRepo, never()).save(any());

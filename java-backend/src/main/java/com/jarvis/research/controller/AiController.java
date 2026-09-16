@@ -1,6 +1,8 @@
 package com.jarvis.research.controller;
 
 import com.jarvis.research.market.MarketDataService;
+import com.jarvis.research.market.dto.DailyKlineDTO;
+import com.jarvis.research.market.dto.KlineBarDTO;
 import com.jarvis.research.security.CurrentUser;
 import com.jarvis.research.service.AiProxyService;
 import com.jarvis.research.service.AiRateLimitService;
@@ -273,23 +275,14 @@ public class AiController {
      */
     private List<Double> loadServerOwnedCloses(String market, int days) {
         try {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> kline = (Map<String, Object>) marketDataService.getDailyKline(market, days);
-            Object rawRows = kline == null ? null : kline.get("data");
+            DailyKlineDTO kline = marketDataService.getDailyKline(market, days);
             List<Double> closes = new ArrayList<>();
-            if (rawRows instanceof List<?> rows) {
-                for (Object rowObj : rows) {
-                    if (!(rowObj instanceof Map<?, ?> row)) continue;
-                    Object close = row.get("close");
-                    if (close instanceof Number number) {
-                        closes.add(number.doubleValue());
-                    } else if (close != null) {
-                        try {
-                            closes.add(Double.parseDouble(String.valueOf(close)));
-                        } catch (NumberFormatException ignored) {
-                            // 忽略单行坏数据，Python 侧会对样本量做最终校验。
-                        }
-                    }
+            if (kline == null || kline.data() == null) {
+                return closes;
+            }
+            for (KlineBarDTO bar : kline.data()) {
+                if (bar != null && bar.close() != null) {
+                    closes.add(bar.close());
                 }
             }
             return closes;

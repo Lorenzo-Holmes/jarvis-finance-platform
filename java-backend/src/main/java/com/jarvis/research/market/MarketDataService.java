@@ -1,5 +1,9 @@
 package com.jarvis.research.market;
 
+import com.jarvis.research.market.dto.DailyKlineDTO;
+import com.jarvis.research.market.dto.KlineBarDTO;
+import com.jarvis.research.market.dto.KlineRangeDTO;
+import com.jarvis.research.market.dto.MinuteKlineDTO;
 import com.jarvis.research.market.provider.MarketDataProvider;
 import com.jarvis.research.market.provider.ProviderRegistry;
 import lombok.extern.slf4j.Slf4j;
@@ -403,12 +407,12 @@ public class MarketDataService {
     }
 
     /** API 只读数据库最近 N 根日K，不触发任何外部请求或写入。 */
-    public Map<String, Object> getDailyKline(String market, int limit) {
+    public DailyKlineDTO getDailyKline(String market, int limit) {
         return getDailyKline(market, limit, null);
     }
 
     /** 按可选截止日读取最近 N 根日K，用于可复现回测。 */
-    public Map<String, Object> getDailyKline(String market, int limit, String asOf) {
+    public DailyKlineDTO getDailyKline(String market, int limit, String asOf) {
         List<KlineDaily> latest = new ArrayList<>(
                 asOf == null || asOf.isBlank()
                         ? klineRepo.findByMarketOrderByDateDesc(market, PageRequest.of(0, limit))
@@ -416,30 +420,23 @@ public class MarketDataService {
                                 market, asOf.trim(), PageRequest.of(0, limit)));
         Collections.reverse(latest);
 
-        List<Map<String, Object>> data = new ArrayList<>();
+        List<KlineBarDTO> data = new ArrayList<>();
         for (KlineDaily k : latest) {
-            Map<String, Object> m = new LinkedHashMap<>();
-            m.put("date", k.getDate());
-            m.put("open", k.getOpen());
-            m.put("close", k.getClose());
-            m.put("high", k.getHigh());
-            m.put("low", k.getLow());
-            m.put("volume", k.getVolume() == null ? 0.0 : k.getVolume());
-            data.add(m);
+            data.add(new KlineBarDTO(k.getDate(), k.getOpen(), k.getClose(),
+                    k.getHigh(), k.getLow(), k.getVolume() == null ? 0.0 : k.getVolume()));
         }
 
-        Map<String, Object> rng = new LinkedHashMap<>();
-        rng.put("min", data.isEmpty() ? null : data.get(0).get("date"));
-        rng.put("max", data.isEmpty() ? null : data.get(data.size() - 1).get("date"));
-        rng.put("count", data.size());
+        KlineRangeDTO range = new KlineRangeDTO(
+                data.isEmpty() ? null : data.get(0).date(),
+                data.isEmpty() ? null : data.get(data.size() - 1).date(),
+                data.size());
 
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("market", market);
-        out.put("range", rng);
-        out.put("as_of", data.isEmpty() ? asOf : data.get(data.size() - 1).get("date"));
-        out.put("count", data.size());
-        out.put("data", data);
-        return out;
+        return new DailyKlineDTO(
+                market,
+                range,
+                data.isEmpty() ? asOf : data.get(data.size() - 1).date(),
+                data.size(),
+                data);
     }
 
     private Double asDouble(Object value) {
@@ -460,7 +457,7 @@ public class MarketDataService {
      * @param minutes 分钟数 (1/5/15/30/60)
      * @param limit 返回根数
      */
-    public Map<String, Object> getMinuteKline(String market, int minutes, int limit) {
+    public MinuteKlineDTO getMinuteKline(String market, int minutes, int limit) {
         // 只读取生成所需 K 线的大致快照量，避免运行越久每次请求扫描越多历史数据。
         int samplesPerMinute = market.startsWith("jd_") ? 1 : 2;
         long estimatedRows = (long) limit * minutes * samplesPerMinute * 2L;
@@ -474,7 +471,7 @@ public class MarketDataService {
             String bucket = bucketKey(s.getTs(), minutes);
             buckets.computeIfAbsent(bucket, k -> new ArrayList<>()).add(s);
         }
-        List<Map<String, Object>> data = new ArrayList<>();
+        List<KlineBarDTO> data = new ArrayList<>();
         for (Map.Entry<String, List<PriceSnapshot>> e : buckets.entrySet()) {
             List<PriceSnapshot> list = e.getValue();
             PriceSnapshot first = list.get(0);
@@ -483,23 +480,12 @@ public class MarketDataService {
             double close = last.getPrice();
             double high = list.stream().mapToDouble(PriceSnapshot::getPrice).max().orElse(close);
             double low = list.stream().mapToDouble(PriceSnapshot::getPrice).min().orElse(close);
-            Map<String, Object> k = new LinkedHashMap<>();
-            k.put("date", e.getKey());
-            k.put("open", open);
-            k.put("close", close);
-            k.put("high", high);
-            k.put("low", low);
-            k.put("volume", 0.0);
-            data.add(k);
+            // 快照不含成交量，该口径下 volume 恒为 0.0
+            data.add(new KlineBarDTO(e.getKey(), open, close, high, low, 0.0));
         }
         int from = Math.max(0, data.size() - limit);
-        List<Map<String, Object>> sliced = new ArrayList<>(data.subList(from, data.size()));
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("market", market);
-        out.put("interval", minutes + "m");
-        out.put("count", sliced.size());
-        out.put("data", sliced);
-        return out;
+        List<KlineBarDTO> sliced = new ArrayList<>(data.subList(from, data.size()));
+        return new MinuteKlineDTO(market, minutes + "m", sliced.size(), sliced);
     }
 
     private String bucketKey(LocalDateTime ts, int minutes) {

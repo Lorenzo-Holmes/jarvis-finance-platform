@@ -5,7 +5,9 @@ import com.jarvis.research.market.ExtendedMarketDataService;
 import com.jarvis.research.market.MarketDataService;
 import com.jarvis.research.market.MarketPriceStreamService;
 import com.jarvis.research.market.PublicMarketRateLimitService;
+import com.jarvis.research.market.dto.KlineEnvelope;
 import com.jarvis.research.market.dto.MarketStatusDTO;
+import com.jarvis.research.market.dto.MinuteKlineDTO;
 import com.jarvis.research.service.JdGoldService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -67,7 +69,7 @@ public class MarketController {
 
     /** 京东积存金分钟K线。 */
     @GetMapping("/jd/kline")
-    public ApiResponse<Object> jdKline(
+    public ApiResponse<MinuteKlineDTO> jdKline(
             @RequestParam(defaultValue = "zheshang") String market,
             @RequestParam(defaultValue = "5") int interval,
             @RequestParam(defaultValue = "200") int limit) {
@@ -90,7 +92,7 @@ public class MarketController {
      * @param interval day(默认) / 1 / 5 / 15 / 30 / 60 (分钟)
      */
     @GetMapping("/kline")
-    public ApiResponse<Object> kline(
+    public ApiResponse<KlineEnvelope> kline(
             @RequestParam(defaultValue = "gold_etf") String market,
             @RequestParam(defaultValue = "120") int limit,
             @RequestParam(defaultValue = "day") String interval) {
