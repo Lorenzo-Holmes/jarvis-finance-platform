@@ -1,5 +1,6 @@
 package com.jarvis.research.controller;
 
+import com.jarvis.research.ai.RiskMetrics;
 import com.jarvis.research.market.MarketDataService;
 import com.jarvis.research.market.dto.DailyKlineDTO;
 import com.jarvis.research.market.dto.KlineBarDTO;
@@ -206,7 +207,14 @@ public class AiController {
             riskPayload.put("portfolio_value", body.get("portfolio_value"));
         }
         // 服务端从自营行情库取日 K 收盘价，强制覆盖客户端可能伪造的 closes/history 字段。
-        riskPayload.put("closes", loadServerOwnedCloses(market, days));
+        List<Double> closes = loadServerOwnedCloses(market, days);
+        riskPayload.put("closes", closes);
+        //  统一口径：用**同一次取数**的结果在 Java 侧算出风险指标，随请求一并交给 Python 引用。
+        // 数据来源仍然只有服务端这一份（没有引入第二个取数点），指标口径开始收拢到一处。
+        // Python 现在仍会自己算一遍（响应里的 metrics 还是它的），所以这一步不改变任何行为，
+        // 只是把下一次切换所需的输入先准备好——这样切换本身可以是一次纯粹的"改引用"。
+        riskPayload.put("metrics", RiskMetrics.compute(
+                closes, riskPayload.get("confidence"), riskPayload.get("portfolio_value"), market).toMap());
         return riskPayload;
     }
 
