@@ -1,0 +1,22 @@
+{
+  "name": "jarvis-e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "JARVIS 端到端测试（Playwright）。独立于 frontend/，避免 Playwright 依赖污染前端构建产物。",
+  "scripts": {
+    "test": "playwright test",
+    "test:smoke": "playwright test --project=smoke",
+    "test:auth": "playwright test --project=auth",
+    "test:headed": "playwright test --headed",
+    "list": "playwright test --list",
+    "typecheck": "tsc --noEmit",
+    "report": "playwright show-report",
+    "install:browsers": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.1",
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2"
+  }
+}
