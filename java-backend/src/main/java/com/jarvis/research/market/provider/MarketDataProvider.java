@@ -18,6 +18,7 @@ import java.util.Map;
  *   - {@link #kline(String, String, int)} K线；无数据返回空列表
  *
  * 扩展能力（均带默认实现，既有 Provider 无需改动）：
+ *   - {@link #quote(String, String)} 市场感知的行情入口（默认委托给单参版本）
  *   - {@link #priority()}        同一市场的多个 Provider 按此升序组成降级链
  *   - {@link #sourceKey(String)} 熔断/遥测归属键，保证运行时可观测性稳定
  *   - {@link #displayName()}     面向用户的来源标签（与内部键区分）
@@ -43,6 +44,21 @@ public interface MarketDataProvider {
      * 获取实时行情。
      */
     Map<String, Object> quote(String symbol);
+
+    /**
+     * 市场感知的实时行情入口；默认忽略市场、委托给 {@link #quote(String)}。
+     *
+     * <p>为什么需要它：同一家行情源在不同市场下的**响应口径可能不同**，而单看标的无法区分。
+     * 腾讯即是例子——黄金ETF 与 A 股的字段下标完全相同，只有「是否带 {@code source_quote_time}」
+     * 这一处不同，靠标的形如 {@code sh518850} / {@code sh600519} 是分不出来的。
+     * 按标的分派会把两个口径混为一谈。</p>
+     *
+     * <p>既有 Provider 无需改动：默认实现即原行为。也正因如此，
+     * {@link #quote(String)} 保持冻结、不删不改。</p>
+     */
+    default Map<String, Object> quote(String market, String symbol) {
+        return quote(symbol);
+    }
 
     /**
      * 获取K线。

@@ -37,6 +37,9 @@ public class TencentMarketDataProvider implements MarketDataProvider {
     /** 日K线一次拉取的条数，与原 MarketDataService 行为保持一致。 */
     private static final int KLINE_FETCH_LIMIT = 500;
 
+    /** 黄金ETF标的；单参调用时用它把 ETF 口径与 A 股口径分开。 */
+    static final String GOLD_ETF_SYMBOL = "sh518850";
+
     private final WebClient webClient;
     private final JarvisProperties properties;
     private final ObjectMapper objectMapper;
@@ -60,7 +63,8 @@ public class TencentMarketDataProvider implements MarketDataProvider {
     @Override
     public boolean supports(String market) {
         return "gold_etf".equalsIgnoreCase(market)
-                || "london_gold".equalsIgnoreCase(market);
+                || "london_gold".equalsIgnoreCase(market)
+                || "a_share".equalsIgnoreCase(market);
     }
 
     /**
@@ -74,6 +78,9 @@ public class TencentMarketDataProvider implements MarketDataProvider {
         if ("gold_etf".equalsIgnoreCase(market)) {
             return "core.tencent.etf";
         }
+        if ("a_share".equalsIgnoreCase(market)) {
+            return "extended.tencent.stock";
+        }
         return MarketDataProvider.super.sourceKey(market);
     }
 
@@ -82,14 +89,33 @@ public class TencentMarketDataProvider implements MarketDataProvider {
         return "Tencent";
     }
 
-    /** 伦敦金日K来自新浪，见 {@link SinaMarketDataProvider}。 */
+    /** 伦敦金日K来自新浪，见 {@link SinaMarketDataProvider}。A股K线尚未迁移，见 supportsKline。 */
     @Override
     public boolean supportsKline(String market) {
         return "gold_etf".equalsIgnoreCase(market);
     }
 
+    /**
+     * 单参形式：按标的推断市场后走市场感知版本。
+     *
+     * <p>保留它是因为 {@link MarketDataProvider#quote(String)} 属冻结契约，
+     * 且不关心市场的调用方（以及既有测试）仍按标的调用。</p>
+     */
     @Override
     public Map<String, Object> quote(String symbol) {
+        return quote(marketOf(symbol), symbol);
+    }
+
+    /**
+     * 市场感知形式：按**市场**而不是标的决定解析口径。
+     *
+     * <p>黄金ETF 与 A 股的字段下标完全相同（name[1] price[3] prev[4] open[5]
+     * change[31] pct[32] high[33] low[34]），唯一差别是 A 股口径**不产出**
+     * {@code source_quote_time}（原 {@code quoteTencent} 就没读字段 30）。
+     * 而 {@code sh518850} 与 {@code sh600519} 形态一致，按标的分派必然混淆两个口径。</p>
+     */
+    @Override
+    public Map<String, Object> quote(String market, String symbol) {
         String raw;
         try {
             String url = properties.getGold().getRealtimeUrl().replace("{symbol}", symbol);
@@ -114,17 +140,47 @@ public class TencentMarketDataProvider implements MarketDataProvider {
         }
 
         try {
-            Map<String, Object> quote;
-            if ("london_gold".equalsIgnoreCase(symbol) || "hf_XAU".equalsIgnoreCase(symbol)) {
-                quote = parseLondonGold(matcher.group(1));
-            } else {
-                quote = parseEtf(symbol, matcher.group(1));
+            if ("london_gold".equalsIgnoreCase(market)) {
+                return requirePrice(parseLondonGold(matcher.group(1)));
             }
-            return requirePrice(quote);
+            if ("a_share".equalsIgnoreCase(market)) {
+                return requireASharePrice(parseAShare(symbol, matcher.group(1)));
+            }
+            if ("gold_etf".equalsIgnoreCase(market)) {
+                return requirePrice(parseEtf(symbol, matcher.group(1)));
+            }
+            return Map.of("error", "腾讯行情不支持该市场: " + market);
         } catch (Exception e) {
-            log.warn("腾讯行情解析失败 symbol={}, message={}", symbol, e.getMessage());
+            log.warn("腾讯行情解析失败 market={}, symbol={}, message={}", market, symbol, e.getMessage());
             return Map.of("error", "腾讯行情解析失败: " + e.getMessage());
         }
+    }
+
+    /** 单参调用时的市场推断：伦敦金代码 → 黄金ETF 代码 → 其余按 A 股。 */
+    static String marketOf(String symbol) {
+        if ("london_gold".equalsIgnoreCase(symbol) || "hf_XAU".equalsIgnoreCase(symbol)) {
+            return "london_gold";
+        }
+        if (GOLD_ETF_SYMBOL.equalsIgnoreCase(symbol)) {
+            return "gold_etf";
+        }
+        return "a_share";
+    }
+
+    /**
+     * A股行情的价格守卫：**只拦 null，不拦 0**。
+     *
+     * <p>与 {@link #requirePrice} 的差别是有意的。停牌的 A 股在腾讯接口里就是
+     * {@code price = 0.00}（配合昨收），原 {@code quoteTencent} 只判 {@code price == null}，
+     * 因此停牌股票能正常返回。若这里改用 {@code <= 0} 的严格守卫，
+     * 停牌标的会先被腾讯拒绝、再被东方财富拒绝（后者本来就判 {@code <= 0}），
+     * 整个 A 股报价直接变成 502 —— 这是行为回归，不是"更严格更安全"。</p>
+     */
+    Map<String, Object> requireASharePrice(Map<String, Object> quote) {
+        if (!(quote.get("price") instanceof Number)) {
+            return Map.of("error", "腾讯A股行情价格无效: " + quote.get("price"));
+        }
+        return quote;
     }
 
     // ==================== 解析辅助 ====================
@@ -253,6 +309,35 @@ public class TencentMarketDataProvider implements MarketDataProvider {
 
     String field(String[] values, int index, String fallback) {
         return values.length > index ? values[index] : fallback;
+    }
+
+    /**
+     * 腾讯 A 股行情。
+     *
+     * <p>字段下标与 {@link #parseEtf} **完全相同**，唯一差别是不产出
+     * {@code source_quote_time}——原 {@code quoteTencent} 就没读字段 30。
+     * 少一个键就是少一个键：补上去会改变扩展行情信封的键集。</p>
+     *
+     * <p>{@code name} 仅在字段 1 非空时产出，与原实现的
+     * {@code if (values[1] != null && !values[1].isBlank())} 一致；
+     * 为空时由业务层回落到标的登记名，而不是在这里编一个。</p>
+     */
+    Map<String, Object> parseAShare(String symbol, String value) {
+        String[] fields = value.split("~", -1);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("symbol", symbol);
+        String name = field(fields, 1, null);
+        if (name != null && !name.isBlank()) {
+            result.put("name", name.trim());
+        }
+        result.put("price", number(fields, 3));
+        result.put("prev_close", number(fields, 4));
+        result.put("open", number(fields, 5));
+        result.put("change", number(fields, 31));
+        result.put("change_pct", number(fields, 32));
+        result.put("high", number(fields, 33));
+        result.put("low", number(fields, 34));
+        return result;
     }
 
     /**

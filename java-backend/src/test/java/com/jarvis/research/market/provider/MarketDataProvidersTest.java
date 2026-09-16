@@ -3,6 +3,9 @@ package com.jarvis.research.market.provider;
 import org.junit.jupiter.api.Test;
 import org.springframework.stereotype.Component;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jarvis.research.config.JarvisProperties;
+
 import java.util.List;
 import java.util.Map;
 
@@ -24,6 +27,8 @@ class MarketDataProvidersTest {
     private final EastMoneyMarketDataProvider eastMoney = new EastMoneyMarketDataProvider();
     private final BinanceMarketDataProvider binance = new BinanceMarketDataProvider();
     private final SinaMarketDataProvider sina = new SinaMarketDataProvider();
+    private final TencentMarketDataProvider tencent =
+            new TencentMarketDataProvider(new JarvisProperties(), new ObjectMapper());
 
     @Test
     void allProvidersAreSpringComponents() {
@@ -49,7 +54,7 @@ class MarketDataProvidersTest {
     void everySupportedMarketHasAtLeastOneCapability() {
         List<String> markets = List.of("gold_etf", "london_gold", "a_share", "us_stock", "crypto");
 
-        for (MarketDataProvider provider : List.of(yahoo, eastMoney, binance, sina)) {
+        for (MarketDataProvider provider : List.of(yahoo, eastMoney, binance, sina, tencent)) {
             for (String market : markets) {
                 if (!provider.supports(market)) {
                     continue;

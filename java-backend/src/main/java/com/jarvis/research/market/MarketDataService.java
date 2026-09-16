@@ -212,7 +212,7 @@ public class MarketDataService {
                 continue;
             }
             try {
-                Map<String, Object> quote = provider.quote(symbol);
+                Map<String, Object> quote = provider.quote(market, symbol);
                 if (quote == null || quote.containsKey("error")) {
                     throw new IllegalStateException(quote == null
                             ? "行情源返回空结果"

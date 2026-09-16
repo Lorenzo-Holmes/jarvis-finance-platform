@@ -93,6 +93,110 @@ class TencentMarketDataProviderTest {
         assertEquals("sh518850", provider.parseEtf("sh518850", "only-one-field").get("name"));
     }
 
+    // ==================== A股 ====================
+
+    @Test
+    void declaresAShareSupportAndItsOwnCircuitBreakerKey() {
+        assertTrue(provider.supports("a_share"));
+        // 扩展行情服务既有的熔断键，与 core.tencent.* 不是一族，不能改名。
+        assertEquals("extended.tencent.stock", provider.sourceKey("a_share"));
+        // K线尚未迁移：声明支持 A股报价不等于能做 A股K线。
+        assertFalse(provider.supportsKline("a_share"));
+        assertTrue(provider.supportsQuote("a_share"));
+    }
+
+    private static String aSharePayload() {
+        String[] fields = new String[35];
+        Arrays.fill(fields, "0");
+        fields[1] = "贵州茅台";
+        fields[3] = "1500.00";
+        fields[4] = "1490.00";
+        fields[5] = "1495.00";
+        fields[30] = "20260916103000";
+        fields[31] = "10.00";
+        fields[32] = "0.67";
+        fields[33] = "1510.00";
+        fields[34] = "1488.00";
+        return String.join("~", fields);
+    }
+
+    /**
+     * A股与黄金ETF的字段下标完全相同，这条测试把 A股口径逐槽钉住。
+     */
+    @Test
+    void mapsAShareFieldsToTheSameSlotsAsTheInlineImplementation() {
+        Map<String, Object> quote = provider.parseAShare("sh600519", aSharePayload());
+
+        assertEquals("sh600519", quote.get("symbol"));
+        assertEquals("贵州茅台", quote.get("name"));
+        assertEquals(1500.00, quote.get("price"));
+        assertEquals(1490.00, quote.get("prev_close"));
+        assertEquals(1495.00, quote.get("open"));
+        assertEquals(10.00, quote.get("change"));
+        assertEquals(0.67, quote.get("change_pct"));
+        assertEquals(1510.00, quote.get("high"));
+        assertEquals(1488.00, quote.get("low"));
+    }
+
+    /**
+     * 这条是回归钉子：A股口径**不能**产出 {@code source_quote_time}。
+     *
+     * <p>同一个下标 30 在 ETF 口径里正是 {@code source_quote_time}，两个解析器因此长得很像，
+     * 很容易被「顺手统一」成一个。一旦补上这个键，扩展行情信封就多了一个前端没有预期的字段，
+     * 而且业务层会改用它去算 {@code quote_time}，报价时间随之变形。</p>
+     */
+    @Test
+    void aSharePayloadDoesNotInventSourceQuoteTime() {
+        Map<String, Object> quote = provider.parseAShare("sh600519", aSharePayload());
+
+        assertFalse(quote.containsKey("source_quote_time"),
+                "A股口径不读字段 30，键就不该出现");
+        assertTrue(provider.parseEtf("sh518850", etfPayload()).containsKey("source_quote_time"),
+                "而 ETF 口径照旧产出它");
+    }
+
+    @Test
+    void omitsAShareNameRatherThanInventingOneWhenUpstreamLeavesItBlank() {
+        String[] fields = new String[35];
+        Arrays.fill(fields, "0");
+        fields[1] = "   ";
+        fields[3] = "10.00";
+
+        Map<String, Object> quote = provider.parseAShare("sh600000", String.join("~", fields));
+
+        assertFalse(quote.containsKey("name"),
+                "字段 1 空白时应省略，由业务层回落到标的登记名");
+    }
+
+    /**
+     * A股的价格守卫**只拦 null、不拦 0**，与 {@link TencentMarketDataProvider#requirePrice} 不同。
+     *
+     * <p>停牌的 A 股在腾讯接口里就是 {@code price = 0.00}。原 {@code quoteTencent} 只判
+     * {@code price == null}，所以停牌股票能正常返回。若这里跟着 ETF 口径改成 {@code <= 0}，
+     * 停牌标的会被腾讯拒绝、再被东方财富拒绝（后者本来就判 {@code <= 0}），
+     * 整个 A股报价直接变成 502——这是行为回归。</p>
+     */
+    @Test
+    void aSharePriceGuardAllowsZeroButRejectsMissingPrice() {
+        assertFalse(provider.requireASharePrice(Map.of("price", 0.0)).containsKey("error"),
+                "停牌股 price=0 必须放行");
+        assertFalse(provider.requireASharePrice(Map.of("price", 15.5)).containsKey("error"));
+        assertTrue(provider.requireASharePrice(new java.util.HashMap<>() {{
+            put("price", null);
+        }}).containsKey("error"), "价格缺失应报错");
+        assertTrue(provider.requirePrice(Map.of("price", 0.0)).containsKey("error"),
+                "对照：ETF 口径本来就更严格");
+    }
+
+    @Test
+    void infersMarketFromSymbolOnlyAsAFallback() {
+        assertEquals("london_gold", TencentMarketDataProvider.marketOf("hf_XAU"));
+        assertEquals("gold_etf", TencentMarketDataProvider.marketOf("sh518850"));
+        // sh518850 与 sh600519 形态相同，单参调用只能靠已知 ETF 代码区分。
+        assertEquals("a_share", TencentMarketDataProvider.marketOf("sh600519"));
+        assertEquals("a_share", TencentMarketDataProvider.marketOf("sz000001"));
+    }
+
     // ==================== 伦敦金解析 ====================
 
     private static String londonPayload() {
