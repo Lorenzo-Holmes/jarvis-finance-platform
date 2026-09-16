@@ -13,6 +13,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * EastMoney（东方财富）Provider。
@@ -72,6 +73,21 @@ public class EastMoneyMarketDataProvider implements MarketDataProvider {
     }
 
     /**
+     * A股日K与分钟K都由本 Provider 承接，差别只在 {@code klt}。
+     *
+     * <p>10m 不在其中：它不是来源提供的周期，由服务层用 5m 聚合。
+     * 查链时给的也是 5m。</p>
+     */
+    @Override
+    public boolean supportsKline(String market, String interval) {
+        if (!"a_share".equalsIgnoreCase(market)) {
+            return false;
+        }
+        return A_SHARE_KLINE_INTERVALS.contains(
+                interval == null ? "" : interval.trim().toLowerCase(Locale.ROOT));
+    }
+
+    /**
      * A股日K走 {@code push2his.eastmoney.com}，与实时行情 {@code push2.eastmoney.com} 是
      * 两个独立来源，键因此分开。
      */
@@ -84,9 +100,40 @@ public class EastMoneyMarketDataProvider implements MarketDataProvider {
     }
 
     /**
-     * 迁移自 {@code ExtendedMarketDataService#klineEastmoney(Instrument, int)}：A股日K备用源。
+     * 来源端能给的周期（{@code klt} 值见 {@link #kltOf}）；10m 由服务层用 5m 聚合。
+     */
+    private static final Set<String> A_SHARE_KLINE_INTERVALS = Set.of("1d", "5m", "15m", "30m", "1h");
+
+    /**
+     * 周期 → EastMoney 的 {@code klt}：日线 101，分钟级直接用分钟数（1h = 60）。
+     * 返回 null 表示不认识这个周期。
      *
-     * <p>{@code klt=101} 为日线、{@code fqt=1} 为前复权、{@code lmt} 上限 1000。
+     * <p>包级可见**仅供测试**：这是日K与分钟K之间唯一的差别，值得单独钉住。</p>
+     */
+    static Integer kltOf(String interval) {
+        if (interval == null) {
+            return null;
+        }
+        return switch (interval.trim().toLowerCase(Locale.ROOT)) {
+            case "1d" -> 101;
+            case "5m" -> 5;
+            case "15m" -> 15;
+            case "30m" -> 30;
+            case "1h" -> 60;
+            default -> null;
+        };
+    }
+
+    /**
+     * A股K线（日线与分钟级共用同一接口），迁移自
+     * {@code ExtendedMarketDataService#klineEastmoney(Instrument, int)} 与
+     * {@code #klineTencentIntraday(...)}。
+     *
+     * <p>后者的名字是错的——它打的其实是东方财富的接口，与日K**同一个 URL、同一套参数、
+     * 同一套解析**，只差 {@code klt}。所以这里合并成一份实现，靠 {@link #kltOf} 分派周期，
+     * 而不是留下两段九成相同的代码。</p>
+     *
+     * <p>{@code fqt=1} 为前复权、{@code lmt} 上限 1000。
      * 响应里 {@code data.klines} 是逗号分隔的字符串数组，
      * 顺序为 日期,开,收,高,低,量,f57,f58,f59,f60,f61。</p>
      *
@@ -99,6 +146,11 @@ public class EastMoneyMarketDataProvider implements MarketDataProvider {
         if (symbol == null || symbol.isBlank()) {
             return List.of();
         }
+        Integer klt = kltOf(interval);
+        if (klt == null) {
+            log.debug("EastMoney 不支持该周期: interval={}", interval);
+            return List.of();
+        }
         try {
             String normalized = symbol.toLowerCase(Locale.ROOT);
             String secid = (normalized.startsWith("sh") ? "1." : "0.")
@@ -107,7 +159,7 @@ public class EastMoneyMarketDataProvider implements MarketDataProvider {
                     .uri(uriBuilder -> uriBuilder.scheme("https").host("push2his.eastmoney.com")
                             .path("/api/qt/stock/kline/get")
                             .queryParam("secid", secid)
-                            .queryParam("klt", 101)
+                            .queryParam("klt", klt)
                             .queryParam("fqt", 1)
                             .queryParam("beg", 0)
                             .queryParam("end", 20500000)
@@ -125,7 +177,7 @@ public class EastMoneyMarketDataProvider implements MarketDataProvider {
             }
             return parseKlineRows(raw, limit);
         } catch (Exception e) {
-            log.warn("EastMoney A股日K失败: symbol={}, message={}", symbol, e.getMessage());
+            log.warn("EastMoney A股K线失败: symbol={}, interval={}, message={}", symbol, interval, e.getMessage());
             return List.of();
         }
     }

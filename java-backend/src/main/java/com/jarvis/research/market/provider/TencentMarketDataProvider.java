@@ -105,6 +105,22 @@ public class TencentMarketDataProvider implements MarketDataProvider {
     }
 
     /**
+     * 本 Provider 的K线**只有日线一种**，与市场无关。
+     *
+     * <p>依据是 {@link #kline(String, String, int)} 里那个硬编码的 {@code "day"}：
+     * 它根本没用 interval 入参。所以把周期带上声明不只是为了 A股分钟级——
+     * 任何非日线请求若被放进链里，腾讯都会**返回日线数据**，调用方拿到的就是
+     * "贴着 5m 标签的日线"，一声不响地串了数据。声明成只支持 1d 才能把它挡在链外。</p>
+     *
+     * <p>回归影响：A股日K的链仍是"腾讯 → 东方财富"（{@code gold_etf} 日K照旧），
+     * 而分钟级只剩东方财富——那本来就是唯一能做的。</p>
+     */
+    @Override
+    public boolean supportsKline(String market, String interval) {
+        return supportsKline(market) && "1d".equalsIgnoreCase(interval);
+    }
+
+    /**
      * A股日K走 {@code web.ifzq.gtimg.cn}，与实时行情（{@code qt.gtimg.cn}）是两个独立来源，
      * 运维本来就是分开统计的，因此键也必须分开。
      */

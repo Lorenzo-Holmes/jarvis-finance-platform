@@ -257,6 +257,89 @@ class ExtendedKlineMarketsTest {
 
     // klineRange 的映射断言在 MarketDataProvidersTest 里——它是包级测试钩子，同包断言。
 
+    // ==================== A股分钟K（最后一块内联实现）====================
+
+    /**
+     * A股分钟K现在也走注册表，而且**只由东方财富承接**。
+     *
+     * <p>切换前的实现叫 {@code klineTencentIntraday}，但打的其实是东方财富的接口——
+     * 与日K同一个 URL、同一套参数、同一套解析，只差 {@code klt}。名字错了，
+     * 唯一性也错了：分钟级本来就只有这一个来源，没有降级。</p>
+     */
+    @Test
+    void aShareIntradayKlineGoesThroughTheRegistryToEastMoney() {
+        RecordingProvider eastMoney = klineStub("EastMoney", "a_share", "extended.eastmoney.kline",
+                30, rows(3)).onlyIntervals("1d", "5m", "15m", "30m", "1h");
+        RecordingProvider tencent = klineStub("Tencent", "a_share", "extended.tencent.kline",
+                10, rows(9)).onlyIntervals("1d");
+
+        ExtendedMarketDataService service = serviceWith(tencent, eastMoney);
+
+        assertEquals(3, rowsOf(service.kline("a_share", "sh600519", "5m", 10)).size(),
+                "分钟级该由东方财富给数据");
+        assertEquals("5m", eastMoney.lastInterval);
+        assertEquals(null, tencent.lastInterval, "分钟级的链里不该有腾讯");
+    }
+
+    /**
+     * 分钟级的链里**不能有腾讯**：它做不到，而且它的熔断键与日K共用。
+     */
+    @Test
+    void aShareMinuteKlineNeverConsultsTencent() {
+        RecordingProvider eastMoney = klineStub("EastMoney", "a_share", "extended.eastmoney.kline",
+                30, rows(2)).onlyIntervals("1d", "5m", "15m", "30m", "1h");
+        RecordingProvider tencent = klineStub("Tencent", "a_share", "extended.tencent.kline",
+                10, rows(9)).onlyIntervals("1d");
+
+        ExtendedMarketDataService service = serviceWith(tencent, eastMoney);
+        service.kline("a_share", "sh600519", "15m", 10);
+
+        assertEquals(null, tencent.lastInterval, "分钟级请求根本不该碰腾讯");
+    }
+
+    @Test
+    void aShareDailyKlineStillPrefersTencentAndFallsBackToEastMoney() {
+        RecordingProvider tencent = klineStub("Tencent", "a_share", "extended.tencent.kline",
+                10, List.of()).onlyIntervals("1d");
+        RecordingProvider eastMoney = klineStub("EastMoney", "a_share", "extended.eastmoney.kline",
+                30, rows(4)).onlyIntervals("1d", "5m");
+
+        ExtendedMarketDataService service = serviceWith(tencent, eastMoney);
+
+        assertEquals(4, rowsOf(service.kline("a_share", "sh600519", "1d", 10)).size(),
+                "日K的降级关系不变");
+    }
+
+    @Test
+    void aShareUnsupportedIntervalIsAClientError() {
+        ExtendedMarketDataService service = serviceWith(
+                klineStub("EastMoney", "a_share", "extended.eastmoney.kline", 30, rows(3))
+                        .onlyIntervals("1d", "5m"));
+
+        ResponseStatusException error = assertThrows(ResponseStatusException.class,
+                () -> service.kline("a_share", "sh600519", "2h", 10));
+
+        assertEquals(400, error.getStatusCode().value());
+    }
+
+    /**
+     * A股 10m 同样由服务层用 5m 聚合，而且**查链时用的是 5m**。
+     *
+     * <p>若拿 10m 去查链，东方财富只能声明"不支持 10m"（它不是来源周期），
+     * 结果就是"无可用K线源"的 502——一次会把整个 10m 周期打断的静默回归。</p>
+     */
+    @Test
+    void aShareTenMinuteKlineAsksTheChainForFiveMinuteData() {
+        RecordingProvider eastMoney = klineStub("EastMoney", "a_share", "extended.eastmoney.kline",
+                30, aShareFiveMinuteRows()).onlyIntervals("1d", "5m", "15m", "30m", "1h");
+
+        ExtendedMarketDataService service = serviceWith(eastMoney);
+
+        assertEquals(2, rowsOf(service.kline("a_share", "sh600519", "10m", 100)).size());
+        assertEquals("5m", eastMoney.lastInterval, "10m 不是来源周期");
+        assertEquals(300, eastMoney.lastLimit);
+    }
+
     // ==================== 夹具 ====================
 
     /** 会记录最后一次调用参数的 Provider。 */
@@ -285,6 +368,14 @@ class ExtendedKlineMarketsTest {
             this.klineGuarded = false;
             return this;
         }
+
+        /** 声明本 Provider 能取哪些来源周期（对应 supportsKline(market, interval)）。 */
+        RecordingProvider onlyIntervals(String... intervals) {
+            this.intervals = Set.of(intervals);
+            return this;
+        }
+
+        private Set<String> intervals = Set.of();
 
         RecordingProvider(String name, String market, String sourceKey, int priority,
                           List<Map<String, Object>> payload, int maxKlineLimit) {
@@ -337,6 +428,17 @@ class ExtendedKlineMarketsTest {
         public boolean klineUsesCircuitBreaker(String market) {
             return klineGuarded;
         }
+
+        /**
+         * 周期感知的K线能力。空集表示"不限周期"（沿用接口默认）。
+         *
+         * <p>桩必须把这句声明得和真实 Provider 一样，否则测出来的是桩的行为而不是生产的：
+         * 本轮就吃过一次亏——桩拿了默认值，服务层于是把熔断当打开处理，报了个假的 502。</p>
+         */
+        @Override
+        public boolean supportsKline(String market, String interval) {
+            return intervals.isEmpty() || intervals.contains(interval);
+        }
     }
 
     private static RecordingProvider klineStub(String name, String market, String sourceKey,
@@ -376,6 +478,19 @@ class ExtendedKlineMarketsTest {
         rows.add(row("2026-09-16T10:05:00Z", 110.0, 115.0, 96.0, 20.0));
         rows.add(row("2026-09-16T10:10:00Z", 111.0, 112.0, 90.0, 30.0));
         rows.add(row("2026-09-16T10:15:00Z", 105.0, 120.0, 100.0, 40.0));
+        return rows;
+    }
+
+    /**
+     * A股的K线日期是 {@code yyyy-MM-dd HH:mm}（本地时间），不是 {@code Instant} 形式。
+     * 用真实格式才测得到 {@code epochSeconds} 的回落分支。
+     */
+    private static List<Map<String, Object>> aShareFiveMinuteRows() {
+        List<Map<String, Object>> rows = new ArrayList<>();
+        rows.add(row("2026-09-16 10:00", 100.0, 110.0, 95.0, 10.0));
+        rows.add(row("2026-09-16 10:05", 110.0, 115.0, 96.0, 20.0));
+        rows.add(row("2026-09-16 10:10", 111.0, 112.0, 90.0, 30.0));
+        rows.add(row("2026-09-16 10:15", 105.0, 120.0, 100.0, 40.0));
         return rows;
     }
 

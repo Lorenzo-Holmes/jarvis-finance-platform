@@ -192,14 +192,15 @@ class ExtendedAShareKlineTest {
     // ==================== 结构性钉子 ====================
 
     /**
-     * 日K的三个内联实现必须删掉，而**分钟级必须留下**。
+     * A股K线的所有内联实现都必须删掉——日K和分钟级现在都走 Provider。
      *
-     * <p>后者同样重要：A股分钟K（{@code klineTencentIntraday}）这次没有迁移，
-     * 如果一起被删掉，分钟级 K 线会直接失效。这条测试把"迁移范围"写死，
-     * 免得下一个人以为整条 A股K线都搬完了。</p>
+     * <p>这条测试原本断言"分钟级（{@code klineTencentIntraday}）尚未迁移，必须保留"。
+     * 分钟级后来迁走了，它按设计失败，于是翻转成现在这样。
+     * 它的另一半价值仍在：{@code fetchKlineFrom} 与 {@code aggregateCandles}
+     * 是**刻意留下**的（10m 是派生周期，不是来源能力），误删会打断分钟级聚合。</p>
      */
     @Test
-    void dailyKlineIsGoneFromTheServiceButIntradayIsDeliberatelyKept() {
+    void everyInlineAShareKlineImplementationIsGone() {
         Set<String> methods = Arrays.stream(ExtendedMarketDataService.class.getDeclaredMethods())
                 .map(Method::getName)
                 .collect(Collectors.toSet());
@@ -207,12 +208,16 @@ class ExtendedAShareKlineTest {
         assertFalse(methods.contains("klineTencent"), "内联腾讯日K应为已删除");
         assertFalse(methods.contains("klineEastmoney"), "内联东方财富日K应为已删除");
         assertFalse(methods.contains("klineAShareWithFallback"), "内联日K降级应为已删除");
+        // 分钟级：名字是错的（它打的其实是东方财富的接口），实现也已合并进 EastMoney Provider。
+        assertFalse(methods.contains("klineTencentIntraday"), "内联A股分钟K应为已删除");
+        assertFalse(methods.contains("eastmoneySecId"), "secid 拼装已搬进 Provider");
+
         // registryDailyKline 后来被合并成通用的 registryKline（美股/加密货币K线也迁进来了），
         // 所以这里断言的是新名字。
         assertTrue(methods.contains("registryKline"), "取而代之的是注册表驱动的K线取数");
         assertTrue(methods.contains("fetchKlineFrom"), "10m 聚合在这一层做，Provider 不声称支持派生周期");
-        assertTrue(methods.contains("klineTencentIntraday"),
-                "分钟级尚未迁移，必须保留——名字也叫错了，它其实打的是东方财富的接口");
+        assertTrue(methods.contains("aggregateCandles"), "同上");
+        assertTrue(methods.contains("tail"), "被 aggregateCandles 用着");
     }
 
     // ==================== 夹具 ====================

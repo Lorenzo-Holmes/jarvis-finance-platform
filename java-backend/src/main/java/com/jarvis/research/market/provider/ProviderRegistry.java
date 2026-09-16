@@ -57,6 +57,22 @@ public class ProviderRegistry {
         return filtered(market, MarketDataProvider::supportsKline);
     }
 
+    /**
+     * 按市场**与周期**筛出可用的K线 Provider。
+     *
+     * <p>周期为 null/空白时退化成 {@link #klineChain(String)}。入参是来源要取的周期
+     * （10 分钟由服务层聚合，查链时给的是 5m），理由见
+     * {@link MarketDataProvider#supportsKline(String, String)}。</p>
+     */
+    public List<MarketDataProvider> klineChain(String market, String interval) {
+        if (interval == null || interval.isBlank()) {
+            return klineChain(market);
+        }
+        String normalizedInterval = interval.trim().toLowerCase(Locale.ROOT);
+        return filtered(market, (provider, normalizedMarket) ->
+                provider.supportsKline(normalizedMarket, normalizedInterval));
+    }
+
     private List<MarketDataProvider> filtered(
             String market, java.util.function.BiPredicate<MarketDataProvider, String> capability) {
         if (market == null) {

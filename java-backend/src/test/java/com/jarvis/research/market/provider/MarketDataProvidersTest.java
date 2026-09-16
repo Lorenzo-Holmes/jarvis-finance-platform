@@ -106,6 +106,83 @@ class MarketDataProvidersTest {
         assertEquals(List.of(), yahoo.kline("GC=F", "1d", 10));
     }
 
+    /**
+     * 周期 → {@code klt} 的映射：日线 101，分钟级直接用分钟数。
+     *
+     * <p>这是 A股日K与分钟K之间**唯一**的差别——同一个接口、同一套参数、同一套解析。
+     * 所以这条映射错了，两种周期就会互相串数据。</p>
+     */
+    @Test
+    void eastMoneyMapsIntervalToKltTheWayTheOldCodeDid() {
+        assertEquals(101, EastMoneyMarketDataProvider.kltOf("1d"));
+        assertEquals(5, EastMoneyMarketDataProvider.kltOf("5m"));
+        assertEquals(15, EastMoneyMarketDataProvider.kltOf("15m"));
+        assertEquals(30, EastMoneyMarketDataProvider.kltOf("30m"));
+        assertEquals(60, EastMoneyMarketDataProvider.kltOf("1h"));
+        // 10m 与未知周期都不是来源能力：10m 由服务层用 5m 聚合，不该出现在 klt 里。
+        assertEquals(null, EastMoneyMarketDataProvider.kltOf("10m"));
+        assertEquals(null, EastMoneyMarketDataProvider.kltOf("2h"));
+        assertEquals(null, EastMoneyMarketDataProvider.kltOf(null));
+    }
+
+    /**
+     * A股的K线能力必须**带上周期**声明。
+     *
+     * <p>腾讯只做日K、分钟级只有东方财富能做。如果链只按市场过滤，
+     * 腾讯会被选进分钟级的链里、返回空、被记一次 {@code extended.tencent.kline} 失败——
+     * 而那个键与**日K共用**，于是一次分钟级请求会把日K一起打断。</p>
+     */
+    @Test
+    void aShareKlineCapabilityIsDeclaredPerInterval() {
+        assertTrue(tencent.supportsKline("a_share", "1d"), "腾讯做A股日K");
+        assertFalse(tencent.supportsKline("a_share", "5m"), "腾讯不提供分钟K");
+        assertFalse(tencent.supportsKline("a_share", "1h"));
+        // 腾讯的 kline 里硬编码了 "day"，完全没用 interval 入参，
+        // 所以它对**任何**市场都只有日线——非日线请求若进了链会拿回日线数据。
+        assertTrue(tencent.supportsKline("gold_etf", "1d"), "core 黄金ETF日K照旧");
+        assertFalse(tencent.supportsKline("gold_etf", "5m"), "但它同样只有日线能力");
+
+        assertTrue(eastMoney.supportsKline("a_share", "5m"), "分钟级只有东方财富能做");
+        assertTrue(eastMoney.supportsKline("a_share", "1h"));
+        assertTrue(eastMoney.supportsKline("a_share", "1d"));
+        assertFalse(eastMoney.supportsKline("a_share", "10m"), "10m 由服务层聚合，不是来源能力");
+
+        assertTrue(yahoo.supportsKline("us_stock", "1d"));
+        assertTrue(yahoo.supportsKline("crypto", "1d"));
+        assertFalse(yahoo.supportsKline("london_gold", "1d"));
+    }
+
+    /**
+     * 按周期筛链的结果。这是上面那些声明的**后果**，也是本次迁移最要紧的一条：
+     * 分钟级的 A股链里不能有腾讯。
+     */
+    @Test
+    void klineChainFiltersByIntervalSoTheMinuteChainExcludesTencent() {
+        ProviderRegistry registry = new ProviderRegistry(List.of(tencent, eastMoney, yahoo, binance));
+
+        assertEquals(List.of("Tencent", "EastMoney"),
+                names(registry.klineChain("a_share", "1d")),
+                "日K仍是腾讯优先、东方财富兜底");
+        assertEquals(List.of("EastMoney"),
+                names(registry.klineChain("a_share", "5m")),
+                "分钟级只剩东方财富——腾讯进链会污染与日K共用的熔断键");
+        assertEquals(List.of("EastMoney"), names(registry.klineChain("a_share", "1h")));
+        assertEquals(List.of("EastMoney"),
+                names(registry.klineChain("a_share", "5m")),
+                "查链用的是来源周期，10m 在服务层换算成 5m 后再来查");
+
+        assertEquals(List.of("Tencent"), names(registry.klineChain("gold_etf", "1d")),
+                "core 黄金ETF日K链不受影响");
+        assertEquals(List.of("Binance", "Yahoo"), names(registry.klineChain("crypto", "1d")));
+        assertEquals(List.of("Yahoo"), names(registry.klineChain("us_stock", "1d")));
+    }
+
+    private static List<String> names(List<com.jarvis.research.market.provider.MarketDataProvider> chain) {
+        return chain.stream()
+                .map(com.jarvis.research.market.provider.MarketDataProvider::name)
+                .toList();
+    }
+
     @Test
     void yahooKlineRangeMatchesTheOldImplementation() {
         assertEquals("1y", YahooMarketDataProvider.klineRange("1d"), "日K取一年");

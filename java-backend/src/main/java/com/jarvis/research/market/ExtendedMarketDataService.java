@@ -52,13 +52,27 @@ public class ExtendedMarketDataService {
     private static final ZoneId NEW_YORK_ZONE = ZoneId.of("America/New_York");
     private static final DateTimeFormatter INTRADAY_DATE = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
     /**
-     * 美股K线对外承诺支持的周期，取自切换前的 {@code yahooResult} 校验（原 {@code YAHOO_INTERVALS}）。
+     * 对外承诺支持的K线周期，按市场区分（*API 契约*，不是来源能力）。
      *
-     * <p>比 Yahoo Provider 真正支持的周期多一个 10m——那是本层用 5m 聚合出来的派生周期，
-     * 不属于来源能力。所以这个集合留在这里（它是对外 API 契约），而不是搬进 Provider。</p>
+     * <p>客户端传了个不存在的周期，那是客户端的问题（400），不该掉进降级循环
+     * 最后变成"上游网关错误"（502）。</p>
+     *
+     * <p><b>加密货币有意不在此表中</b>：它一直没有这个校验，同样的错误会得到 502。
+     * 这个不对称是重构前就有的，本次原样保留——要统一得单独做，
+     * 顺手改掉会让一个既有的 API 行为在重构里悄悄变样。</p>
      */
-    private static final Set<String> US_STOCK_KLINE_INTERVALS =
-            Set.of("1d", "5m", "10m", "15m", "30m", "1h");
+    private static final Map<String, Set<String>> KLINE_INTERVALS_BY_MARKET = Map.of(
+            "a_share", Set.of("1d", "5m", "10m", "15m", "30m", "1h"),
+            "us_stock", Set.of("1d", "5m", "10m", "15m", "30m", "1h"));
+
+    /** 400 文案里的市场名，与切换前逐字一致。 */
+    private static String klineMarketLabel(String market) {
+        return switch (market) {
+            case "a_share" -> "A股";
+            case "us_stock" -> "美股";
+            default -> market;
+        };
+    }
     private static final Pattern A_SHARE_PATTERN = Pattern.compile(
             "^(?:(SH|SZ|BJ))?(\\d{6})(?:(SH|SZ|BJ))?$", Pattern.CASE_INSENSITIVE);
     private static final Pattern US_STOCK_PATTERN = Pattern.compile(
@@ -245,12 +259,8 @@ public class ExtendedMarketDataService {
         String normalized = normalizeInterval(interval);
         try {
             List<Map<String, Object>> data = switch (instrument.market()) {
-                // A股分钟K仍走内联实现（未迁移）。
-                case "a_share" -> "1d".equals(normalized)
-                        ? registryKline(instrument, normalized, limit)
-                        : klineTencentIntraday(instrument, normalized, limit);
-                case "us_stock" -> registryKline(instrument, normalized, limit);
-                case "crypto" -> registryKline(instrument, normalized, limit);
+                // 三个市场现在同一条路：周期白名单、来源能力、降级都在 registryKline 里。
+                case "a_share", "us_stock", "crypto" -> registryKline(instrument, normalized, limit);
                 default -> throw invalid("不支持的市场: " + instrument.market());
             };
             writeCache(klineCacheKey(instrument, normalized), "kline", data,
@@ -449,18 +459,18 @@ public class ExtendedMarketDataService {
      * {@link MarketDataProvider#klineUsesCircuitBreaker(String)}。</p>
      */
     private List<Map<String, Object>> registryKline(Instrument instrument, String interval, int limit) {
-        // 周期白名单是**对外 API 契约**，不是来源能力：客户端传了个不存在的周期，
-        // 那是客户端的问题（400），不该掉进降级循环最后变成"上游网关错误"（502）。
-        // A股的同类判断在 klineTencentIntraday 里，加密货币则一直没有——
-        // 这个不对称是重构前就有的，本次原样保留，要统一得单独做。
-        if ("us_stock".equalsIgnoreCase(instrument.market())
-                && !US_STOCK_KLINE_INTERVALS.contains(interval)) {
-            throw invalid("美股不支持该周期: " + interval);
+        // 周期白名单是**对外 API 契约**，不是来源能力。
+        Set<String> allowed = KLINE_INTERVALS_BY_MARKET.get(instrument.market());
+        if (allowed != null && !allowed.contains(interval)) {
+            throw invalid(klineMarketLabel(instrument.market()) + "不支持该周期: " + interval);
         }
 
+        // 查链用的是**来源要取的周期**：10 分钟由本层用 5 分钟聚合，
+        // 所以问的是"谁能给 5 分钟"，而不是"谁能给 10 分钟"——没有来源能直接给 10 分钟。
+        String sourceInterval = "10m".equals(interval) ? "5m" : interval;
         List<MarketDataProvider> chain = providerRegistry == null
                 ? List.of()
-                : providerRegistry.klineChain(instrument.market());
+                : providerRegistry.klineChain(instrument.market(), sourceInterval);
         if (chain.isEmpty()) {
             throw upstream(instrument.market() + " 无可用K线源");
         }
@@ -518,58 +528,6 @@ public class ExtendedMarketDataService {
     private void recordSourceFailure(String source) {
         if (circuitBreaker != null) circuitBreaker.recordFailure(source);
     }
-
-    private List<Map<String, Object>> klineTencentIntraday(Instrument instrument,
-                                                            String interval,
-                                                            int limit) throws Exception {
-        int minutes = switch (interval) {
-            case "5m", "10m", "15m", "30m" -> Integer.parseInt(interval.substring(0, interval.length() - 1));
-            case "1h" -> 60;
-            default -> throw invalid("A股不支持该周期: " + interval);
-        };
-        int sourceMinutes = minutes == 10 ? 5 : minutes;
-        int sourceLimit = Math.min(1000, minutes == 10 ? limit * 3 : limit);
-        String body = webClient.get()
-                .uri(uriBuilder -> uriBuilder.scheme("https").host("push2his.eastmoney.com")
-                        .path("/api/qt/stock/kline/get")
-                        .queryParam("secid", eastmoneySecId(instrument))
-                        .queryParam("klt", sourceMinutes)
-                        .queryParam("fqt", 1)
-                        .queryParam("beg", 0)
-                        .queryParam("end", 20500000)
-                        .queryParam("lmt", sourceLimit)
-                        .queryParam("fields1", "f1,f2,f3,f4,f5,f6")
-                        .queryParam("fields2", "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61")
-                        .build())
-                .retrieve().bodyToMono(String.class).block();
-        JsonNode raw = objectMapper.readTree(body).path("data").path("klines");
-        if (!raw.isArray() || raw.isEmpty()) throw upstream("A股分钟K线为空");
-        List<Map<String, Object>> out = new ArrayList<>();
-        for (JsonNode item : raw) {
-            String[] values = item.asText().split(",", -1);
-            if (values.length < 6) continue;
-            Double open = parseDouble(values[1]);
-            Double close = parseDouble(values[2]);
-            Double high = parseDouble(values[3]);
-            Double low = parseDouble(values[4]);
-            if (open == null || close == null || high == null || low == null) continue;
-            Map<String, Object> row = new LinkedHashMap<>();
-            row.put("date", values[0]);
-            row.put("open", open);
-            row.put("close", close);
-            row.put("high", high);
-            row.put("low", low);
-            row.put("volume", parseDouble(values[5]) == null ? 0.0 : parseDouble(values[5]));
-            out.add(row);
-        }
-        return minutes == sourceMinutes ? tail(out, limit) : aggregateCandles(out, minutes, limit);
-    }
-
-    private String eastmoneySecId(Instrument instrument) {
-        String symbol = instrument.symbol().toLowerCase(Locale.ROOT);
-        return (symbol.startsWith("sh") ? "1." : "0.") + symbol.substring(2);
-    }
-
 
     private List<Map<String, Object>> aggregateCandles(List<Map<String, Object>> rows, int minutes, int limit) {
         long bucketSize = minutes * 60L;

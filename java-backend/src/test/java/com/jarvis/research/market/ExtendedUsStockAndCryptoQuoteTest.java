@@ -250,7 +250,8 @@ class ExtendedUsStockAndCryptoQuoteTest {
         assertTrue(methods.contains("registryKline"), "K线同理");
         assertTrue(methods.contains("fetchKlineFrom"), "10m 聚合仍在这一层（派生周期不是来源能力）");
         assertTrue(methods.contains("aggregateCandles"), "同上");
-        assertTrue(methods.contains("klineTencentIntraday"), "A股分钟K尚未迁移，必须保留");
+        assertFalse(methods.contains("klineTencentIntraday"), "A股分钟K后来也迁走了");
+        assertFalse(methods.contains("eastmoneySecId"), "secid 拼装已搬进 Provider");
     }
 
     // ==================== 夹具 ====================

@@ -159,4 +159,20 @@ public interface MarketDataProvider {
     default boolean supportsKline(String market) {
         return true;
     }
+
+    /**
+     * 该市场**该周期**下本 Provider 是否能取到K线；默认与 {@link #supportsKline(String)} 一致。
+     *
+     * <p>为什么需要它：A股日K的链是"腾讯 → 东方财富"，而分钟级只有东方财富能做
+     * （腾讯不提供分钟K）。如果链只按市场过滤，腾讯会被选进分钟级的链里、
+     * 返回空、然后被记一次熔断失败——而它的熔断键 {@code extended.tencent.kline}
+     * 与**日K共用**，于是一次分钟级请求的失败会把日K一起打断。
+     * 声明能力时必须把周期带上，否则注册表选出来的链和真实能力对不上。</p>
+     *
+     * <p>注意入参是**来源要取的周期**：10 分钟由服务层用 5 分钟聚合，
+     * 所以查链时用的是 5m 而不是 10m。Provider 只对来源真正能给的周期负责。</p>
+     */
+    default boolean supportsKline(String market, String interval) {
+        return supportsKline(market);
+    }
 }
