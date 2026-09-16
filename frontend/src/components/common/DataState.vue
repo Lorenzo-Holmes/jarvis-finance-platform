@@ -32,6 +32,10 @@ const emit = defineEmits(['retry'])
 .state-copy { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .state-copy b { color: var(--text); font-size: 11px; font-weight: 650; }
 .state-copy span { color: var(--subtle); font-size: 9px; line-height: 1.5; }
-button { margin-left: 4px; border: 1px solid var(--line-strong); background: #1c1f22; color: var(--text); border-radius: var(--radius-sm); padding: 5px 9px; font-size: 9px; cursor: pointer; }
+/* 底色 #1c1f22 是**固定深色**（不随主题变），所以前景色也必须固定为浅色。
+   原先写的 color: var(--text) 在浅色外壳下是 #20221d（近黑，"重试"二字看不见，
+   按钮看起来是个纯黑方块），在深色外壳下才是 #eee9de。浅底深字的主题里，
+   深底按钮配 var(--text) 一定读不出来——固定深底就该配固定浅字。 */
+button { margin-left: 4px; border: 1px solid var(--line-strong); background: #1c1f22; color: #f1efe8; border-radius: var(--radius-sm); padding: 5px 9px; font-size: 9px; cursor: pointer; }
 @keyframes spin { to { transform: rotate(360deg); } }
 </style>
