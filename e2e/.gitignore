@@ -1,0 +1,15 @@
+# 本目录自带的忽略规则：不改动仓库根 .gitignore，避免与队友产生冲突。
+# 根 .gitignore 已全局忽略 node_modules/，这里再声明一次以保证单独 checkout 本目录时也正确。
+node_modules/
+
+# Playwright 运行产物
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+
+# 复用的登录态（含 Cookie，绝不入库）
+.auth/
+
+# TS 增量编译信息
+*.tsbuildinfo
