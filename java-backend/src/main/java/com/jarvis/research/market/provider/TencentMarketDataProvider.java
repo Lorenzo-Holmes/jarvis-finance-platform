@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jarvis.research.common.ExternalWebClients;
 import com.jarvis.research.config.JarvisProperties;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 
@@ -44,10 +45,31 @@ public class TencentMarketDataProvider implements MarketDataProvider {
     private final JarvisProperties properties;
     private final ObjectMapper objectMapper;
 
+    /**
+     * Spring 装配用的构造器。
+     *
+     * <p>{@code @Autowired} 在这里是**必需**的，不是装饰：类里有两个构造器时，
+     * Spring 只在存在无参构造器时才敢自己挑；腾讯这个没有，于是会直接报
+     * "No default constructor found"。（EastMoney/Yahoo/Binance 各有一个公开无参构造器，
+     * 所以它们加了测试构造器也不会出问题——这个差别很隐蔽，装配测试当场就抓到了。）</p>
+     */
+    @Autowired
     public TencentMarketDataProvider(JarvisProperties properties, ObjectMapper objectMapper) {
         this.properties = properties;
         this.objectMapper = objectMapper;
         this.webClient = ExternalWebClients.create(java.time.Duration.ofSeconds(10));
+    }
+
+    /**
+     * 包级可见**仅供测试**：注入 WebClient 以便对请求 URL 与解析做真实的桩测试。
+     *
+     * <p>腾讯是 A股主源，而它的实时行情 URL 来自配置（{@code gold.realtimeUrl} 带
+     * {@code {symbol}} 占位），所以"标的有没有正确替换进 URL"这件事必须钉住。</p>
+     */
+    TencentMarketDataProvider(JarvisProperties properties, ObjectMapper objectMapper, WebClient webClient) {
+        this.properties = properties;
+        this.objectMapper = objectMapper;
+        this.webClient = webClient;
     }
 
     @Override
@@ -246,6 +268,15 @@ public class TencentMarketDataProvider implements MarketDataProvider {
      */
     @Override
     public List<Map<String, Object>> kline(String symbol, String interval, int limit) {
+        // 只做日线。这个守卫是**行为与声明一致**的要求，不是多余的检查：
+        // 下面的 param 里硬编码了 "day"，interval 入参从来没被用过，
+        // 所以若不在这里拦住，任何周期请求都会拿回**日线数据**——
+        // 调用方会把日线当成 5m 用。能力声明（supportsKline(market, interval)）
+        // 只保证它不进降级链；这里是最后一道，防止直接调用或将来有人绕过链。
+        if (!"1d".equalsIgnoreCase(interval)) {
+            log.debug("腾讯K线只支持日线: interval={}", interval);
+            return List.of();
+        }
         String body;
         try {
             String param = symbol + ",day,,," + KLINE_FETCH_LIMIT + ",qfq";

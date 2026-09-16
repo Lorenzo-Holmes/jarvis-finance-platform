@@ -1,7 +1,11 @@
 package com.jarvis.research.market.provider;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jarvis.research.config.JarvisProperties;
 import org.junit.jupiter.api.Test;
 
+import java.nio.charset.Charset;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
@@ -318,7 +322,181 @@ class ProviderHttpContractTest {
                 "必须是 UTC 的 Instant 形式——扩展行情信封的约定");
     }
 
+    // ==================== 腾讯：A股主源 ====================
+
+    /**
+     * 实时行情 URL 来自**配置**（{@code gold.realtimeUrl} 里带 {@code {symbol}} 占位），
+     * 标的必须被替换进去。
+     *
+     * <p>这里用一份自定义配置，于是"URL 真的来自配置"这件事本身也被验证了——
+     * 否则把默认值和硬编码区分不开。</p>
+     */
+    @Test
+    void tencentQuoteUrlComesFromConfigurationWithTheSymbolSubstituted() {
+        StubWebClient stub = StubWebClient.servingBytes(tencentASharePayload("sh600519", "MOUTAI"));
+        TencentMarketDataProvider provider = tencent(stub, "https://quote.example.test/q={symbol}");
+
+        provider.quote("a_share", "sh600519");
+
+        assertEquals("https://quote.example.test/q=sh600519", stub.lastUrl(),
+                "占位符没被替换，或没走配置");
+    }
+
+    /**
+     * 伦敦金必须问 {@code hf_XAU}。
+     *
+     * <p>core 的 {@code MarketDataService} 显式传 {@code "hf_XAU"} 而不是 {@code "london_gold"}，
+     * 所以这条断言钉的是**两边必须保持一致**：一旦哪边改成传市场名，
+     * URL 会变成 {@code q=london_gold}，一个腾讯不认识的代码，实时金价会静默变成错误。</p>
+     */
+    @Test
+    void tencentAsksForHfXauWhenQuotingLondonGold() {
+        StubWebClient stub = StubWebClient.servingBytes(tencentASharePayload("hf_XAU", "XAU"));
+        TencentMarketDataProvider provider = tencent(stub, "https://quote.example.test/q={symbol}");
+
+        provider.quote("london_gold", "hf_XAU");
+
+        assertEquals("https://quote.example.test/q=hf_XAU", stub.lastUrl());
+    }
+
+    /**
+     * 腾讯的报文是 **GBK**，Provider 用 {@code new String(bytes, GBK)} 解码。
+     *
+     * <p>桩按原始字节返回，所以中文名走的是真实解码路径——这条测试才证明得了
+     * 编码没有写错。若桩只给字符串，中文会被按默认字符集编一遍，测的是空气。</p>
+     */
+    @Test
+    void tencentDecodesTheGbkQuotePayload() {
+        StubWebClient stub = StubWebClient.servingBytes(tencentASharePayload("sh600519", "贵州茅台"));
+        TencentMarketDataProvider provider = tencent(stub, "https://quote.example.test/q={symbol}");
+
+        Map<String, Object> quote = provider.quote("a_share", "sh600519");
+
+        assertEquals("贵州茅台", quote.get("name"), "GBK 解码路径");
+        assertEquals(1700.0, quote.get("price"));
+        assertEquals(1690.0, quote.get("prev_close"));
+        assertEquals(1695.0, quote.get("open"));
+        assertEquals(10.0, quote.get("change"));
+        assertEquals(0.59, quote.get("change_pct"));
+        assertEquals(1710.0, quote.get("high"));
+        assertEquals(1680.0, quote.get("low"));
+    }
+
+    /** A股口径**不产出** {@code source_quote_time}（原有行为，与ETF口径的差别就在这里）。 */
+    @Test
+    void tencentAShareQuoteDoesNotCarryTheZonedSourceQuoteTime() {
+        StubWebClient stub = StubWebClient.servingBytes(tencentASharePayload("sh600519", "MOUTAI"));
+        TencentMarketDataProvider provider = tencent(stub, "https://quote.example.test/q={symbol}");
+
+        Map<String, Object> quote = provider.quote("a_share", "sh600519");
+
+        assertFalse(quote.containsKey("source_quote_time"));
+        assertFalse(quote.containsKey("error"));
+        assertEquals("sh600519", quote.get("symbol"));
+    }
+
+    @Test
+    void tencentKlineSendsTheDayParamAndFetchLimit() {
+        StubWebClient stub = StubWebClient.serving("{\"data\":{\"sh600519\":{\"qfqday\":[]}}}");
+        TencentMarketDataProvider provider = tencent(stub, null);
+
+        provider.kline("sh600519", "1d", 10);
+
+        assertTrue(stub.lastUrl().startsWith("https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"),
+                "实际: " + stub.lastUrl());
+        assertTrue(stub.lastUrl().contains("param=sh600519,day,,,500,qfq"),
+                "抓取条数与复权口径都是契约的一部分，实际: " + stub.lastUrl());
+    }
+
+    /**
+     * **非日线周期不发请求。**
+     *
+     * <p>{@code param} 里硬编码了 {@code day}，interval 入参从来没被用过；不拦住的话
+     * 任何周期请求都会拿回日线数据、被当成 5m 用。能力声明只保证它不进降级链，
+     * 这个守卫是最后一道。</p>
+     */
+    @Test
+    void tencentKlineRefusesNonDailyIntervalsWithoutRequesting() {
+        StubWebClient stub = StubWebClient.serving("{\"data\":{\"sh600519\":{\"qfqday\":[]}}}");
+        TencentMarketDataProvider provider = tencent(stub, null);
+
+        assertEquals(List.of(), provider.kline("sh600519", "5m", 10));
+        assertEquals(List.of(), provider.kline("sh600519", "10m", 10));
+        assertEquals(0, stub.requestCount(), "不该为骗不出来的周期发请求");
+    }
+
+    @Test
+    void tencentKlineFallsBackToQfqdayWhenDayIsAbsent() {
+        StubWebClient stub = StubWebClient.serving("{\"data\":{\"sh600519\":{\"qfqday\":["
+                + "[\"2026-09-16\",\"1695.00\",\"1700.00\",\"1710.00\",\"1680.00\",\"12345.00\"]]}}}");
+        TencentMarketDataProvider provider = tencent(stub, null);
+
+        List<Map<String, Object>> rows = provider.kline("sh600519", "1d", 10);
+
+        assertEquals(1, rows.size(), "day 缺失时要退到 qfqday");
+        assertEquals("2026-09-16", rows.get(0).get("date"));
+        assertEquals(1695.0, rows.get(0).get("open"));
+        assertEquals(1700.0, rows.get(0).get("close"), "第 3 个元素是收盘");
+        assertEquals(1710.0, rows.get(0).get("high"));
+        assertEquals(1680.0, rows.get(0).get("low"));
+        assertEquals(12345.0, rows.get(0).get("volume"));
+    }
+
+    /**
+     * 这条是**现状刻画**，不是期望行为。
+     *
+     * <p>腾讯的K线解析用裸 {@code Double.parseDouble}：一行畸形抛异常 → 被吞成"无数据" →
+     * 整条K线为空 → 降级到东方财富或 502。已核对重构前的内联实现，**它也是这样**，
+     * 所以这是忠实移植、不是新引入的回归——与东方财富那边不同，那边分钟级原有守卫被合并掉了，
+     * 所以修了；这边没有可恢复的守卫。</p>
+     *
+     * <p>留着这条测试是为了把脆弱性写在明处：腾讯是 A股主源，一行畸形就让整段历史消失，
+     * 是否要改成"跳过该行"应当作为一个明确决定来做，而不是顺手改掉主源语义。</p>
+     */
+    @Test
+    void tencentKlineCurrentlyDiscardsTheWholeSeriesOnOneMalformedRow() {
+        StubWebClient stub = StubWebClient.serving("{\"data\":{\"sh600519\":{\"qfqday\":["
+                + "[\"2026-09-16\",\"1695.00\",\"1700.00\",\"1710.00\",\"1680.00\",\"12345.00\"],"
+                + "[\"2026-09-17\",\"-\",\"-\",\"-\",\"-\",\"-\"]]}}}");
+        TencentMarketDataProvider provider = tencent(stub, null);
+
+        List<Map<String, Object>> rows = provider.kline("sh600519", "1d", 10);
+
+        assertEquals(List.of(), rows,
+                "现状：一行畸形丢掉整个序列（见方法注释：这是待决定项，不是设计）");
+    }
+
     // ==================== 夹具 ====================
+
+    private static TencentMarketDataProvider tencent(StubWebClient stub, String realtimeUrl) {
+        JarvisProperties properties = new JarvisProperties();
+        if (realtimeUrl != null) {
+            properties.getGold().setRealtimeUrl(realtimeUrl);
+        }
+        return new TencentMarketDataProvider(properties, new ObjectMapper(), stub.client());
+    }
+
+    /**
+     * 腾讯实时行情的报文：{@code v_sh600519="1~名称~代码~现价~昨收~今开~...~";}
+     *
+     * <p>下标取自 Provider 自己的文档：name[1] price[3] prev[4] open[5]
+     * change[31] pct[32] high[33] low[34]。用数组拼而不是写字面量，
+     * 免得数错波浪号。</p>
+     */
+    private static byte[] tencentASharePayload(String symbol, String name) {
+        String[] fields = new String[40];
+        Arrays.fill(fields, "0");
+        fields[1] = name;
+        fields[3] = "1700.00";
+        fields[4] = "1690.00";
+        fields[5] = "1695.00";
+        fields[31] = "10.00";
+        fields[32] = "0.59";
+        fields[33] = "1710.00";
+        fields[34] = "1680.00";
+        String payload = "v_" + symbol + "=\"" + String.join("~", fields) + "\";";
+        return payload.getBytes(Charset.forName("GBK"));
+    }
 
     private static String klines(String... rows) {
         return "{\"data\":{\"klines\":[" + String.join(",", rows) + "]}}";
