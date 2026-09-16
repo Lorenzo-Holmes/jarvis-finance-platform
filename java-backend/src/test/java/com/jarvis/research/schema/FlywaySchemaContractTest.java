@@ -115,6 +115,7 @@ class FlywaySchemaContractTest {
                 "sim_position",
                 "sim_trade",
                 "sim_order",
+                "research_task",
                 "flyway_schema_history"));
 
         assertEquals(expected, tableNames(), "迁移产出的表集合");
@@ -130,6 +131,24 @@ class FlywaySchemaContractTest {
                         "leverage", "stop_price", "time_in_force", "status",
                         "client_order_id", "created_at", "updated_at", "triggered_at", "version")),
                 "sim_order 的列与实体不符，现有: " + columns);
+    }
+
+    /**
+     * 研究任务的列必须与 {@code ResearchTask} 实体一一对上。
+     *
+     * <p>这条是 {@code ddl-auto=validate} 之外的显式钉子：validate 失败时给的是
+     * Hibernate 的通用报错，而这里会把整张列清单打出来，一眼能看出少了哪一列。</p>
+     */
+    @Test
+    void theResearchTaskTableHasEveryColumnTheEntityMaps() throws Exception {
+        Set<String> columns = columnNames("research_task");
+
+        assertTrue(columns.containsAll(List.of(
+                        "id", "user_id", "title", "task_type", "market", "symbol", "question",
+                        "status", "context_json", "report_json", "error_message", "model",
+                        "prompt_tokens", "completion_tokens", "created_at", "started_at",
+                        "finished_at", "version")),
+                "research_task 的列与 ResearchTask 实体不符，现有: " + columns);
     }
 
     // ==================== 夹具 ====================
