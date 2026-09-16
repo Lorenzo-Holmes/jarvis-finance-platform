@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jarvis.research.common.ExternalWebClients;
 import com.jarvis.research.market.dto.MarketStatusDTO;
+import com.jarvis.research.market.provider.MarketDataProvider;
+import com.jarvis.research.market.provider.ProviderRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -62,6 +64,13 @@ public class ExtendedMarketDataService {
     private final ObjectMapper objectMapper;
     private final MarketSourceCircuitBreaker circuitBreaker;
     private final MarketDataCacheRepository cacheRepository;
+    /**
+     * 行情源降级链。A股报价已改由它驱动；其余市场仍在迁移中。
+     *
+     * <p>可为 null（不加载 Spring 容器的旧测试走这条路），此时 A股报价会明确报"无可用行情源"，
+     * 而不是回落到某个内联实现——内联实现已经删掉了，留着半份才是真的危险。</p>
+     */
+    private final ProviderRegistry providerRegistry;
     /** 多用户秒级轮询时对同一标的做极短缓存，减少重复打第三方报价源。 */
     private final Map<String, CachedQuote> quoteCache = new ConcurrentHashMap<>();
     private final AtomicLong quoteCacheWrites = new AtomicLong();
@@ -82,29 +91,44 @@ public class ExtendedMarketDataService {
     );
 
     public ExtendedMarketDataService(ObjectMapper objectMapper) {
-        this(objectMapper, null, null, ExternalWebClients.create(java.time.Duration.ofSeconds(12)));
+        this(objectMapper, null, null, null, ExternalWebClients.create(java.time.Duration.ofSeconds(12)));
     }
 
     @Autowired
     public ExtendedMarketDataService(ObjectMapper objectMapper, MarketSourceCircuitBreaker circuitBreaker,
-                                     MarketDataCacheRepository cacheRepository) {
-        this(objectMapper, circuitBreaker, cacheRepository,
+                                     MarketDataCacheRepository cacheRepository,
+                                     ProviderRegistry providerRegistry) {
+        this(objectMapper, circuitBreaker, cacheRepository, providerRegistry,
                 ExternalWebClients.create(java.time.Duration.ofSeconds(12)));
     }
 
     ExtendedMarketDataService(ObjectMapper objectMapper, MarketSourceCircuitBreaker circuitBreaker,
                               MarketDataCacheRepository cacheRepository,
+                              ProviderRegistry providerRegistry,
                               WebClient webClient) {
         this.objectMapper = objectMapper;
         this.circuitBreaker = circuitBreaker;
         this.cacheRepository = cacheRepository;
+        this.providerRegistry = providerRegistry;
         this.webClient = webClient;
     }
 
     /** 兼容不加载 Spring 容器的旧单元测试。 */
     ExtendedMarketDataService(ObjectMapper objectMapper, MarketSourceCircuitBreaker circuitBreaker,
                               WebClient webClient) {
-        this(objectMapper, circuitBreaker, null, webClient);
+        this(objectMapper, circuitBreaker, null, null, webClient);
+    }
+
+    /** 测试用：注入持久化缓存与可伪造的上游客户端，降级链为空。 */
+    ExtendedMarketDataService(ObjectMapper objectMapper, MarketSourceCircuitBreaker circuitBreaker,
+                              MarketDataCacheRepository cacheRepository, WebClient webClient) {
+        this(objectMapper, circuitBreaker, cacheRepository, null, webClient);
+    }
+
+    /** 测试用：注入指定的降级链，不启动 Spring 容器。 */
+    ExtendedMarketDataService(ObjectMapper objectMapper, MarketSourceCircuitBreaker circuitBreaker,
+                              ProviderRegistry providerRegistry, WebClient webClient) {
+        this(objectMapper, circuitBreaker, null, providerRegistry, webClient);
     }
 
     public List<Map<String, Object>> listInstruments() {
@@ -119,7 +143,7 @@ public class ExtendedMarketDataService {
         Instrument instrument = parseInstrument(market, query);
         try {
             Map<String, Object> resolved = switch (instrument.market()) {
-                case "a_share" -> quoteAShareWithFallback(instrument);
+                case "a_share" -> registryQuote(instrument, "EastMoney (fallback)");
                 case "us_stock" -> quoteYahooWithCircuit(instrument);
                 case "crypto" -> quoteCryptoWithFallback(instrument);
                 default -> Map.of();
@@ -170,7 +194,7 @@ public class ExtendedMarketDataService {
         }
         try {
             Map<String, Object> result = switch (instrument.market()) {
-                case "a_share" -> quoteAShareWithFallback(instrument);
+                case "a_share" -> registryQuote(instrument, "EastMoney (fallback)");
                 case "us_stock" -> quoteYahooWithCircuit(instrument);
                 case "crypto" -> quoteCryptoWithFallback(instrument);
                 default -> throw invalid("不支持的市场: " + instrument.market());
@@ -332,35 +356,6 @@ public class ExtendedMarketDataService {
         }
     }
 
-    private Map<String, Object> quoteTencent(Instrument instrument) {
-        byte[] bytes = webClient.get()
-                .uri("https://qt.gtimg.cn/q=" + instrument.symbol())
-                .retrieve()
-                .bodyToMono(byte[].class)
-                .block();
-        if (bytes == null) throw upstream("A股行情为空");
-        String raw = new String(bytes, GBK);
-        Matcher matcher = Pattern.compile("\\\"(.+?)\\\"").matcher(raw);
-        if (!matcher.find()) throw upstream("A股行情格式异常");
-        String[] values = matcher.group(1).split("~", -1);
-        Double price = parseDouble(values, 3);
-        Double previous = parseDouble(values, 4);
-        if (price == null) throw upstream("A股价格为空");
-        Map<String, Object> out = quoteBase(instrument);
-        if (values.length > 1 && values[1] != null && !values[1].isBlank()) {
-            out.put("name", values[1].trim());
-        }
-        out.put("price", price);
-        out.put("prev_close", previous);
-        out.put("change", parseDouble(values, 31));
-        out.put("change_pct", parseDouble(values, 32));
-        out.put("open", parseDouble(values, 5));
-        out.put("high", parseDouble(values, 33));
-        out.put("low", parseDouble(values, 34));
-        out.put("quote_time", LocalDateTime.now().toString());
-        return out;
-    }
-
     private Map<String, Object> quoteYahoo(Instrument instrument) throws Exception {
         return quoteYahoo(instrument, yahooStockSymbol(instrument.symbol()));
     }
@@ -398,59 +393,61 @@ public class ExtendedMarketDataService {
         }
     }
 
-    private Map<String, Object> quoteAShareWithFallback(Instrument instrument) throws Exception {
-        String primary = "extended.tencent.stock";
-        String fallback = "extended.eastmoney.stock";
-        if (allowSource(primary)) {
+    /**
+     * 按 {@link ProviderRegistry} 的降级链取行情，并包装成扩展行情信封。
+     *
+     * <p>信封语义与切换前的内联实现逐项对齐：</p>
+     * <ul>
+     *   <li>基础字段来自 {@link #quoteBase}（market/symbol/name/currency/source/quote_time），
+     *       再由 Provider 的字段覆盖。{@code name} 因此保持原语义——Provider 给了就用它的，
+     *       没给（字段空白）就回落到标的登记名，而不是编一个</li>
+     *   <li>{@code quote_time} 统一覆盖为 {@code LocalDateTime.now().toString()}，
+     *       与原 {@code quoteTencent} 最后的覆盖一致（不是 quoteBase 里那个带时区的形式）</li>
+     *   <li>{@code source}：主源沿用标的登记名，备用源用调用方给的标签。
+     *       标签**必须显式传入**而不是由 provider.displayName() 拼——Yahoo 的 displayName 是
+     *       "Yahoo Finance (GC=F 期货)"，拼出来的备用标签会是错的</li>
+     * </ul>
+     *
+     * <p>A股K线此时尚未迁移到 Provider，所以这里只管报价；熔断键沿用 Provider 的
+     * {@link MarketDataProvider#sourceKey(String)}（extended.tencent.stock / extended.eastmoney.stock）。</p>
+     */
+    private Map<String, Object> registryQuote(Instrument instrument, String fallbackLabel) {
+        List<MarketDataProvider> chain = providerRegistry == null
+                ? List.of()
+                : providerRegistry.quoteChain(instrument.market());
+        if (chain.isEmpty()) {
+            throw upstream(instrument.market() + " 无可用行情源");
+        }
+
+        String lastError = "行情源均不可用: " + instrument.market();
+        for (int index = 0; index < chain.size(); index++) {
+            MarketDataProvider provider = chain.get(index);
+            String source = provider.sourceKey(instrument.market());
+            if (!allowSource(source)) {
+                lastError = "行情源熔断中: " + source;
+                continue;
+            }
             try {
-                Map<String, Object> result = quoteTencent(instrument);
-                recordSourceSuccess(primary);
-                return result;
+                Map<String, Object> raw = provider.quote(instrument.market(), instrument.symbol());
+                if (raw == null || raw.containsKey("error")) {
+                    throw new IllegalStateException(raw == null
+                            ? "行情源返回空结果"
+                            : String.valueOf(raw.get("error")));
+                }
+                recordSourceSuccess(source);
+                Map<String, Object> out = quoteBase(instrument);
+                out.putAll(raw);
+                out.put("source", index == 0 ? instrument.source() : fallbackLabel);
+                out.put("quote_time", LocalDateTime.now().toString());
+                return out;
             } catch (Exception e) {
-                recordSourceFailure(primary);
-                log.warn("腾讯 A股行情不可用，切换 EastMoney symbol={}, message={}",
-                        instrument.symbol(), e.getMessage());
+                recordSourceFailure(source);
+                log.warn("扩展行情源失败，尝试下一个 market={}, provider={}, source={}, message={}",
+                        instrument.market(), provider.name(), source, e.getMessage());
+                lastError = e.getMessage() == null ? "行情源调用失败" : e.getMessage();
             }
         }
-        if (!allowSource(fallback)) throw upstream("A股备用行情源熔断中");
-        try {
-            Map<String, Object> result = quoteEastmoney(instrument);
-            result.put("source", "EastMoney (fallback)");
-            recordSourceSuccess(fallback);
-            return result;
-        } catch (Exception e) {
-            recordSourceFailure(fallback);
-            throw e;
-        }
-    }
-
-    private Map<String, Object> quoteEastmoney(Instrument instrument) throws Exception {
-        String symbol = instrument.symbol().toLowerCase(Locale.ROOT);
-        String secid = symbol.startsWith("sh") ? "1." : "0.";
-        String code = symbol.substring(2);
-        String body = webClient.get()
-                .uri(uriBuilder -> uriBuilder.scheme("https").host("push2.eastmoney.com")
-                        .path("/api/qt/stock/get")
-                        .queryParam("secid", secid + code)
-                        .queryParam("fields", "f43,f44,f45,f46,f57,f58,f60,f169,f170")
-                        .build())
-                .retrieve().bodyToMono(String.class).block();
-        JsonNode data = objectMapper.readTree(body).path("data");
-        if (!data.isObject() || !data.path("f43").isNumber()) throw upstream("A股备用行情为空");
-        double price = data.path("f43").asDouble() / 1000.0;
-        double previous = data.path("f60").asDouble() / 1000.0;
-        if (price <= 0) throw upstream("A股备用价格为空");
-        Map<String, Object> out = quoteBase(instrument);
-        out.put("name", data.path("f58").asText(instrument.name()));
-        out.put("price", price);
-        out.put("prev_close", previous);
-        out.put("change", data.path("f169").asDouble() / 1000.0);
-        out.put("change_pct", data.path("f170").asDouble() / 100.0);
-        out.put("open", data.path("f46").asDouble() / 1000.0);
-        out.put("high", data.path("f44").asDouble() / 1000.0);
-        out.put("low", data.path("f45").asDouble() / 1000.0);
-        out.put("quote_time", LocalDateTime.now().toString());
-        return out;
+        throw upstream(lastError);
     }
 
     private List<Map<String, Object>> klineAShareWithFallback(Instrument instrument, int limit) throws Exception {
