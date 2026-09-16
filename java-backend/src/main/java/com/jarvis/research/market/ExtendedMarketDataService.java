@@ -3,6 +3,7 @@ package com.jarvis.research.market;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jarvis.research.common.ExternalWebClients;
+import com.jarvis.research.market.dto.MarketStatusDTO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -136,7 +137,7 @@ public class ExtendedMarketDataService {
     }
 
     /** 返回交易时段状态；节假日历未接入，因此只按工作日和交易时段判断。 */
-    public Map<String, Object> session(String market) {
+    public MarketStatusDTO session(String market) {
         String normalizedMarket = normalizeMarket(market);
         LocalDateTime now = LocalDateTime.now(zoneFor(normalizedMarket));
         boolean weekday = now.getDayOfWeek() != DayOfWeek.SATURDAY && now.getDayOfWeek() != DayOfWeek.SUNDAY;
@@ -149,15 +150,14 @@ public class ExtendedMarketDataService {
                     LocalTime.of(9, 30), LocalTime.of(16, 0));
             default -> false;
         };
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("market", normalizedMarket);
-        out.put("is_open", open);
-        out.put("status", open ? "open" : "closed");
-        out.put("label", open ? "交易中" : "非交易时段");
-        out.put("timezone", zoneFor(normalizedMarket).getId());
-        out.put("checked_at", now.toString());
-        out.put("disclaimer", "交易状态按工作日和常规时段估算，未接入交易所节假日历");
-        return out;
+        return new MarketStatusDTO(
+                normalizedMarket,
+                open,
+                open ? "open" : "closed",
+                open ? "交易中" : MarketStatusDTO.DEFAULT_CLOSED_LABEL,
+                zoneFor(normalizedMarket).getId(),
+                now.toString(),
+                "交易状态按工作日和常规时段估算，未接入交易所节假日历");
     }
 
     public Map<String, Object> quote(String market, String symbol) {

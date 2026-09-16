@@ -4,6 +4,7 @@ import com.jarvis.research.audit.AuditService;
 import com.jarvis.research.market.MarketDataService;
 import com.jarvis.research.market.PriceSnapshotRepository;
 import com.jarvis.research.market.ExtendedMarketDataService;
+import com.jarvis.research.market.dto.MarketStatusDTO;
 import com.jarvis.research.user.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -417,11 +418,11 @@ public class SimTradeService {
     }
 
     private void ensureTradingSession(String market) {
-        Map<String, Object> state = extendedMarketDataService == null
-                ? Map.of()
+        MarketStatusDTO state = extendedMarketDataService == null
+                ? null
                 : extendedMarketDataService.session(market);
-        if (!Boolean.TRUE.equals(state.get("is_open"))) {
-            String label = String.valueOf(state.getOrDefault("label", "非交易时段"));
+        if (state == null || !state.isOpen()) {
+            String label = state == null ? MarketStatusDTO.DEFAULT_CLOSED_LABEL : state.label();
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     label + "，模拟盘仅允许在开市时间成交（加密货币全天开放）");
         }

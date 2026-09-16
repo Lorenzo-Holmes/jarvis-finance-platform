@@ -1,6 +1,7 @@
 package com.jarvis.research.market;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jarvis.research.market.dto.MarketStatusDTO;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.springframework.http.HttpStatus;
 import org.junit.jupiter.api.Test;
@@ -56,9 +57,10 @@ class ExtendedMarketDataServiceTest {
 
     @Test
     void reportsCryptoAsAlwaysOpen() {
-        var status = service.session("crypto");
-        assertEquals("open", status.get("status"));
-        assertEquals(true, status.get("is_open"));
+        MarketStatusDTO status = service.session("crypto");
+        assertEquals("open", status.status());
+        assertEquals(true, status.isOpen());
+        assertEquals("crypto", status.market());
     }
 
     @Test

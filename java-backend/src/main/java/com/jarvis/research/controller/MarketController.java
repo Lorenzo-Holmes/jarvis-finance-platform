@@ -5,6 +5,7 @@ import com.jarvis.research.market.ExtendedMarketDataService;
 import com.jarvis.research.market.MarketDataService;
 import com.jarvis.research.market.MarketPriceStreamService;
 import com.jarvis.research.market.PublicMarketRateLimitService;
+import com.jarvis.research.market.dto.MarketStatusDTO;
 import com.jarvis.research.service.JdGoldService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -135,7 +136,7 @@ public class MarketController {
 
     /** 查询 A 股、美股和加密货币的当前交易时段状态。 */
     @GetMapping("/session")
-    public ApiResponse<Object> session(@RequestParam String market) {
+    public ApiResponse<MarketStatusDTO> session(@RequestParam String market) {
         return ApiResponse.ok(extendedMarketDataService.session(market));
     }
 
