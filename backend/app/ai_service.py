@@ -387,7 +387,8 @@ def analyze_chain(node: str, context: str = "") -> Dict[str, Any]:
 def smart_quote(price_data: Dict[str, Any], closes: Optional[List[Any]] = None,
                 horizon_days: Optional[int] = None,
                 confidence: Optional[float] = None,
-                symbol: Optional[str] = None) -> Dict[str, Any]:
+                symbol: Optional[str] = None,
+                metrics: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """智能报价解读（FR-07）：派生数值与趋势区间先由 Python 计算，LLM 只负责文字解释。
 
     返回 {available, metrics, forecast?, content}。
@@ -396,8 +397,14 @@ def smart_quote(price_data: Dict[str, Any], closes: Optional[List[Any]] = None,
     - content：模型原文（语义与既有调用方兼容，不因新增 forecast 而改变）
 
     调用方（Java）应以自身业务数据层注入的收盘价为准，不信任客户端传入。
+
+    `metrics`（Phase 2 ⑧）：Java 侧用**同一个快照**算好的派生指标，随请求下发。传了就直接引用、
+    不再自算。缺省回退到本地 quote_metrics，老调用方不受影响。
+    注意与风险面的判据不同：quote_metrics 的结果里**没有 available 字段**，
+    所以这里用"非空字典"判断，而不是像 analyze_risk 那样看 available。
     """
-    metrics = quote_metrics(price_data)
+    provided = metrics if isinstance(metrics, dict) and metrics else None
+    metrics = dict(provided) if provided is not None else quote_metrics(price_data)
     sections = [
         "你是黄金投资助手。以下【确定性计算结果】由程序生成，禁止自行修改其中数值；",
         "请基于这些结果给出简洁的行情解读与操作参考。",

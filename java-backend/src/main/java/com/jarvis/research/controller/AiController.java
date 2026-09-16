@@ -1,5 +1,6 @@
 package com.jarvis.research.controller;
 
+import com.jarvis.research.ai.QuoteMetrics;
 import com.jarvis.research.ai.RiskMetrics;
 import com.jarvis.research.market.MarketDataService;
 import com.jarvis.research.market.dto.DailyKlineDTO;
@@ -229,8 +230,14 @@ public class AiController {
         Map<String, Object> quotePayload = new LinkedHashMap<>();
         if (marketDataService == null || body == null) return body;
 
-        if (body.get("price_data") instanceof Map<?, ?>) {
+        if (body.get("price_data") instanceof Map<?, ?> rawSnapshot) {
             quotePayload.put("price_data", body.get("price_data"));
+            // Phase 2 ⑧ 统一口径：用**同一个快照**在 Java 侧算出派生指标，随请求一并下发。
+            // 快照本身仍原样透传（不改变既有 payload 形状），Python 侧有 metrics 则引用、不再自算。
+            // 注意：快照的键统一转成 String，与 Jackson 反序列化后的形态一致。
+            Map<String, Object> snapshot = new LinkedHashMap<>();
+            rawSnapshot.forEach((key, value) -> snapshot.put(String.valueOf(key), value));
+            quotePayload.put("metrics", QuoteMetrics.compute(snapshot));
         } else {
             quotePayload.put("price_data", new LinkedHashMap<String, Object>());
         }

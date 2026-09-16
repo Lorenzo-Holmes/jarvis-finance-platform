@@ -72,6 +72,9 @@ class QuoteReq(BaseModel):
     horizon_days: Optional[int] = Field(default=None, ge=1, le=60)
     confidence: Optional[float] = Field(default=None, ge=0.5, le=0.99)
     symbol: Optional[str] = Field(default=None, max_length=32)
+    # Phase 2 ⑧：Java 侧用**同一个快照**算好的派生指标，随请求下发；有则引用、无则回退本地。
+    # 该模型同样没有开 extra=forbid，新增字段不会导致 422。
+    metrics: Optional[Dict[str, Any]] = None
 
 
 class RiskReq(BaseModel):
@@ -240,7 +243,8 @@ def smart_quote(req: QuoteReq):
                            closes=req.closes,
                            horizon_days=req.horizon_days,
                            confidence=req.confidence,
-                           symbol=req.symbol)}
+                           symbol=req.symbol,
+                           metrics=req.metrics)}
 
 
 @router.post("/research/report")
