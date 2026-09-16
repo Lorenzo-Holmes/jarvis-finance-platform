@@ -1,0 +1,178 @@
+package com.jarvis.research.schema;
+
+import org.flywaydb.core.Flyway;
+import org.flywaydb.core.api.MigrationInfo;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
+
+import javax.sql.DataSource;
+import java.io.IOException;
+import java.sql.Connection;
+import java.sql.ResultSet;
+import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.stream.Collectors;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+/**
+ * 迁移脚本的完整性测试：**真的把 Flyway 跑一遍**，并让 Hibernate 校验实体与表结构一致。
+ *
+ * <p>为什么需要它：此前没有任何测试执行过 {@code db/migration} 下的脚本。集成测试一律
+ * 用 H2 + {@code ddl-auto=create-drop} + {@code spring.flyway.enabled=false}——
+ * 也就是说表是 Hibernate 按实体生成的，**迁移脚本从来没被读过**。
+ * 于是最典型的事故无人能挡：实体加了字段、迁移忘了加列，
+ * 单测与集成测试全绿，上真库才炸。</p>
+ *
+ * <p>做法：H2 开 PostgreSQL 兼容模式跑 Flyway，再让 {@code ddl-auto=validate}
+ * 把每个实体映射与迁移产出的schema逐列比对。V1..V7 里没有 JSONB / TIMESTAMPTZ /
+ * 触发器 / 函数之类的东西，只有 BIGSERIAL、NUMERIC、VARCHAR、CREATE INDEX，
+ * 所以这套迁移在 H2 上是真能执行的——这也是这条测试成立的前提。</p>
+ *
+ * <p>本机没有 Postgres 也没有 Docker，所以这是在没有真库的环境里能做到的最强验证。
+ * 它证明的是"脚本可执行 + 与实体一致"，不证明"在 Postgres 上行为相同"。</p>
+ */
+@SpringBootTest(properties = {
+        // MODE=PostgreSQL 让 BIGSERIAL 之类的写法可用；DATABASE_TO_LOWER 对齐 Postgres
+        // 把未加引号的标识符折叠成小写的习惯，否则校验会因大小写不匹配而失败。
+        "spring.datasource.url=jdbc:h2:mem:flyway-schema;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
+        "spring.datasource.driver-class-name=org.h2.Driver",
+        // 关键：表由迁移建，Hibernate 只校验不生成。
+        "spring.jpa.hibernate.ddl-auto=validate",
+        "spring.flyway.enabled=true",
+        "jarvis.jwt.secret=integration-test-jwt-secret-key-at-least-32-bytes",
+        "jarvis.python-service.enabled=false",
+        "jarvis.auth.require-email-verification=false",
+        "jarvis.risk.poll-interval-ms=3600000"
+})
+class FlywaySchemaContractTest {
+
+    @Autowired private Flyway flyway;
+    @Autowired private DataSource dataSource;
+
+    /**
+     * 上下文能起来本身就是结论：Flyway 执行成功 + 每个实体都能在迁移产出的表里找到落脚点。
+     *
+     * <p>再加一条：**已应用的迁移数必须等于迁移文件的个数**。
+     * Flyway 对命名不合规的文件只是忽略（{@code V8_research.sql} 少一个下划线、
+     * 或者文件放错目录），不报错——那种情况下迁移静默不生效，
+     * 而这里会立刻失败。</p>
+     */
+    @Test
+    void everyMigrationFileIsAppliedAndEveryEntityMatchesTheSchema() throws IOException {
+        Set<String> files = new TreeSet<>(migrationFilesOnClasspath());
+        Set<String> applied = Arrays.stream(flyway.info().applied())
+                .map(MigrationInfo::getScript)
+                .collect(Collectors.toCollection(TreeSet::new));
+
+        assertEquals(new TreeSet<>(migrationFilesOnClasspath()), applied,
+                "已应用的脚本集合必须与 classpath 下的迁移文件完全一致");
+        assertEquals(files.size(), applied.size(),
+                "有迁移文件没被应用（命名不合规或放错位置）。文件=" + files + " 已应用=" + applied);
+    }
+
+    @Test
+    void flywayReportsNoFailedOrPendingMigrations() {
+        assertEquals(0, flyway.info().pending().length, "有未应用的迁移");
+
+        List<String> failed = Arrays.stream(flyway.info().all())
+                .filter(info -> info.getState() != null && info.getState().isFailed())
+                .map(MigrationInfo::getScript)
+                .collect(Collectors.toList());
+        assertEquals(List.of(), failed, "有执行失败的迁移");
+    }
+
+    /**
+     * 迁移产出的表集合必须**恰好**是这些。
+     *
+     * <p>写死是有意的：它同时挡住"新加了实体却忘了写迁移"（表不存在 → 上面那条
+     * validate 也会失败）和"迁移里手滑删/改名了一张表"（这里会失败）。
+     * 14 张业务表 + Flyway 自己的历史表。</p>
+     */
+    @Test
+    void theMigratedSchemaContainsExactlyTheExpectedTables() throws Exception {
+        Set<String> expected = new TreeSet<>(List.of(
+                "users",
+                "oauth_account",
+                "user_feature_permission",
+                "email_verification_code",
+                "ai_quota",
+                "audit_event",
+                "market_data_cache",
+                "market_preference",
+                "price_snapshot",
+                "kline_daily",
+                "sim_account",
+                "sim_position",
+                "sim_trade",
+                "sim_order",
+                "flyway_schema_history"));
+
+        assertEquals(expected, tableNames(), "迁移产出的表集合");
+    }
+
+    /** 每一列都不是"迁移建了但实体没映射"的反向漏配：至少把关键列钉住。 */
+    @Test
+    void theMigratedSchemaContainsTheColumnsTheEntitiesUse() throws Exception {
+        Set<String> columns = columnNames("sim_order");
+
+        assertTrue(columns.containsAll(List.of(
+                        "id", "user_id", "symbol", "side", "order_type", "quantity",
+                        "leverage", "stop_price", "time_in_force", "status",
+                        "client_order_id", "created_at", "updated_at", "triggered_at", "version")),
+                "sim_order 的列与实体不符，现有: " + columns);
+    }
+
+    // ==================== 夹具 ====================
+
+    /** classpath 下 db/migration 里的 .sql 文件名。 */
+    private static List<String> migrationFilesOnClasspath() throws IOException {
+        Resource[] resources = new PathMatchingResourcePatternResolver()
+                .getResources("classpath*:db/migration/*.sql");
+        List<String> names = new ArrayList<>();
+        for (Resource resource : resources) {
+            String filename = resource.getFilename();
+            if (filename != null) {
+                names.add(filename);
+            }
+        }
+        names.sort(String::compareTo);
+        return names;
+    }
+
+    private Set<String> tableNames() throws Exception {
+        Set<String> names = new TreeSet<>();
+        try (Connection connection = dataSource.getConnection();
+             Statement statement = connection.createStatement();
+             ResultSet rows = statement.executeQuery(
+                     "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'")) {
+            while (rows.next()) {
+                names.add(rows.getString(1).toLowerCase(java.util.Locale.ROOT));
+            }
+        }
+        return names;
+    }
+
+    private Set<String> columnNames(String table) throws Exception {
+        Set<String> names = new TreeSet<>();
+        try (Connection connection = dataSource.getConnection();
+             Statement statement = connection.createStatement();
+             ResultSet rows = statement.executeQuery(
+                     "SELECT column_name FROM information_schema.columns WHERE table_name = '"
+                             + table.toLowerCase(java.util.Locale.ROOT) + "'")) {
+            while (rows.next()) {
+                names.add(rows.getString(1).toLowerCase(java.util.Locale.ROOT));
+            }
+        }
+        return names;
+    }
+}
