@@ -51,8 +51,14 @@ public class ExtendedMarketDataService {
     private static final ZoneId SHANGHAI_ZONE = ZoneId.of("Asia/Shanghai");
     private static final ZoneId NEW_YORK_ZONE = ZoneId.of("America/New_York");
     private static final DateTimeFormatter INTRADAY_DATE = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
-    private static final Set<String> YAHOO_INTERVALS = Set.of("1d", "5m", "15m", "30m", "1h");
-    private static final Set<String> BINANCE_INTERVALS = Set.of("1d", "1h", "30m", "15m", "5m");
+    /**
+     * 美股K线对外承诺支持的周期，取自切换前的 {@code yahooResult} 校验（原 {@code YAHOO_INTERVALS}）。
+     *
+     * <p>比 Yahoo Provider 真正支持的周期多一个 10m——那是本层用 5m 聚合出来的派生周期，
+     * 不属于来源能力。所以这个集合留在这里（它是对外 API 契约），而不是搬进 Provider。</p>
+     */
+    private static final Set<String> US_STOCK_KLINE_INTERVALS =
+            Set.of("1d", "5m", "10m", "15m", "30m", "1h");
     private static final Pattern A_SHARE_PATTERN = Pattern.compile(
             "^(?:(SH|SZ|BJ))?(\\d{6})(?:(SH|SZ|BJ))?$", Pattern.CASE_INSENSITIVE);
     private static final Pattern US_STOCK_PATTERN = Pattern.compile(
@@ -239,11 +245,12 @@ public class ExtendedMarketDataService {
         String normalized = normalizeInterval(interval);
         try {
             List<Map<String, Object>> data = switch (instrument.market()) {
+                // A股分钟K仍走内联实现（未迁移）。
                 case "a_share" -> "1d".equals(normalized)
-                        ? registryDailyKline(instrument, limit)
+                        ? registryKline(instrument, normalized, limit)
                         : klineTencentIntraday(instrument, normalized, limit);
-                case "us_stock" -> klineYahoo(instrument, normalized, limit);
-                case "crypto" -> klineCryptoWithFallback(instrument, normalized, limit);
+                case "us_stock" -> registryKline(instrument, normalized, limit);
+                case "crypto" -> registryKline(instrument, normalized, limit);
                 default -> throw invalid("不支持的市场: " + instrument.market());
             };
             writeCache(klineCacheKey(instrument, normalized), "kline", data,
@@ -428,46 +435,76 @@ public class ExtendedMarketDataService {
     }
 
     /**
-     * 按注册表取 A股**日K**，并保持切换前的降级语义。
+     * 按注册表取K线，并保持切换前的降级语义。
      *
-     * <p>名字里带 daily 是有意的：A股目前只有日K迁到了 Provider，
-     * 分钟级仍走内联的 {@code klineTencentIntraday}。把限制写进方法名，
-     * 免得将来有人顺手拿它去接分钟周期——那会把日K数据贴上 5m 的标签返回。</p>
+     * <p>与报价的一个关键差别：**空列表等同于失败**。切换前的 A股内联实现
+     * 在无数据时抛异常、从而触发降级；Provider 按契约返回空列表，
+     * 所以判定失败的活儿落在这一层——否则"K线为空"会当成功返回，降级永远不会发生。</p>
      *
-     * <p>与报价的一个关键差别：**空列表等同于失败**。切换前的 {@code klineTencent}
-     * 在无数据时抛异常、从而触发降级到东方财富；Provider 按契约返回空列表，
-     * 所以判定失败的活儿落在这一层——否则"A股K线为空"会当成功返回，降级永远不会发生。</p>
+     * <p>10 分钟周期在这里用 5 分钟数据聚合：它是个**派生**周期，没有任何来源真正提供它。
+     * 放进 Provider 会让 Provider 对外声称支持一个上游并不存在的周期。</p>
+     *
+     * <p>是否参与熔断也由 Provider 决定（默认参与）。美股K线刻意不参与，
+     * 理由是它的熔断键与美股报价共用，见
+     * {@link MarketDataProvider#klineUsesCircuitBreaker(String)}。</p>
      */
-    private List<Map<String, Object>> registryDailyKline(Instrument instrument, int limit) {
+    private List<Map<String, Object>> registryKline(Instrument instrument, String interval, int limit) {
+        // 周期白名单是**对外 API 契约**，不是来源能力：客户端传了个不存在的周期，
+        // 那是客户端的问题（400），不该掉进降级循环最后变成"上游网关错误"（502）。
+        // A股的同类判断在 klineTencentIntraday 里，加密货币则一直没有——
+        // 这个不对称是重构前就有的，本次原样保留，要统一得单独做。
+        if ("us_stock".equalsIgnoreCase(instrument.market())
+                && !US_STOCK_KLINE_INTERVALS.contains(interval)) {
+            throw invalid("美股不支持该周期: " + interval);
+        }
+
         List<MarketDataProvider> chain = providerRegistry == null
                 ? List.of()
                 : providerRegistry.klineChain(instrument.market());
         if (chain.isEmpty()) {
-            throw upstream(instrument.market() + " 无可用日K源");
+            throw upstream(instrument.market() + " 无可用K线源");
         }
 
-        String lastError = "日K源均不可用: " + instrument.market();
+        String lastError = "K线源均不可用: " + instrument.market();
         for (MarketDataProvider provider : chain) {
+            boolean guarded = provider.klineUsesCircuitBreaker(instrument.market());
             String source = provider.klineSourceKey(instrument.market());
-            if (!allowSource(source)) {
-                lastError = "日K源熔断中: " + source;
+            if (guarded && !allowSource(source)) {
+                lastError = "K线源熔断中: " + source;
                 continue;
             }
             try {
-                List<Map<String, Object>> rows = provider.kline(instrument.symbol(), "1d", limit);
+                List<Map<String, Object>> rows = fetchKlineFrom(provider, instrument, interval, limit);
                 if (rows == null || rows.isEmpty()) {
-                    throw new IllegalStateException("日K源返回空数据");
+                    throw new IllegalStateException("K线源返回空数据");
                 }
-                recordSourceSuccess(source);
+                if (guarded) recordSourceSuccess(source);
                 return rows;
             } catch (Exception e) {
-                recordSourceFailure(source);
-                log.warn("扩展日K源失败，尝试下一个 market={}, provider={}, source={}, message={}",
+                if (guarded) recordSourceFailure(source);
+                log.warn("扩展K线源失败，尝试下一个 market={}, provider={}, source={}, message={}",
                         instrument.market(), provider.name(), source, e.getMessage());
-                lastError = e.getMessage() == null ? "日K源调用失败" : e.getMessage();
+                lastError = e.getMessage() == null ? "K线源调用失败" : e.getMessage();
             }
         }
         throw upstream(lastError);
+    }
+
+    /**
+     * 从单个 Provider 取K线；10 分钟周期先取 5 分钟再聚合。
+     *
+     * <p>一次取多少原始K线取决于 {@link MarketDataProvider#maxKlineLimit()}：
+     * Yahoo 上限 500、Binance 1000。这个差别是真实存在的，用统一上限会让某一侧的
+     * 10 分钟视图在 limit 较大时多出一段本没有的历史。</p>
+     */
+    private List<Map<String, Object>> fetchKlineFrom(MarketDataProvider provider, Instrument instrument,
+                                                     String interval, int limit) {
+        if ("10m".equals(interval)) {
+            int rawLimit = Math.min(provider.maxKlineLimit(), limit * 3);
+            return aggregateCandles(
+                    provider.kline(instrument.market(), instrument.symbol(), "5m", rawLimit), 10, limit);
+        }
+        return provider.kline(instrument.market(), instrument.symbol(), interval, limit);
     }
 
     private boolean allowSource(String source) {
@@ -533,111 +570,6 @@ public class ExtendedMarketDataService {
         return (symbol.startsWith("sh") ? "1." : "0.") + symbol.substring(2);
     }
 
-    private List<Map<String, Object>> klineYahoo(Instrument instrument, String interval, int limit) throws Exception {
-        return klineYahoo(instrument, yahooStockSymbol(instrument.symbol()), interval, limit);
-    }
-
-    private List<Map<String, Object>> klineYahoo(Instrument instrument, String providerSymbol,
-                                                 String interval, int limit) throws Exception {
-        if ("10m".equals(interval)) {
-            return aggregateCandles(klineYahoo(instrument, providerSymbol, "5m", Math.min(500, limit * 3)), 10, limit);
-        }
-        JsonNode result = yahooResult(providerSymbol, yahooRange(interval), interval);
-        JsonNode timestamps = result.path("timestamp");
-        JsonNode quote = result.path("indicators").path("quote").path(0);
-        List<Map<String, Object>> out = new ArrayList<>();
-        for (int i = 0; i < timestamps.size(); i++) {
-            if (!numberAt(quote.path("open"), i) || !numberAt(quote.path("close"), i)
-                    || !numberAt(quote.path("high"), i) || !numberAt(quote.path("low"), i)) continue;
-            Map<String, Object> row = new LinkedHashMap<>();
-            row.put("date", Instant.ofEpochSecond(timestamps.get(i).asLong()).toString());
-            row.put("open", quote.path("open").get(i).asDouble());
-            row.put("close", quote.path("close").get(i).asDouble());
-            row.put("high", quote.path("high").get(i).asDouble());
-            row.put("low", quote.path("low").get(i).asDouble());
-            row.put("volume", numberAt(quote.path("volume"), i) ? quote.path("volume").get(i).asDouble() : 0.0);
-            out.add(row);
-        }
-        return tail(out, limit);
-    }
-
-    private String yahooStockSymbol(String symbol) {
-        return symbol.replace('.', '-');
-    }
-
-    private String yahooRange(String interval) {
-        return "1d".equals(interval) ? "1y" : "5d";
-    }
-
-    private List<Map<String, Object>> klineCryptoWithFallback(Instrument instrument,
-                                                               String interval, int limit) throws Exception {
-        if (allowSource("extended.binance")) {
-            try {
-                List<Map<String, Object>> result;
-                if ("10m".equals(interval)) {
-                    result = aggregateCandles(klineBinance(instrument, "5m", Math.min(1000, limit * 3)), 10, limit);
-                } else {
-                    result = klineBinance(instrument, interval, limit);
-                }
-                recordSourceSuccess("extended.binance");
-                return result;
-            } catch (Exception binanceError) {
-                recordSourceFailure("extended.binance");
-                log.warn("Binance K线不可用，切换 Yahoo 备用源 symbol={}, message={}",
-                        instrument.symbol(), binanceError.getMessage());
-            }
-        }
-        if (!allowSource("extended.yahoo.crypto")) {
-            throw upstream("加密货币 K线备用行情源熔断中");
-        }
-        try {
-            if ("10m".equals(interval)) {
-                List<Map<String, Object>> result = aggregateCandles(
-                        klineYahoo(instrument, yahooCryptoSymbol(instrument.symbol()), "5m",
-                                Math.min(500, limit * 3)), 10, limit);
-                recordSourceSuccess("extended.yahoo.crypto");
-                return result;
-            }
-            List<Map<String, Object>> result = klineYahoo(instrument, yahooCryptoSymbol(instrument.symbol()), interval, limit);
-            recordSourceSuccess("extended.yahoo.crypto");
-            return result;
-        } catch (Exception yahooError) {
-            recordSourceFailure("extended.yahoo.crypto");
-            throw yahooError;
-        }
-    }
-
-    private List<Map<String, Object>> klineBinance(Instrument instrument, String interval, int limit) throws Exception {
-        JsonNode root = objectMapper.readTree(webClient.get()
-                .uri("https://api.binance.com/api/v3/klines?symbol=" + instrument.symbol()
-                        + "&interval=" + interval + "&limit=" + limit)
-                .retrieve().bodyToMono(String.class).block());
-        if (!root.isArray()) throw upstream("加密货币K线为空");
-        List<Map<String, Object>> out = new ArrayList<>();
-        for (JsonNode item : root) {
-            if (!item.isArray() || item.size() < 6) continue;
-            Map<String, Object> row = new LinkedHashMap<>();
-            row.put("date", Instant.ofEpochMilli(item.get(0).asLong()).toString());
-            row.put("open", item.get(1).asDouble());
-            row.put("high", item.get(2).asDouble());
-            row.put("low", item.get(3).asDouble());
-            row.put("close", item.get(4).asDouble());
-            row.put("volume", item.get(5).asDouble());
-            out.add(row);
-        }
-        return out;
-    }
-
-    private JsonNode yahooResult(String symbol, String range, String interval) throws Exception {
-        if (!YAHOO_INTERVALS.contains(interval)) throw invalid("美股不支持该周期: " + interval);
-        String body = webClient.get()
-                .uri("https://query1.finance.yahoo.com/v8/finance/chart/" + symbol
-                        + "?range=" + range + "&interval=" + interval)
-                .retrieve().bodyToMono(String.class).block();
-        JsonNode result = objectMapper.readTree(body).path("chart").path("result").path(0);
-        if (result.isMissingNode() || result.isNull()) throw upstream("美股行情为空");
-        return result;
-    }
 
     private List<Map<String, Object>> aggregateCandles(List<Map<String, Object>> rows, int minutes, int limit) {
         long bucketSize = minutes * 60L;
@@ -652,7 +584,14 @@ public class ExtendedMarketDataService {
                 initial.put("close", row.get("close"));
                 initial.put("high", row.get("high"));
                 initial.put("low", row.get("low"));
-                initial.put("volume", row.getOrDefault("volume", 0.0));
+                // 成交量从 0 起算，**不能**先塞首根的成交量：computeIfAbsent 之后那段
+                // 无条件累加会把当前这根再加一次，于是每个桶的首根被算了两次。
+                //
+                // 这是本次重构前就存在的错误（原先只影响 10 分钟周期，
+                // 因为只有它走聚合），结果是 10 分钟K线的成交量恒偏高"一根5分钟"的量。
+                // 高/低没事是因为 max/min 幂等，收盘价是覆盖写，只有成交量会累加。
+                // 成交量会流进 enrichTechnicalIndicators 的量能指标，所以不是显示问题。
+                initial.put("volume", 0.0);
                 return initial;
             });
             target.put("close", row.get("close"));
@@ -676,13 +615,6 @@ public class ExtendedMarketDataService {
     private String normalizeInterval(String interval) {
         if (interval == null || interval.isBlank() || "day".equalsIgnoreCase(interval)) return "1d";
         return interval.trim().toLowerCase();
-    }
-
-    private String yahooCryptoSymbol(String symbol) {
-        if (symbol != null && symbol.endsWith("USDT") && symbol.length() > 4) {
-            return symbol.substring(0, symbol.length() - 4) + "-USD";
-        }
-        throw invalid("不支持的加密货币标的: " + symbol);
     }
 
     private Instrument requireInstrument(String market, String symbol) {
@@ -1159,11 +1091,6 @@ public class ExtendedMarketDataService {
 
     private Double finiteOrNull(double value) {
         return Double.isFinite(value) ? value : null;
-    }
-
-    private boolean numberAt(JsonNode node, int index) {
-        return node != null && node.isArray() && index < node.size()
-                && node.get(index) != null && node.get(index).isNumber();
     }
 
     private Double number(JsonNode node, String field) {

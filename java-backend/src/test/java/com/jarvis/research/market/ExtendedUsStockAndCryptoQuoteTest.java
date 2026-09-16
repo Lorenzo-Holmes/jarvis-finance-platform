@@ -222,13 +222,15 @@ class ExtendedUsStockAndCryptoQuoteTest {
     // ==================== 结构性钉子 ====================
 
     /**
-     * 五个内联方法必须真的删掉，而**K线相关的那几个必须留下**。
+     * 报价与K线的内联实现都必须真的删掉，而**刻意留下的那几个必须还在**。
      *
-     * <p>后半句同样重要：{@code klineYahoo} / {@code yahooResult} / {@code aggregateCandles}
-     * 还被加密货币K线备用源共用，本次没有迁移 K 线，删掉会直接打断它。</p>
+     * <p>上一轮这条测试断言的是"美股K线尚未迁移，klineYahoo 必须保留"——
+     * 本轮把K线也迁走了，它就按设计失败了，于是翻转成现在这样。
+     * 后半句同样重要：{@code aggregateCandles} 与 {@code klineTencentIntraday}
+     * 分别代表"派生周期留在服务层"和"A股分钟K尚未迁移"，误删会直接打断它们。</p>
      */
     @Test
-    void inlineQuoteImplementationsAreGoneButKlineHelpersAreDeliberatelyKept() {
+    void onlyTheDeliberateRemaindersAreStillInline() {
         Set<String> methods = java.util.Arrays.stream(ExtendedMarketDataService.class.getDeclaredMethods())
                 .map(java.lang.reflect.Method::getName)
                 .collect(java.util.stream.Collectors.toSet());
@@ -236,11 +238,19 @@ class ExtendedUsStockAndCryptoQuoteTest {
         assertFalse(methods.contains("quoteYahooWithCircuit"), "美股内联报价应为已删除");
         assertFalse(methods.contains("quoteCryptoWithFallback"), "加密货币内联降级应为已删除");
         assertFalse(methods.contains("quoteBinance"), "Binance 内联报价应为已删除");
-        assertTrue(methods.contains("registryQuote"), "取而代之的是注册表驱动的取数");
+        assertFalse(methods.contains("klineYahoo"), "美股内联K线应为已删除");
+        assertFalse(methods.contains("yahooResult"), "内联 chart 请求应为已删除");
+        assertFalse(methods.contains("klineCryptoWithFallback"), "加密货币内联K线降级应为已删除");
+        assertFalse(methods.contains("klineBinance"), "Binance 内联K线应为已删除");
+        assertFalse(methods.contains("yahooStockSymbol"), "标的映射已搬进 Provider");
+        assertFalse(methods.contains("yahooCryptoSymbol"), "同上");
+        assertFalse(methods.contains("yahooRange"), "range 映射已搬进 Provider");
 
-        assertTrue(methods.contains("klineYahoo"), "美股K线尚未迁移，必须保留");
-        assertTrue(methods.contains("yahooResult"), "加密货币K线备用源仍在用它");
-        assertTrue(methods.contains("aggregateCandles"), "同一个原因");
+        assertTrue(methods.contains("registryQuote"), "取而代之的是注册表驱动的取数");
+        assertTrue(methods.contains("registryKline"), "K线同理");
+        assertTrue(methods.contains("fetchKlineFrom"), "10m 聚合仍在这一层（派生周期不是来源能力）");
+        assertTrue(methods.contains("aggregateCandles"), "同上");
+        assertTrue(methods.contains("klineTencentIntraday"), "A股分钟K尚未迁移，必须保留");
     }
 
     // ==================== 夹具 ====================

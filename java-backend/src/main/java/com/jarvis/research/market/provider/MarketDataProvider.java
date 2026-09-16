@@ -75,6 +75,40 @@ public interface MarketDataProvider {
     }
 
     /**
+     * 市场感知的K线入口；默认忽略市场、委托给 {@link #kline(String, String, int)}。
+     *
+     * <p>与 {@link #quote(String, String)} 同样的理由：同一家行情源在不同市场下可能需要
+     * 不同的标的映射或解析口径，而单看标的并不总能可靠区分。
+     * Yahoo 就是例子——美股要 {@code BRK.B → BRK-B}，加密货币要 {@code BTCUSDT → BTC-USD}。</p>
+     */
+    default List<Map<String, Object>> kline(String market, String symbol, String interval, int limit) {
+        return kline(symbol, interval, limit);
+    }
+
+    /**
+     * 单次K线请求的来源端条数上限；默认 1000。
+     *
+     * <p>用途：服务层把 10 分钟周期用 5 分钟数据聚合时，需要按来源的上限决定一次取多少原始K线。
+     * 下限是真实存在的——Yahoo 的 chart 接口对分钟级一次最多返回 500 条，Binance 是 1000。
+     * 用统一上限会让某一侧的多取或少取，聚合出来的根数与限流行为都会变。</p>
+     */
+    default int maxKlineLimit() {
+        return 1000;
+    }
+
+    /**
+     * 该市场的K线是否参与熔断；默认参与。
+     *
+     * <p>默认值即重构前的实际行为：A股日K与加密货币K线本来就走熔断。
+     * 唯独美股日K**不走**，而这不是疏漏——它的熔断键是 {@code extended.yahoo.stock}，
+     * 与美股**报价**共用。一旦让K线的失败去打开这个键，一次K线故障会把实时行情一起切断，
+     * 而两者只是同一接口的不同参数，故障面并不相同。所以这里保留差别，而不是"顺手统一"。</p>
+     */
+    default boolean klineUsesCircuitBreaker(String market) {
+        return true;
+    }
+
+    /**
      * 获取K线。
      */
     List<Map<String, Object>> kline(String symbol, String interval, int limit);

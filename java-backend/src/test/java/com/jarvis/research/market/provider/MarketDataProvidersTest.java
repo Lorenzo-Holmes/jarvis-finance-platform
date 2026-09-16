@@ -92,11 +92,25 @@ class MarketDataProvidersTest {
 
         assertTrue(yahoo.supportsQuote("london_gold"));
         assertFalse(yahoo.supportsKline("london_gold"));
-        // K线仍未迁移：声明支持报价不等于能做K线。
-        assertFalse(yahoo.supportsKline("us_stock"));
-        assertFalse(yahoo.supportsKline("crypto"));
+        // 黄金不做K线（core 伦敦金的K线走新浪）；美股与加密货币的K线现在都已迁移。
+        assertTrue(yahoo.supportsKline("us_stock"));
+        assertTrue(yahoo.supportsKline("crypto"));
+
+        // Yahoo 的 chart 接口对分钟级一次最多 500 条，服务层聚合 10m 时要按它取原始K线。
+        assertEquals(500, yahoo.maxKlineLimit());
+        // 美股K线不参与熔断：它的熔断键 extended.yahoo.stock 与美股报价共用，
+        // 让K线的失败去打开这个键会把实时行情一起切断。
+        assertFalse(yahoo.klineUsesCircuitBreaker("us_stock"));
+        assertTrue(yahoo.klineUsesCircuitBreaker("crypto"));
 
         assertEquals(List.of(), yahoo.kline("GC=F", "1d", 10));
+    }
+
+    @Test
+    void yahooKlineRangeMatchesTheOldImplementation() {
+        assertEquals("1y", YahooMarketDataProvider.klineRange("1d"), "日K取一年");
+        assertEquals("5d", YahooMarketDataProvider.klineRange("5m"), "其余取五天");
+        assertEquals("5d", YahooMarketDataProvider.klineRange("1h"));
     }
 
     @Test

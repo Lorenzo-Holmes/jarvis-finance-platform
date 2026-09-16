@@ -11,10 +11,12 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Yahoo Finance Provider。
@@ -37,6 +39,12 @@ public class YahooMarketDataProvider implements MarketDataProvider {
             "https://query1.finance.yahoo.com/v8/finance/chart/GC=F?range=1d&interval=1m";
 
     private static final ZoneId QUOTE_ZONE = ZoneId.of("Asia/Shanghai");
+
+    /**
+     * 来源端真正支持的周期；10m 不在其中——它由服务层用 5m 数据聚合，
+     * 与 {@code ExtendedMarketDataService#YAHOO_INTERVALS} 的差别正是这一点。
+     */
+    private static final Set<String> KLINE_INTERVALS = Set.of("1d", "5m", "15m", "30m", "1h");
 
     private final WebClient webClient;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -94,9 +102,36 @@ public class YahooMarketDataProvider implements MarketDataProvider {
         return "Yahoo Finance (GC=F 期货)";
     }
 
+    /**
+     * 美股日K与加密货币K线现在都已迁移，所以可以声明。
+     * 黄金仍不做K线（core 伦敦金的K线走新浪）。
+     */
     @Override
     public boolean supportsKline(String market) {
-        return false;
+        return "us_stock".equalsIgnoreCase(market) || "crypto".equalsIgnoreCase(market);
+    }
+
+    /**
+     * Yahoo 的 chart 接口对分钟级一次最多返回 500 条。
+     *
+     * <p>服务层聚合 10 分钟周期时按这个上限决定一次取多少 5 分钟原始K线；
+     * 用 Binance 的 1000 会让 10 分钟视图在 limit 较大时多出一段本不该有的历史。</p>
+     */
+    @Override
+    public int maxKlineLimit() {
+        return 500;
+    }
+
+    /**
+     * 美股日K**不**参与熔断，加密货币K线参与。
+     *
+     * <p>理由是键的共用而不是接口的差别：美股K线的熔断键原本就是
+     * {@code extended.yahoo.stock}，与美股报价共用。让K线的失败打开这个键，
+     * 一次K线故障就会把实时行情一起切断。这是重构前就有的行为，保留它。</p>
+     */
+    @Override
+    public boolean klineUsesCircuitBreaker(String market) {
+        return !"us_stock".equalsIgnoreCase(market);
     }
 
     /**
@@ -273,9 +308,99 @@ public class YahooMarketDataProvider implements MarketDataProvider {
         }
     }
 
+    /** 单参形式：按标的推断市场后走市场感知版本。 */
     @Override
     public List<Map<String, Object>> kline(String symbol, String interval, int limit) {
-        // K 线暂不由本 Provider 承接（见 supportsKline），保持接口完整。
-        return List.of();
+        return kline(marketOf(symbol), symbol, interval, limit);
+    }
+
+    /**
+     * 市场感知的K线入口，迁移自 {@code ExtendedMarketDataService#klineYahoo}。
+     *
+     * <p>两件事搬进来时就按原样保留：</p>
+     * <ul>
+     *   <li>{@code date} 是 {@code Instant.toString()}（UTC，带 Z）——extendedK线行的既有形态</li>
+     *   <li>四条价格里**任何一条不是数字就整行丢弃**；成交量不是数字则记 0.0。
+     *       这不是"补零"式的宽松解析，丢掉空行是为了不让半截数据进入指标计算</li>
+     * </ul>
+     *
+     * <p>10 分钟周期不在这里聚合：Provider 只提供来源真正支持的周期（5m/15m/30m/1h/1d），
+     * 聚合由服务层用 5 分钟数据做，与重构前一致。</p>
+     */
+    @Override
+    public List<Map<String, Object>> kline(String market, String symbol, String interval, int limit) {
+        if (!"us_stock".equalsIgnoreCase(market) && !"crypto".equalsIgnoreCase(market)) {
+            return List.of();
+        }
+        String providerSymbol;
+        try {
+            providerSymbol = "crypto".equalsIgnoreCase(market) ? cryptoSymbol(symbol) : stockSymbol(symbol);
+        } catch (IllegalArgumentException e) {
+            log.warn("Yahoo K线标的不合法: market={}, symbol={}, message={}", market, symbol, e.getMessage());
+            return List.of();
+        }
+        String normalized = interval == null ? "" : interval.trim().toLowerCase(Locale.ROOT);
+        if (!KLINE_INTERVALS.contains(normalized)) {
+            log.debug("Yahoo 不支持该周期: market={}, interval={}", market, interval);
+            return List.of();
+        }
+        if (limit <= 0) {
+            return List.of();
+        }
+        try {
+            String body = webClient.get()
+                    .uri(chartUrl(providerSymbol, klineRange(normalized), normalized))
+                    .retrieve().bodyToMono(String.class).block();
+            if (body == null || body.isBlank()) {
+                return List.of();
+            }
+            JsonNode result = objectMapper.readTree(body).path("chart").path("result").get(0);
+            if (result == null || result.isMissingNode() || result.isNull()) {
+                return List.of();
+            }
+            JsonNode timestamps = result.path("timestamp");
+            JsonNode quote = result.path("indicators").path("quote").path(0);
+            List<Map<String, Object>> out = new ArrayList<>();
+            for (int i = 0; i < timestamps.size(); i++) {
+                if (!isNumberAt(quote.path("open"), i) || !isNumberAt(quote.path("close"), i)
+                        || !isNumberAt(quote.path("high"), i) || !isNumberAt(quote.path("low"), i)) {
+                    continue;
+                }
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("date", Instant.ofEpochSecond(timestamps.get(i).asLong()).toString());
+                row.put("open", quote.path("open").get(i).asDouble());
+                row.put("close", quote.path("close").get(i).asDouble());
+                row.put("high", quote.path("high").get(i).asDouble());
+                row.put("low", quote.path("low").get(i).asDouble());
+                row.put("volume", isNumberAt(quote.path("volume"), i)
+                        ? quote.path("volume").get(i).asDouble() : 0.0);
+                out.add(row);
+            }
+            return tail(out, limit);
+        } catch (Exception e) {
+            log.warn("Yahoo K线失败: market={}, symbol={}, interval={}, message={}",
+                    market, symbol, interval, e.getMessage());
+            return List.of();
+        }
+    }
+
+    /**
+     * 迁移自 {@code yahooRange}：日K取一年，其余取五天。
+     *
+     * <p>这两个范围决定了分钟级K线最多能拿到多少历史——改小会让前端图表突然变短。</p>
+     */
+    static String klineRange(String interval) {
+        return "1d".equals(interval) ? "1y" : "5d";
+    }
+
+    private static boolean isNumberAt(JsonNode array, int index) {
+        return array.size() > index && array.get(index).isNumber();
+    }
+
+    private static List<Map<String, Object>> tail(List<Map<String, Object>> rows, int limit) {
+        if (rows.size() <= limit) {
+            return rows;
+        }
+        return new ArrayList<>(rows.subList(rows.size() - limit, rows.size()));
     }
 }

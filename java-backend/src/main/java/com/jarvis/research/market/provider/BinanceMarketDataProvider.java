@@ -33,7 +33,7 @@ import java.util.regex.Pattern;
 @Component
 public class BinanceMarketDataProvider implements MarketDataProvider {
 
-    /** 与 ExtendedMarketDataService 中的 BINANCE_INTERVALS 保持一致，源端仅支持这些周期。 */
+    /** 源端仅支持这些周期；10m 不在其中，它由服务层用 5m 数据聚合。 */
     private static final Set<String> BINANCE_INTERVALS = Set.of("1d", "1h", "30m", "15m", "5m");
 
     private static final Pattern CRYPTO_PATTERN = Pattern.compile("^[A-Z0-9]{2,15}(USDT)?$");

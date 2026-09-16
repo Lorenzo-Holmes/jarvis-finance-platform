@@ -207,7 +207,10 @@ class ExtendedAShareKlineTest {
         assertFalse(methods.contains("klineTencent"), "内联腾讯日K应为已删除");
         assertFalse(methods.contains("klineEastmoney"), "内联东方财富日K应为已删除");
         assertFalse(methods.contains("klineAShareWithFallback"), "内联日K降级应为已删除");
-        assertTrue(methods.contains("registryDailyKline"), "取而代之的是注册表驱动的日K");
+        // registryDailyKline 后来被合并成通用的 registryKline（美股/加密货币K线也迁进来了），
+        // 所以这里断言的是新名字。
+        assertTrue(methods.contains("registryKline"), "取而代之的是注册表驱动的K线取数");
+        assertTrue(methods.contains("fetchKlineFrom"), "10m 聚合在这一层做，Provider 不声称支持派生周期");
         assertTrue(methods.contains("klineTencentIntraday"),
                 "分钟级尚未迁移，必须保留——名字也叫错了，它其实打的是东方财富的接口");
     }
