@@ -66,14 +66,7 @@ public final class TrendForecast {
      */
     public static Map<String, Object> compute(Object closesRaw, Object horizonDays,
                                               Object confidence, Object symbol) {
-        List<BigDecimal> closes = new ArrayList<>();
-        for (Object raw : asIterable(closesRaw)) {
-            BigDecimal value = QuoteMetrics.decimal(raw);
-            // 与 risk_metrics 一致：**只保留正数**（0 与负价一律丢弃）
-            if (value != null && value.signum() > 0) {
-                closes.add(value);
-            }
-        }
+        List<BigDecimal> closes = positiveCloses(closesRaw);
         int bars = closes.size();
         if (bars < MIN_BARS) {
             return unavailable(bars);
@@ -274,6 +267,23 @@ public final class TrendForecast {
 
     private static BigDecimal clamp(BigDecimal value, BigDecimal low, BigDecimal high) {
         return value.max(low).min(high);
+    }
+
+    /**
+     * 只保留可解析且为正的收盘价（0 与负价一律丢弃，与 risk_metrics 口径一致）。
+     *
+     * <p>market_trend 需要拿**原始入参**重新过滤一遍，所以抽成包内可复用的方法：
+     * 两处各写一份过滤条件，迟早会因为只改了一处而悄悄分歧。
+     */
+    static List<BigDecimal> positiveCloses(Object closesRaw) {
+        List<BigDecimal> closes = new ArrayList<>();
+        for (Object raw : asIterable(closesRaw)) {
+            BigDecimal value = QuoteMetrics.decimal(raw);
+            if (value != null && value.signum() > 0) {
+                closes.add(value);
+            }
+        }
+        return closes;
     }
 
     private static Iterable<?> asIterable(Object raw) {
