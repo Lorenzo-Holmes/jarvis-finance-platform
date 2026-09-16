@@ -30,11 +30,22 @@
 
 ## 3.  剩余配方（quote / trend / chat）——**注意量级，与风险面不同**
 
-**关键前提（已核实，勿低估）**：Java 侧只有 `MarketMetrics` 与 `RiskMetrics` 两个指标类，
-**没有** quote / trend 的对应实现（`com/jarvis/research/ai/` 包已逐个文件确认；
-`market/` 包只有 `QuoteDTO`，那是 DTO 不是算法）。
-而 Python 侧要迁的是 `research_tools.quote_metrics`（约 80 行）与
-`kline_metrics`（约 130 行，还含多周期聚合与预测区间）。
+**关键前提（已核实，勿低估）**：Java 侧原有 `MarketMetrics` 与 `RiskMetrics`；`QuoteMetrics`
+已在 quote 面移植完成（见下方进度），所以 quote 剩下的只是接线与测试。**trend 至今没有**
+对应实现（`com/jarvis/research/ai/` 包已逐个文件确认；`market/` 包只有 `QuoteDTO`，那是 DTO
+不是算法）。剩余要迁的是 `research_tools.kline_metrics`（约 130 行，另含 `_sma/_ema/_rsi`
+与 `trend_forecast`——注意 `smart_quote` 里也在用它算预测区间，所以 trend 面会同时影响
+quote 的 forecast 字段）。
+
+**进度（截至 3aa189b）**
+- 风险面：三层证据链闭合（`c5fcb4a` `b3f5b77` 数值一致 → `3cee824` `c9facf7` 接线 → `369672d` 等价性）
+- quote 面：计算 `2fdc09b`、接线 `3aa189b`、三层测试（同批）——**已完成**
+- *更正*：本文档此前把 `quote_metrics` 估成"约 80 行"是**错的**，它实际只有 25 行，
+  多算的是紧随其后的 `_sma/_ema/_rsi`。这个估计曾让人以为 quote 面很重，实际一轮就做完了
+
+**quote 接入点的一处坑（已踩过）**：`/trend` 与 `/quote` 两条路由的尾部代码**完全同形**
+（都收尾于 `horizon_days/confidence/symbol`），改 `/quote` 时必须用 `price_data` 作唯一锚点。
+这也正是 trend 面下一步的接入点。
 
 所以每个面的**第一步是把计算移植到 Java**（沿用既有格式化字符串契约：金额 6 位小数、
 百分比 4 位小数、`ROUND_HALF_UP`、`toPlainString`），**之后**才是接线四步：
