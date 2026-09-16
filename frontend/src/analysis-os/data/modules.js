@@ -6,6 +6,52 @@ export const MODULE_LANES = [
   { key: 'execution', label: 'EXECUTION / 执行' },
 ]
 
+/**
+ * 模块的功能分组（二级导航用）。
+ *
+ * 顺序是刻意排的，按"看数据 → 做研究 → 盯风险 → 下单 → 运维"的工作流来，
+ * 而不是按字母或按模块编号。模块归哪一组由各自的 category 字段决定。
+ *
+ * 注意与上面 MODULE_LANES 的区别：那是**归档版面**的 5 条泳道（没有 SYSTEM），
+ * 而 category 有 6 种（多了运维）。分组导航必须按 category 走，否则运维（模块 12）
+ * 会无处可去；两类标签的措辞保持一致只是为了读起来统一。
+ */
+export const MODULE_CATEGORY_ORDER = [
+  { key: 'MARKET', labelEn: 'MARKET', labelZh: '市场' },
+  { key: 'RESEARCH', labelEn: 'RESEARCH', labelZh: '研究' },
+  { key: 'INTELLIGENCE', labelEn: 'INTELLIGENCE', labelZh: '情报' },
+  { key: 'STRATEGY', labelEn: 'STRATEGY', labelZh: '策略' },
+  { key: 'EXECUTION', labelEn: 'EXECUTION', labelZh: '执行' },
+  { key: 'SYSTEM', labelEn: 'SYSTEM', labelZh: '系统' },
+]
+
+/**
+ * 按功能把模块分组，供二级导航渲染。
+ *
+ * 两条不变量：**不丢模块**（未知或缺失 category 的模块落到 OTHER 组并排在最后，
+ * 不被静默吞掉）、**组内保持原顺序**（模块数组本身按 no 升序，分组不改动它）。
+ *
+ * 分组只影响导航的呈现：归档版面（lane/row）与键盘循环仍按扁平的 13 项走，
+ * 所以这个函数不改变、也不该改变任何模块数据。
+ */
+export function groupModulesByCategory(modules = JARVIS_MODULES) {
+  const known = new Set(MODULE_CATEGORY_ORDER.map(group => group.key))
+  const groups = MODULE_CATEGORY_ORDER.map(group => ({ ...group, modules: [] }))
+  const other = { key: 'OTHER', labelEn: 'OTHER', labelZh: '其它', modules: [] }
+
+  for (const module of modules) {
+    if (!module || !module.category || !known.has(module.category)) {
+      other.modules.push(module)
+      continue
+    }
+    groups.find(group => group.key === module.category).modules.push(module)
+  }
+
+  const result = groups.filter(group => group.modules.length)
+  if (other.modules.length) result.push(other)
+  return result
+}
+
 export const JARVIS_MODULES = [
   {
     id: 'module:market', no: 1, lane: 0, row: 0, key: 'market',

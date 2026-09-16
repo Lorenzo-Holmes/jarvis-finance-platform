@@ -1,6 +1,7 @@
 <script setup>
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { api } from '../../api/client'
+import { groupModulesByCategory } from '../data/modules'
 
 const props = defineProps({
   module: { type: Object, required: true },
@@ -156,18 +157,32 @@ onBeforeUnmount(() => {
       </div>
     </header>
 
+    <!--
+      二级导航：一级是按功能分的组（市场/研究/情报/策略/执行/系统），二级是模块。
+      原来 13 项挤成一行、只显示序号 + 英文名，既小又难扫。
+      分组只改呈现：模块数据、归档版面、键盘循环（按扁平 13 项）都不动。
+    -->
     <nav v-if="props.modules.length" class="workspace-module-index" aria-label="工作区模块索引">
-      <button
-        v-for="item in props.modules"
-        :key="item.key"
-        type="button"
-        :class="{ active: item.key === props.module.key }"
-        :aria-current="item.key === props.module.key ? 'page' : undefined"
-        @click="requestModule(item)"
-      >
-        <span>{{ String(item.no).padStart(2, '0') }}</span>
-        <strong>{{ item.labelEn }}</strong>
-      </button>
+      <div v-for="group in groupModulesByCategory(props.modules)" :key="group.key" class="module-group">
+        <span class="module-group-label">
+          <b>{{ group.labelEn }}</b>
+          <em>{{ group.labelZh }}</em>
+        </span>
+        <div class="module-group-items">
+          <button
+            v-for="item in group.modules"
+            :key="item.key"
+            type="button"
+            :class="{ active: item.key === props.module.key }"
+            :aria-current="item.key === props.module.key ? 'page' : undefined"
+            @click="requestModule(item)"
+          >
+            <span>{{ String(item.no).padStart(2, '0') }}</span>
+            <strong>{{ item.labelEn }}</strong>
+            <em>{{ item.labelZh }}</em>
+          </button>
+        </div>
+      </div>
     </nav>
 
     <div class="workspace-status">
@@ -271,6 +286,27 @@ onBeforeUnmount(() => {
 .return-button:hover, .legacy-admin-button:hover, .account-strip button:hover { color: #20221d; background: rgba(209,201,188,.28); }
 .account-strip { display: flex; align-items: center; gap: 4px; }
 .account-strip input { width: 110px; height: 31px; border: 0; border-bottom: 1px solid #8c877d; outline: 0; background: transparent; color: #20221d; font-size: 11px; }
+/* 二级导航：一级是按功能分的组，二级是模块本身。
+   原来 13 项挤成一行且只显示 7px 的序号 + 8px 的英文名，几乎读不出来。
+   选择器刻意带上 .workspace-shell 提高一级特异性：文件后面的媒体查询里有同名的
+   height/padding 覆盖，按顺序会盖掉下面这条 base 规则，而特异性更高的这条能稳定生效，
+   所以不必再去改那几处媒体查询。 */
+.module-group { display: flex; flex: 0 0 auto; flex-direction: column; justify-content: center; gap: 4px; padding: 7px 14px 8px 0; margin-right: 14px; border-right: 1px solid rgba(186,179,167,.58); }
+.module-group:first-child { margin-left: 2px; }
+.module-group:last-child { margin-right: 0; border-right: 0; }
+.module-group-label { display: flex; align-items: baseline; gap: 6px; color: #7c6746; }
+.module-group-label b { font: 650 9px/1 ui-monospace, monospace; letter-spacing: .1em; }
+.module-group-label em { font-style: normal; font-size: 9px; color: #928c82; }
+.module-group-items { display: flex; align-items: stretch; }
+.workspace-shell .workspace-module-index { height: auto; min-height: 43px; padding: 0 24px; }
+.workspace-shell .workspace-module-index .module-group-items button { min-width: 0; padding: 4px 12px 5px; border-left: 0; border-right: 0; }
+.workspace-shell .workspace-module-index .module-group-items button span { font: 600 8px/1 ui-monospace, monospace; }
+.workspace-shell .workspace-module-index .module-group-items button strong { margin-top: 4px; font: 650 10px/1 ui-monospace, monospace; letter-spacing: .06em; }
+.workspace-shell .workspace-module-index .module-group-items button em { display: block; margin-top: 3px; font-style: normal; font-size: 10px; color: #7b766c; }
+.workspace-shell.is-night .module-group-label b { color: var(--accent); }
+.workspace-shell.is-night .module-group-label em,
+.workspace-shell.is-night .workspace-module-index .module-group-items button em { color: var(--muted); }
+
 .workspace-module-index {
   height: 43px; padding: 0 24px; display: flex; align-items: stretch; overflow-x: auto;
   border-bottom: 1px solid #c6c0b5; scrollbar-width: none;
