@@ -1,5 +1,6 @@
 package com.jarvis.research.controller;
 
+import com.jarvis.research.ai.DeterministicContext;
 import com.jarvis.research.ai.MarketTrend;
 import com.jarvis.research.ai.QuoteMetrics;
 import com.jarvis.research.ai.RiskMetrics;
@@ -171,12 +172,12 @@ public class AiController {
         context.put("prices", marketDataService.getLatestPrices());
         Map<String, Object> klines = new LinkedHashMap<>();
         try {
-            klines.put("gold_etf", marketDataService.getDailyKline("gold_etf", 60));
+            klines.put("gold_etf", klineToMap(marketDataService.getDailyKline("gold_etf", 60)));
         } catch (Exception ignored) {
             // 行情历史暂不可用时仍允许纯文本 AI 对话。
         }
         try {
-            klines.put("london_gold", marketDataService.getDailyKline("london_gold", 60));
+            klines.put("london_gold", klineToMap(marketDataService.getDailyKline("london_gold", 60)));
         } catch (Exception ignored) {
             // 同上；Python 会明确标记缺失的确定性研究上下文。
         }
@@ -190,7 +191,50 @@ public class AiController {
         }
         // 强制覆盖客户端同名字段，防止浏览器伪造“系统确定性计算上下文”。
         enriched.put("research_context", context);
+
+        // ⑧：用**刚组装好的这一份**上下文算出确定性指标一并下发，Python 随后引用它而不再自算。
+        // 上下文各元素此时都是 Map（K 线已由 klineToMap 转换），所以这里消费的与 Python
+        // 收到的是同一份形状、同一批数值——不会出现两边各看一份数据的情况。
+        enriched.put("metrics", DeterministicContext.compute(context));
         return enriched;
+    }
+
+    /**
+     * 把日 K 的 DTO 记录转成与 Jackson 序列化结果同形的 Map。
+     *
+     * <p>刻意**不注入 ObjectMapper 自己转**：全局若配置了命名策略，手搓的 mapper 会产出
+     * 不同的键，于是 Java 算出的口径与 Python 看到的就不是一回事——那种偏差不会报错，
+     * 只会让两边的数值悄悄分叉。这里显式写出字段名：KlineBarDTO 的字段都是单词，
+     * 不受命名策略影响；DailyKlineDTO 的 as_of 本就带 @JsonProperty 注解，
+     * 说明默认命名是驼峰而非下划线，故 range/count/data 照写即可。
+     */
+    private Map<String, Object> klineToMap(DailyKlineDTO kline) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        if (kline == null) {
+            return result;
+        }
+        result.put("market", kline.market());
+        result.put("range", kline.range());
+        result.put("as_of", kline.asOf());
+        result.put("count", kline.count());
+        List<Map<String, Object>> rows = new ArrayList<>();
+        if (kline.data() != null) {
+            for (KlineBarDTO bar : kline.data()) {
+                if (bar == null) {
+                    continue;
+                }
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("date", bar.date());
+                row.put("open", bar.open());
+                row.put("close", bar.close());
+                row.put("high", bar.high());
+                row.put("low", bar.low());
+                row.put("volume", bar.volume());
+                rows.add(row);
+            }
+        }
+        result.put("data", rows);
+        return result;
     }
 
     private Map<String, Object> enrichRiskBody(Map<String, Object> body) {
