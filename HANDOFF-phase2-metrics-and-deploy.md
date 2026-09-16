@@ -57,8 +57,18 @@ chat 面**放到最后**：它的 `deterministic_context` 同时依赖 quote 与
 - 已验证：SSH 可连、三服务 `active`、release 目录结构、`deploy/scripts/` 脚本齐备
 - `server-preflight.sh` 是**只读**预检，先跑它
 - 常规更新＝本地构建 → 上传 → `promote-release.sh`（会重启 `jarvis-java`/`jarvis-ai`）→ 健康检查
-- **未读全**：`promote-release.sh` 的参数列表。执行前请自己读 `deploy/README.md`
-  对应小节，不要依赖本文档
+- **构建机＝本地**（已核实，脚本原文）：`build-release.sh` 注明"在构建机执行，输出一个
+  可上传到 `/opt/jarvis/releases/<id>` 的目录"。它依次跑 **Java 全量测试 + `package` +
+  `repackage`**、构建 migration jar、跑 **Python pytest**，产物落到
+  `dist/releases/<时间戳>-<sha12>/`（含 `java-backend/app.jar`、`java-backend/migration.jar`、
+  `backend/app`）→ **构建通过即等于测试通过**，这是发布前的天然闸门
+- **脚本在服务器上的位置**（已核实）：`/opt/jarvis/build/<sha>/deploy/scripts/`——
+  发布是由服务器上那份**完整代码镜像**编排的，不在 release 目录里
+- 服务器目录布局：`/opt/jarvis/{build,current,releases,staging,venv}`；
+  `staging/` 里是 2026-09-07 的**前端**暂存，而前端已改走 GitHub Pages（`§0`），属陈旧残留
+- **仍未核实**：把 `dist/releases/<id>/` 上传到服务器的那条命令（`scp`/`rsync` 形式），
+  以及 `promote-release.sh` 的参数列表。执行前请自己读脚本，不要依赖本文档
+- `migrate-production-ubuntu.sh` 同 `run-h2-migration.sh` 属**历史迁移**用途，勿混入常规发布
 - **不要混入** `run-h2-migration.sh`：那是 H2 → PostgreSQL 的**一次性数据迁移**
   （目标表必须为空、逐表核对行数），与代码发布无关，误用后果严重
 
