@@ -4,6 +4,7 @@ import com.jarvis.research.market.dto.DailyKlineDTO;
 import com.jarvis.research.market.dto.KlineBarDTO;
 import com.jarvis.research.market.dto.KlineRangeDTO;
 import com.jarvis.research.market.dto.MinuteKlineDTO;
+import com.jarvis.research.market.dto.QuoteDTO;
 import com.jarvis.research.market.provider.MarketDataProvider;
 import com.jarvis.research.market.provider.ProviderRegistry;
 import lombok.extern.slf4j.Slf4j;
@@ -141,6 +142,32 @@ public class MarketDataService {
         else latestPrice("gold_etf", "sh518850", "黄金ETF华夏").ifPresent(v -> out.put("gold_etf", v));
         if (london != null) out.put("london_gold", withCurrentFreshness(london));
         else latestPrice("london_gold", "hf_XAU", "伦敦金(现货黄金)").ifPresent(v -> out.put("london_gold", v));
+        return out;
+    }
+
+    /**
+     * 面向前端的两条行情通道共用的带类型视图：{@code /api/market/prices} 与
+     * {@code /api/market/prices/stream}。
+     *
+     * <p>内部仍以 Map 流通（{@code MarketDataProvider.quote()} 冻结为 Map，积存金与扩展市场
+     * 子系统同样如此，模拟交易侧对三者统一处理），因此这里只做**边界适配**，
+     * 且转换点唯一（{@link QuoteDTO#from}）——两条通道都走这个方法，不会各自漂移。</p>
+     */
+    public Map<String, QuoteDTO> getLatestPriceView() {
+        Map<String, QuoteDTO> out = new LinkedHashMap<>();
+        getLatestPrices().forEach((market, raw) -> {
+            if (raw instanceof Map<?, ?> map) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> typed = (Map<String, Object>) map;
+                out.put(market, QuoteDTO.from(typed));
+            } else {
+                // getLatestPrices() 的值类型历史上声明为 Object（实际恒为 Map）。
+                // 万一日后有人塞进非 Map 的值，这里宁可漏掉并在日志里喊一声，
+                // 也不要产出 {market: null} 这种凭空多出来的键。
+                log.warn("行情信封值不是 Map，已跳过 market={}, type={}", market,
+                        raw == null ? "null" : raw.getClass().getName());
+            }
+        });
         return out;
     }
 

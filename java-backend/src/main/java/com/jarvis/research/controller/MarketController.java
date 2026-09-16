@@ -8,6 +8,7 @@ import com.jarvis.research.market.PublicMarketRateLimitService;
 import com.jarvis.research.market.dto.KlineEnvelope;
 import com.jarvis.research.market.dto.MarketStatusDTO;
 import com.jarvis.research.market.dto.MinuteKlineDTO;
+import com.jarvis.research.market.dto.QuoteDTO;
 import com.jarvis.research.service.JdGoldService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -16,6 +17,8 @@ import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import jakarta.servlet.http.HttpServletRequest;
+
+import java.util.Map;
 
 
 /**
@@ -48,8 +51,8 @@ public class MarketController {
 
     /** 最近有效行情；优先返回 Java 内存中的秒级报价。 */
     @GetMapping("/prices")
-    public ApiResponse<Object> prices() {
-        return ApiResponse.ok(marketService.getLatestPrices());
+    public ApiResponse<Map<String, QuoteDTO>> prices() {
+        return ApiResponse.ok(marketService.getLatestPriceView());
     }
 
     /**

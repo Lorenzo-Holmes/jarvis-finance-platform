@@ -3,6 +3,7 @@ package com.jarvis.research.market;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jarvis.research.common.ApiResponse;
+import com.jarvis.research.market.dto.QuoteDTO;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.Pageable;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -131,6 +132,116 @@ class MarketApiContractTest {
                 keysOf(quote));
         assertEquals("sh518850", quote.path("symbol").asText());
         assertEquals("黄金ETF华夏", quote.path("name").asText());
+    }
+
+    // ==================== QuoteDTO 边界的保真性 ====================
+
+    /**
+     * 最强形式：把**内部 Map 表示**与**对外 DTO 表示**各自整体序列化后逐节点比对。
+     *
+     * <p>两者相等，就是 {@code getLatestPriceView()} 对 {@code getLatestPrices()} 忠实适配的证明；
+     * 由于 {@code /api/market/prices} 与 {@code /api/market/prices/stream} 共用这一个转换点，
+     * 这也同时保证两条前端通道的行情形状不会各自漂移。</p>
+     */
+    @Test
+    void typeViewReproducesTheFullProviderQuoteNodeForNode() {
+        MarketDataService service = newService(mock(PriceSnapshotRepository.class),
+                mock(KlineDailyRepository.class));
+        cache(service).put("gold_etf", fullProviderQuote());
+
+        assertEquals(json(service.getLatestPrices()), json(service.getLatestPriceView()));
+    }
+
+    @Test
+    void typeViewReproducesTheDatabaseFallbackQuoteNodeForNode() {
+        PriceSnapshotRepository snapshotRepo = mock(PriceSnapshotRepository.class);
+        MarketDataService service = newService(snapshotRepo, mock(KlineDailyRepository.class));
+        when(snapshotRepo.findTopByMarketOrderByTsDesc("gold_etf")).thenReturn(java.util.Optional.of(
+                new PriceSnapshot("gold_etf", 10.55, 0.15, 1.44, 10.40, 10.42, 10.60, 10.38,
+                        LocalDateTime.now())));
+
+        assertEquals(json(service.getLatestPrices()), json(service.getLatestPriceView()));
+    }
+
+    /** 闭市占位对象：只有 status 与 stale 两个键，其余字段必须被 NON_NULL 收掉。 */
+    @Test
+    void typeViewReproducesTheMarketClosedMarkerNodeForNode() {
+        MarketDataService service = newService(mock(PriceSnapshotRepository.class),
+                mock(KlineDailyRepository.class));
+        cache(service).put("gold_etf", new LinkedHashMap<>(Map.of("status", "market_closed")));
+
+        Map<String, QuoteDTO> view = service.getLatestPriceView();
+        JsonNode marker = json(view).path("gold_etf");
+
+        assertEquals(json(service.getLatestPrices()), json(view));
+        assertEquals(Set.of("status", "stale"), keysOf(marker));
+        assertEquals("market_closed", marker.path("status").asText());
+    }
+
+    /**
+     * 稀疏来源不能凭空长出 null 键。东方财富不发 {@code source_quote_time}，
+     * Yahoo 不发 {@code name/open/high/low}——迁移前这些键就是缺席的，迁移后必须仍然缺席。
+     */
+    @Test
+    void typeViewKeepsKeysThatSparseProvidersNeverSent() {
+        MarketDataService service = newService(mock(PriceSnapshotRepository.class),
+                mock(KlineDailyRepository.class));
+        Map<String, Object> eastmoney = new LinkedHashMap<>();
+        eastmoney.put("symbol", "sh600519");
+        eastmoney.put("name", "贵州茅台");
+        eastmoney.put("price", 1500.0);
+        eastmoney.put("prev_close", 1490.0);
+        eastmoney.put("change", 10.0);
+        eastmoney.put("change_pct", 0.67);
+        cache(service).put("gold_etf", eastmoney);
+
+        JsonNode quote = json(service.getLatestPriceView()).path("gold_etf");
+
+        assertEquals(json(service.getLatestPrices()), json(service.getLatestPriceView()));
+        assertFalse(keysOf(quote).contains("source_quote_time"), "来源没发 source_quote_time，键就不该出现");
+        assertFalse(keysOf(quote).contains("open"), "来源没发 open，键就不该出现（更不能是 null）");
+    }
+
+    /**
+     * 唯一的**有意收窄**：行情源若返回未知键，DTO 会丢弃它。
+     * 对外契约应当由 QuoteDTO 定义，而不是"行情源返回了什么就透传什么"。
+     * 这条测试把该决定显式钉住，避免将来有人误以为是漏迁。
+     */
+    @Test
+    void typeViewDropsUnknownProviderKeysByDesign() {
+        MarketDataService service = newService(mock(PriceSnapshotRepository.class),
+                mock(KlineDailyRepository.class));
+        Map<String, Object> withExtra = fullProviderQuote();
+        withExtra.put("vendor_private_field", "不应外泄");
+        cache(service).put("gold_etf", withExtra);
+
+        JsonNode quote = json(service.getLatestPriceView()).path("gold_etf");
+
+        assertTrue(keysOf(json(service.getLatestPrices()).path("gold_etf")).contains("vendor_private_field"),
+                "内部 Map 仍然带着这个键");
+        assertFalse(keysOf(quote).contains("vendor_private_field"),
+                "对外 DTO 只暴露契约内的字段");
+    }
+
+    /** 腾讯口径的完整报价：10 个来源字段 + 5 个服务层元数据字段。 */
+    private static Map<String, Object> fullProviderQuote() {
+        Map<String, Object> quote = new LinkedHashMap<>();
+        quote.put("symbol", "sh518850");
+        quote.put("name", "黄金ETF华夏");
+        quote.put("price", 10.55);
+        quote.put("prev_close", 10.40);
+        quote.put("open", 10.42);
+        quote.put("high", 10.60);
+        quote.put("low", 10.38);
+        quote.put("change", 0.15);
+        quote.put("change_pct", 1.44);
+        quote.put("source_quote_time", LocalDateTime.now().toString());
+        quote.put("market", "gold_etf");
+        quote.put("source", "Tencent");
+        quote.put("quote_time", LocalDateTime.now().toString());
+        quote.put("received_at", LocalDateTime.now().toString());
+        quote.put("stale", false);
+        return quote;
     }
 
     // ==================== /api/market/kline (day) ====================

@@ -1,5 +1,6 @@
 package com.jarvis.research.market;
 
+import com.jarvis.research.market.dto.QuoteDTO;
 import com.jarvis.research.service.JdGoldService;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -17,8 +18,8 @@ class MarketPriceStreamServiceTest {
     void oneBroadcastPayloadIsSharedAcrossSubscribers() {
         MarketDataService marketDataService = mock(MarketDataService.class);
         JdGoldService jdGoldService = mock(JdGoldService.class);
-        when(marketDataService.getLatestPrices()).thenReturn(Map.of(
-                "gold_etf", Map.of("price", 7.88)));
+        when(marketDataService.getLatestPriceView()).thenReturn(Map.of(
+                "gold_etf", QuoteDTO.from(Map.of("price", 7.88))));
         when(jdGoldService.latestPrices()).thenReturn(Map.of(
                 "zheshang", Map.of("price", 812.3)));
         MarketTelemetry telemetry = mock(MarketTelemetry.class);
@@ -29,13 +30,13 @@ class MarketPriceStreamServiceTest {
         assertNotNull(service.subscribe());
         assertEquals(2, service.subscriberCount());
         // 每次 subscribe 只为首包各组装一次 payload。
-        verify(marketDataService, times(2)).getLatestPrices();
+        verify(marketDataService, times(2)).getLatestPriceView();
         verify(jdGoldService, times(2)).latestPrices();
 
         service.broadcast();
 
         // 广播阶段只组装一次，而不是按订阅者数量重复读取行情。
-        verify(marketDataService, times(3)).getLatestPrices();
+        verify(marketDataService, times(3)).getLatestPriceView();
         verify(jdGoldService, times(3)).latestPrices();
         verify(telemetry).recordStreamBroadcast();
     }
@@ -45,7 +46,7 @@ class MarketPriceStreamServiceTest {
         MarketDataService marketDataService = mock(MarketDataService.class);
         JdGoldService jdGoldService = mock(JdGoldService.class);
         MarketTelemetry telemetry = mock(MarketTelemetry.class);
-        when(marketDataService.getLatestPrices()).thenReturn(Map.of());
+        when(marketDataService.getLatestPriceView()).thenReturn(Map.of());
         when(jdGoldService.latestPrices()).thenReturn(Map.of());
         MarketPriceStreamService service = new MarketPriceStreamService(marketDataService, jdGoldService, telemetry);
         ReflectionTestUtils.setField(service, "maxSubscribers", 1);
