@@ -21,6 +21,7 @@ import java.util.Map;
  *   - {@link #quote(String, String)} 市场感知的行情入口（默认委托给单参版本）
  *   - {@link #priority()}        同一市场的多个 Provider 按此升序组成降级链
  *   - {@link #sourceKey(String)} 熔断/遥测归属键，保证运行时可观测性稳定
+ *   - {@link #klineSourceKey(String)} K线专用的熔断/遥测键（默认同 sourceKey）
  *   - {@link #displayName()}     面向用户的来源标签（与内部键区分）
  *   - {@link #supportsQuote(String)} 是否提供该市场的实时行情
  *   - {@link #supportsKline(String)} 是否提供该市场的K线
@@ -58,6 +59,19 @@ public interface MarketDataProvider {
      */
     default Map<String, Object> quote(String market, String symbol) {
         return quote(symbol);
+    }
+
+    /**
+     * K线的熔断/遥测归属键；默认与 {@link #sourceKey(String)} 相同。
+     *
+     * <p>为什么需要单独一个：同一家厂商的**实时行情与K线往往是两个独立来源**，
+     * 运维也是分开统计的。腾讯 A股就是例子——实时走 {@code qt.gtimg.cn}
+     * （键 {@code extended.tencent.stock}），日K走 {@code web.ifzq.gtimg.cn}
+     * （键 {@code extended.tencent.kline}）。用同一个键会把两条链路的成功率、
+     * 熔断状态混在一起，一边坏掉会连带切断另一边。</p>
+     */
+    default String klineSourceKey(String market) {
+        return sourceKey(market);
     }
 
     /**

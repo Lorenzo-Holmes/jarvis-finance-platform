@@ -3,6 +3,7 @@ package com.jarvis.research.market.provider;
 import org.junit.jupiter.api.Test;
 import org.springframework.stereotype.Component;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jarvis.research.config.JarvisProperties;
 
@@ -145,16 +146,65 @@ class MarketDataProvidersTest {
         assertEquals("core.eastmoney.crypto", eastMoney.sourceKey("crypto"));
 
         assertTrue(eastMoney.supportsQuote("a_share"));
-        assertFalse(eastMoney.supportsKline("a_share"));
+        assertTrue(eastMoney.supportsKline("a_share"));
+        // 黄金ETF 的K线仍只由腾讯承接，东方财富不掺和。
         assertFalse(eastMoney.supportsKline("gold_etf"));
+        assertFalse(eastMoney.supportsKline("london_gold"));
 
-        assertEquals(List.of(), eastMoney.kline("sh518850", "1d", 10));
+        // K线的熔断键与实时行情分开：两者是不同主机上的独立来源。
+        assertEquals("extended.eastmoney.kline", eastMoney.klineSourceKey("a_share"));
+        assertEquals("core.eastmoney.etf", eastMoney.klineSourceKey("gold_etf"));
+
+        // 空标的直接短路，不发请求。
+        assertEquals(List.of(), eastMoney.kline("  ", "1d", 10));
     }
 
     @Test
     void eastMoneyBlankSymbolReturnsErrorWithoutNetwork() {
         Map<String, Object> quote = eastMoney.quote("  ");
         assertTrue(quote.containsKey("error"));
+    }
+
+    /**
+     * 东方财富日K的响应是逗号分隔的字符串数组，顺序为 日期,开,收,高,低,量,...
+     * 抽错一个下标不会报错，只会让 K 线图画错——所以逐槽钉住。
+     */
+    @Test
+    void eastMoneyKlineParsesTheCommaStringSlotsAndSkipsMalformedRows() throws Exception {
+        JsonNode raw = new ObjectMapper().readTree("""
+                ["2026-09-15,1490.00,1500.00,1510.00,1485.00,1000",
+                 "2026-09-16,1500.00,1510.00,1520.00,1490.00,12345",
+                 "字段不足,会被跳过"]
+                """);
+
+        List<Map<String, Object>> rows = eastMoney.parseKlineRows(raw, 10);
+
+        assertEquals(2, rows.size(), "字段不足的行应被跳过");
+        Map<String, Object> last = rows.get(1);
+        assertEquals("2026-09-16", last.get("date"));
+        assertEquals(1500.00, last.get("open"), "下标 1 是开盘价");
+        assertEquals(1510.00, last.get("close"), "下标 2 是收盘价");
+        assertEquals(1520.00, last.get("high"), "下标 3 是最高价");
+        assertEquals(1490.00, last.get("low"), "下标 4 是最低价");
+        assertEquals(12345.0, last.get("volume"), "下标 5 是成交量");
+        assertEquals(new java.util.TreeSet<>(java.util.Set.of(
+                        "date", "open", "close", "high", "low", "volume")),
+                new java.util.TreeSet<>(last.keySet()));
+    }
+
+    @Test
+    void eastMoneyKlineKeepsOnlyTheLastBarsWhenLimitIsSmaller() throws Exception {
+        JsonNode raw = new ObjectMapper().readTree("""
+                ["2026-09-14,1,1,1,1,1",
+                 "2026-09-15,2,2,2,2,2",
+                 "2026-09-16,3,3,3,3,3"]
+                """);
+
+        List<Map<String, Object>> rows = eastMoney.parseKlineRows(raw, 2);
+
+        assertEquals(2, rows.size());
+        assertEquals("2026-09-15", rows.get(0).get("date"), "截断应保留最后 limit 条");
+        assertEquals("2026-09-16", rows.get(1).get("date"));
     }
 
     // ==================== Binance ====================

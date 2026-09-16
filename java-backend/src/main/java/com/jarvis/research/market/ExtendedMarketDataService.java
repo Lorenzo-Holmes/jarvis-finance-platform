@@ -240,7 +240,7 @@ public class ExtendedMarketDataService {
         try {
             List<Map<String, Object>> data = switch (instrument.market()) {
                 case "a_share" -> "1d".equals(normalized)
-                        ? klineAShareWithFallback(instrument, limit)
+                        ? registryDailyKline(instrument, limit)
                         : klineTencentIntraday(instrument, normalized, limit);
                 case "us_stock" -> klineYahoo(instrument, normalized, limit);
                 case "crypto" -> klineCryptoWithFallback(instrument, normalized, limit);
@@ -450,63 +450,47 @@ public class ExtendedMarketDataService {
         throw upstream(lastError);
     }
 
-    private List<Map<String, Object>> klineAShareWithFallback(Instrument instrument, int limit) throws Exception {
-        String primary = "extended.tencent.kline";
-        String fallback = "extended.eastmoney.kline";
-        if (allowSource(primary)) {
+    /**
+     * 按注册表取 A股**日K**，并保持切换前的降级语义。
+     *
+     * <p>名字里带 daily 是有意的：A股目前只有日K迁到了 Provider，
+     * 分钟级仍走内联的 {@code klineTencentIntraday}。把限制写进方法名，
+     * 免得将来有人顺手拿它去接分钟周期——那会把日K数据贴上 5m 的标签返回。</p>
+     *
+     * <p>与报价的一个关键差别：**空列表等同于失败**。切换前的 {@code klineTencent}
+     * 在无数据时抛异常、从而触发降级到东方财富；Provider 按契约返回空列表，
+     * 所以判定失败的活儿落在这一层——否则"A股K线为空"会当成功返回，降级永远不会发生。</p>
+     */
+    private List<Map<String, Object>> registryDailyKline(Instrument instrument, int limit) {
+        List<MarketDataProvider> chain = providerRegistry == null
+                ? List.of()
+                : providerRegistry.klineChain(instrument.market());
+        if (chain.isEmpty()) {
+            throw upstream(instrument.market() + " 无可用日K源");
+        }
+
+        String lastError = "日K源均不可用: " + instrument.market();
+        for (MarketDataProvider provider : chain) {
+            String source = provider.klineSourceKey(instrument.market());
+            if (!allowSource(source)) {
+                lastError = "日K源熔断中: " + source;
+                continue;
+            }
             try {
-                List<Map<String, Object>> result = klineTencent(instrument, limit);
-                recordSourceSuccess(primary);
-                return result;
+                List<Map<String, Object>> rows = provider.kline(instrument.symbol(), "1d", limit);
+                if (rows == null || rows.isEmpty()) {
+                    throw new IllegalStateException("日K源返回空数据");
+                }
+                recordSourceSuccess(source);
+                return rows;
             } catch (Exception e) {
-                recordSourceFailure(primary);
-                log.warn("腾讯 A股日K不可用，切换 EastMoney symbol={}, message={}",
-                        instrument.symbol(), e.getMessage());
+                recordSourceFailure(source);
+                log.warn("扩展日K源失败，尝试下一个 market={}, provider={}, source={}, message={}",
+                        instrument.market(), provider.name(), source, e.getMessage());
+                lastError = e.getMessage() == null ? "日K源调用失败" : e.getMessage();
             }
         }
-        if (!allowSource(fallback)) throw upstream("A股日K备用行情源熔断中");
-        try {
-            List<Map<String, Object>> result = klineEastmoney(instrument, limit);
-            recordSourceSuccess(fallback);
-            return result;
-        } catch (Exception e) {
-            recordSourceFailure(fallback);
-            throw e;
-        }
-    }
-
-    private List<Map<String, Object>> klineEastmoney(Instrument instrument, int limit) throws Exception {
-        String symbol = instrument.symbol().toLowerCase(Locale.ROOT);
-        String secid = (symbol.startsWith("sh") ? "1." : "0.") + symbol.substring(2);
-        String body = webClient.get()
-                .uri(uriBuilder -> uriBuilder.scheme("https").host("push2his.eastmoney.com")
-                        .path("/api/qt/stock/kline/get")
-                        .queryParam("secid", secid)
-                        .queryParam("klt", 101)
-                        .queryParam("fqt", 1)
-                        .queryParam("beg", 0)
-                        .queryParam("end", 20500000)
-                        .queryParam("lmt", Math.min(1000, limit))
-                        .queryParam("fields1", "f1,f2,f3,f4,f5,f6")
-                        .queryParam("fields2", "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61")
-                        .build())
-                .retrieve().bodyToMono(String.class).block();
-        JsonNode raw = objectMapper.readTree(body).path("data").path("klines");
-        if (!raw.isArray() || raw.isEmpty()) throw upstream("A股备用日K为空");
-        List<Map<String, Object>> out = new ArrayList<>();
-        for (JsonNode item : raw) {
-            String[] values = item.asText().split(",", -1);
-            if (values.length < 6) continue;
-            Map<String, Object> row = new LinkedHashMap<>();
-            row.put("date", values[0]);
-            row.put("open", Double.parseDouble(values[1]));
-            row.put("close", Double.parseDouble(values[2]));
-            row.put("high", Double.parseDouble(values[3]));
-            row.put("low", Double.parseDouble(values[4]));
-            row.put("volume", Double.parseDouble(values[5]));
-            out.add(row);
-        }
-        return tail(out, limit);
+        throw upstream(lastError);
     }
 
     private boolean allowSource(String source) {
@@ -568,32 +552,6 @@ public class ExtendedMarketDataService {
                 ? Instant.ofEpochMilli(root.path("closeTime").asLong()).toString()
                 : LocalDateTime.now().toString());
         return out;
-    }
-
-    private List<Map<String, Object>> klineTencent(Instrument instrument, int limit) throws Exception {
-        String param = instrument.symbol() + ",day,,,500,qfq";
-        String body = webClient.get()
-                .uri(uriBuilder -> uriBuilder.scheme("https").host("web.ifzq.gtimg.cn")
-                        .path("/appstock/app/fqkline/get")
-                        .queryParam("param", param).build())
-                .retrieve().bodyToMono(String.class).block();
-        JsonNode root = objectMapper.readTree(body);
-        JsonNode raw = root.path("data").path(instrument.symbol()).path("day");
-        if (!raw.isArray()) raw = root.path("data").path(instrument.symbol()).path("qfqday");
-        if (!raw.isArray()) throw upstream("A股K线为空");
-        List<Map<String, Object>> out = new ArrayList<>();
-        for (JsonNode item : raw) {
-            if (!item.isArray() || item.size() < 5) continue;
-            Map<String, Object> row = new LinkedHashMap<>();
-            row.put("date", item.get(0).asText());
-            row.put("open", item.get(1).asDouble());
-            row.put("close", item.get(2).asDouble());
-            row.put("high", item.get(3).asDouble());
-            row.put("low", item.get(4).asDouble());
-            row.put("volume", item.size() > 5 ? item.get(5).asDouble(0.0) : 0.0);
-            out.add(row);
-        }
-        return tail(out, limit);
     }
 
     private List<Map<String, Object>> klineTencentIntraday(Instrument instrument,

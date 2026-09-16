@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -67,7 +68,92 @@ public class EastMoneyMarketDataProvider implements MarketDataProvider {
 
     @Override
     public boolean supportsKline(String market) {
-        return false;
+        return "a_share".equalsIgnoreCase(market);
+    }
+
+    /**
+     * A股日K走 {@code push2his.eastmoney.com}，与实时行情 {@code push2.eastmoney.com} 是
+     * 两个独立来源，键因此分开。
+     */
+    @Override
+    public String klineSourceKey(String market) {
+        if ("a_share".equalsIgnoreCase(market)) {
+            return "extended.eastmoney.kline";
+        }
+        return MarketDataProvider.super.klineSourceKey(market);
+    }
+
+    /**
+     * 迁移自 {@code ExtendedMarketDataService#klineEastmoney(Instrument, int)}：A股日K备用源。
+     *
+     * <p>{@code klt=101} 为日线、{@code fqt=1} 为前复权、{@code lmt} 上限 1000。
+     * 响应里 {@code data.klines} 是逗号分隔的字符串数组，
+     * 顺序为 日期,开,收,高,低,量,f57,f58,f59,f60,f61。</p>
+     *
+     * <p>原实现在无数据时抛异常，这里改为返回空列表：<b>对 K线而言"空列表"就是失败</b>，
+     * 由业务层决定是否降级——这比让它抛异常更贴合 Provider"不处理业务决策"的定位。
+     * 服务层在降级链里把空列表当失败处理，与切换前抛异常的效果一致。</p>
+     */
+    @Override
+    public List<Map<String, Object>> kline(String symbol, String interval, int limit) {
+        if (symbol == null || symbol.isBlank()) {
+            return List.of();
+        }
+        try {
+            String normalized = symbol.toLowerCase(Locale.ROOT);
+            String secid = (normalized.startsWith("sh") ? "1." : "0.")
+                    + (normalized.length() > 2 ? normalized.substring(2) : normalized);
+            String body = webClient.get()
+                    .uri(uriBuilder -> uriBuilder.scheme("https").host("push2his.eastmoney.com")
+                            .path("/api/qt/stock/kline/get")
+                            .queryParam("secid", secid)
+                            .queryParam("klt", 101)
+                            .queryParam("fqt", 1)
+                            .queryParam("beg", 0)
+                            .queryParam("end", 20500000)
+                            .queryParam("lmt", Math.min(1000, limit))
+                            .queryParam("fields1", "f1,f2,f3,f4,f5,f6")
+                            .queryParam("fields2", "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61")
+                            .build())
+                    .retrieve().bodyToMono(String.class).block();
+            if (body == null || body.isBlank()) {
+                return List.of();
+            }
+            JsonNode raw = objectMapper.readTree(body).path("data").path("klines");
+            if (!raw.isArray() || raw.isEmpty()) {
+                return List.of();
+            }
+            return parseKlineRows(raw, limit);
+        } catch (Exception e) {
+            log.warn("EastMoney A股日K失败: symbol={}, message={}", symbol, e.getMessage());
+            return List.of();
+        }
+    }
+
+    /** 包级可见以便同包测试在**不联网**的前提下钉住字段下标与 limit 截断。 */
+    List<Map<String, Object>> parseKlineRows(JsonNode raw, int limit) {
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (JsonNode item : raw) {
+            String[] values = item.asText().split(",", -1);
+            if (values.length < 6) {
+                continue;
+            }
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("date", values[0]);
+            row.put("open", Double.parseDouble(values[1]));
+            row.put("close", Double.parseDouble(values[2]));
+            row.put("high", Double.parseDouble(values[3]));
+            row.put("low", Double.parseDouble(values[4]));
+            row.put("volume", Double.parseDouble(values[5]));
+            rows.add(row);
+        }
+        return tail(rows, limit);
+    }
+
+    /** 与腾讯 Provider 一致：只保留最后 limit 条。 */
+    private static List<Map<String, Object>> tail(List<Map<String, Object>> rows, int limit) {
+        int from = Math.max(0, rows.size() - limit);
+        return new ArrayList<>(rows.subList(from, rows.size()));
     }
 
     /**
@@ -118,11 +204,5 @@ public class EastMoneyMarketDataProvider implements MarketDataProvider {
             log.warn("EastMoney A股报价失败: symbol={}, message={}", symbol, e.getMessage());
             return Map.of("error", "EastMoney A股报价失败: " + e.getMessage());
         }
-    }
-
-    @Override
-    public List<Map<String, Object>> kline(String symbol, String interval, int limit) {
-        // K 线暂不由本 Provider 承接（见 supportsKline），保持接口完整。
-        return List.of();
     }
 }

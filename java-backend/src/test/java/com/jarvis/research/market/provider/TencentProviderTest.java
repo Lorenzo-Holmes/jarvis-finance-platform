@@ -11,6 +11,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -100,9 +101,31 @@ class TencentMarketDataProviderTest {
         assertTrue(provider.supports("a_share"));
         // 扩展行情服务既有的熔断键，与 core.tencent.* 不是一族，不能改名。
         assertEquals("extended.tencent.stock", provider.sourceKey("a_share"));
-        // K线尚未迁移：声明支持 A股报价不等于能做 A股K线。
-        assertFalse(provider.supportsKline("a_share"));
         assertTrue(provider.supportsQuote("a_share"));
+        // 日K已由本 Provider 承接：同一个接口本来就同时支持 ETF 与 A股标的。
+        assertTrue(provider.supportsKline("a_share"));
+    }
+
+    /**
+     * A股实时行情与日K是两个独立来源（{@code qt.gtimg.cn} / {@code web.ifzq.gtimg.cn}），
+     * 熔断键必须分开——共用会把两条链路的成功率与熔断状态混在一起，
+     * 一边坏掉会连带切断另一边。
+     */
+    @Test
+    void separatesTheQuoteAndKlineCircuitBreakerKeysForAShare() {
+        assertEquals("extended.tencent.stock", provider.sourceKey("a_share"));
+        assertEquals("extended.tencent.kline", provider.klineSourceKey("a_share"));
+        assertNotEquals(provider.sourceKey("a_share"), provider.klineSourceKey("a_share"));
+    }
+
+    /**
+     * 黄金ETF 的两个键不同名，但那是既有事实（{@code core.tencent.etf}）；
+     * 这里钉住"K线键默认回落到报价键"这个默认语义，免得有人把它改成别的推导方式。
+     */
+    @Test
+    void klineSourceKeyFallsBackToTheQuoteKeyWhenThereIsNoSeparateSource() {
+        assertEquals(provider.sourceKey("gold_etf"), provider.klineSourceKey("gold_etf"));
+        assertEquals("core.tencent.etf", provider.klineSourceKey("gold_etf"));
     }
 
     private static String aSharePayload() {

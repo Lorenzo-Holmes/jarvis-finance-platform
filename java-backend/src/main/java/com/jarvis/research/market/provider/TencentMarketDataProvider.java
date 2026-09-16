@@ -89,10 +89,31 @@ public class TencentMarketDataProvider implements MarketDataProvider {
         return "Tencent";
     }
 
-    /** 伦敦金日K来自新浪，见 {@link SinaMarketDataProvider}。A股K线尚未迁移，见 supportsKline。 */
+    /**
+     * 伦敦金日K来自新浪，见 {@link SinaMarketDataProvider}。
+     *
+     * <p>A股日K由本 Provider 承接：{@code kline(String,String,int)} 请求的
+     * {@code web.ifzq.gtimg.cn/appstock/app/fqkline/get} 本来就同时支持 ETF 与 A股标的，
+     * 两者解析口径一致，所以这里不需要第二份实现，只需要把能力声明出来。</p>
+     *
+     * <p>注意 K线的熔断键与实时行情不同，见 {@link #klineSourceKey(String)}。</p>
+     */
     @Override
     public boolean supportsKline(String market) {
-        return "gold_etf".equalsIgnoreCase(market);
+        return "gold_etf".equalsIgnoreCase(market)
+                || "a_share".equalsIgnoreCase(market);
+    }
+
+    /**
+     * A股日K走 {@code web.ifzq.gtimg.cn}，与实时行情（{@code qt.gtimg.cn}）是两个独立来源，
+     * 运维本来就是分开统计的，因此键也必须分开。
+     */
+    @Override
+    public String klineSourceKey(String market) {
+        if ("a_share".equalsIgnoreCase(market)) {
+            return "extended.tencent.kline";
+        }
+        return MarketDataProvider.super.klineSourceKey(market);
     }
 
     /**
