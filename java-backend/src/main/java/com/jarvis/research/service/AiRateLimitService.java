@@ -66,20 +66,48 @@ public class AiRateLimitService {
         usage.dayCount++;
     }
 
+    /**
+     * 记录上游返回的 total_tokens。
+     *
+     * <p><b>这里曾经是一个静默失效的配额。</b>本方法原先只看顶层的 {@code usage}，
+     * 但唯一的调用方（AiController.postAndRecord）传进来的是 Python 服务的响应信封
+     * {@code {code, message, data:{..., usage:{total_tokens}}}}——usage 在 {@code data} 里面。
+     * 于是在 {@code instanceof Map} 检查处就提前返回了，{@code monthlyTokenUsed} 永远是 0。</p>
+     *
+     * <p>后果不只是"统计为零"：{@link AiQuotaService#consumeRequest} 会用
+     * {@code monthlyTokenUsed >= monthlyTokenLimit} 拦截请求，所以管理员设置的
+     * **月度 token 配额从未真正生效**——用户只要守着每分钟 10 次的限流，就能无限消耗 token。
+     * 之所以一直没被发现，是因为没有任何测试覆盖本方法。</p>
+     *
+     * <p>现在两种信封形状都认：顶层 usage（某些调用方直接传内层 data）与 data.usage。
+     * 取 {@code data} 里的那个是主路径，顶层那个保留是为了兼容与向后安全。</p>
+     */
     public void recordTokens(Long userId, Object aiResponse) {
         if (quotaService == null || !(aiResponse instanceof Map<?, ?> response)) return;
-        Object usageValue = response.get("usage");
-        if (!(usageValue instanceof Map<?, ?> usage)) return;
+        Map<?, ?> usage = findUsage(response);
+        if (usage == null) return;
         Object total = usage.get("total_tokens");
         if (total instanceof Number number) {
             quotaService.consumeTokens(userId, number.longValue());
         } else if (total != null) {
             try {
-                quotaService.consumeTokens(userId, Long.parseLong(String.valueOf(total)));
+                quotaService.consumeTokens(userId, Long.parseLong(String.valueOf(total).trim()));
             } catch (NumberFormatException ignored) {
                 // 兼容非标准上游 usage 格式，不阻断 AI 业务结果。
             }
         }
+    }
+
+    /** 先看信封里的 data，再看顶层；都不是 map 就返回 null。 */
+    private static Map<?, ?> findUsage(Map<?, ?> response) {
+        if (response.get("data") instanceof Map<?, ?> data
+                && data.get("usage") instanceof Map<?, ?> nested) {
+            return nested;
+        }
+        if (response.get("usage") instanceof Map<?, ?> flat) {
+            return flat;
+        }
+        return null;
     }
 
     private static final class Usage {
