@@ -436,13 +436,23 @@ def smart_quote(price_data: Dict[str, Any], closes: Optional[List[Any]] = None,
 
 def analyze_risk(closes: List[Any], confidence: float = 0.95,
                  portfolio_value: Optional[float] = None,
-                 symbol: Optional[str] = None) -> Dict[str, Any]:
+                 symbol: Optional[str] = None,
+                 metrics: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """风险预警（FR-10）：数值（VaR/ES/波动率/最大回撤）由确定性层计算，LLM 只写风险报告。
 
     返回 {available, metrics, alerts, content}；样本不足时 available=False。
+
+    `metrics` 是 Java 侧随请求下发的**同一份**指标（Phase 2 ⑧ 统一口径）。传了就直接引用、
+    不再自算——"同一组数字只有一个来源"的落点就在这里。缺省回退到本地确定性层，
+    保证老调用方与既有测试不受影响。
     """
-    metrics = risk_metrics(closes, confidence=str(confidence),
-                           portfolio_value=portfolio_value, symbol=symbol)
+    provided = metrics if isinstance(metrics, dict) and metrics.get("available") is not None else None
+    if provided is not None:
+        # 复制一份：下面会对 alerts 做 pop，不能改到调用方传进来的 dict
+        metrics = dict(provided, alerts=list(provided.get("alerts") or []))
+    else:
+        metrics = risk_metrics(closes, confidence=str(confidence),
+                               portfolio_value=portfolio_value, symbol=symbol)
     if not metrics.get("available"):
         return {"available": False, "reason": metrics.get("reason"), "bars": metrics.get("bars")}
 

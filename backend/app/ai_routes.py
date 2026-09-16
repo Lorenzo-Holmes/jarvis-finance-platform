@@ -84,6 +84,9 @@ class RiskReq(BaseModel):
     confidence: float = Field(default=0.95, ge=0.5, le=0.99)
     portfolio_value: Optional[float] = Field(default=None, gt=0)
     symbol: Optional[str] = Field(default=None, max_length=32)
+    # Phase 2 ⑧：Java 侧用**同一次服务端取数**算好的指标，随请求下发。
+    # 有就直接引用（"同一组数字只有一个来源"），没有则回退到本地确定性层。
+    metrics: Optional[Dict[str, Any]] = None
 
 
 class StrategyReq(BaseModel):
@@ -204,7 +207,8 @@ def analyze_risk(req: RiskReq):
                            closes=req.closes,
                            confidence=req.confidence,
                            portfolio_value=req.portfolio_value,
-                           symbol=req.symbol)}
+                           symbol=req.symbol,
+                           metrics=req.metrics)}
 
 
 @router.post("/analyze/strategy")
