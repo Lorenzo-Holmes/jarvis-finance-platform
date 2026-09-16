@@ -1,7 +1,5 @@
 package com.jarvis.research.market;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.jarvis.research.config.JarvisProperties;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.Pageable;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -22,8 +20,7 @@ class MarketDataServiceTest {
     @Test
     void parsesSourceQuoteTimesBeforeFallingBackToServerReceiveTime() {
         MarketDataService service = new MarketDataService(
-                new JarvisProperties(), mock(PriceSnapshotRepository.class),
-                mock(KlineDailyRepository.class), new ObjectMapper());
+                mock(PriceSnapshotRepository.class), mock(KlineDailyRepository.class));
 
         assertEquals("2026-09-08T10:15:30",
                 service.parseSourceQuoteTime("20260908101530").toString());
@@ -38,8 +35,7 @@ class MarketDataServiceTest {
     void dailyKlineQueryIsReadOnlyAndReturnsAscendingBars() {
         PriceSnapshotRepository snapshotRepo = mock(PriceSnapshotRepository.class);
         KlineDailyRepository klineRepo = mock(KlineDailyRepository.class);
-        MarketDataService service = new MarketDataService(
-                new JarvisProperties(), snapshotRepo, klineRepo, new ObjectMapper());
+        MarketDataService service = new MarketDataService(snapshotRepo, klineRepo);
 
         KlineDaily newest = new KlineDaily(
                 "gold_etf", "2026-09-04", 10.1, 10.4, 10.5, 10.0, 1200.0);
@@ -67,7 +63,7 @@ class MarketDataServiceTest {
     void cachedQuoteIsMarkedStaleWhenUpstreamHasStoppedRefreshing() {
         PriceSnapshotRepository snapshotRepo = mock(PriceSnapshotRepository.class);
         MarketDataService service = new MarketDataService(
-                new JarvisProperties(), snapshotRepo, mock(KlineDailyRepository.class), new ObjectMapper());
+                snapshotRepo, mock(KlineDailyRepository.class));
         @SuppressWarnings("unchecked")
         Map<String, Map<String, Object>> cache = (Map<String, Map<String, Object>>)
                 ReflectionTestUtils.getField(service, "livePriceCache");
