@@ -7,13 +7,49 @@ JARVIS Python AI Service
 - 用户、交易、行情、K线、回测与业务持久化统一由 Java 主后端负责。
 - 本服务只接受携带 PYTHON_SERVICE_TOKEN 的 Java 内部请求。
 """
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Body, Depends, FastAPI, HTTPException
+from fastapi.responses import JSONResponse
 
 from . import ai_service
 from .ai_routes import require_internal_service, router as ai_router
+from .rss import RSSSourceNotFound, RSSValidationError, rss_store
 
 app = FastAPI(title="JARVIS AI Service", version="2.0.0")
 app.include_router(ai_router)
+
+
+# RSS 模块用领域异常表达失败原因，在这里统一映射为 HTTP 语义——
+# 避免把 ValueError / LookupError 泄漏成 500，或让端点各自 try/except 重复样板。
+@app.exception_handler(RSSValidationError)
+async def _rss_validation_handler(_request, exc: RSSValidationError):
+    return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+
+@app.exception_handler(RSSSourceNotFound)
+async def _rss_not_found_handler(_request, exc: RSSSourceNotFound):
+    return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+
+@app.post("/internal/rss/source", dependencies=[Depends(require_internal_service)])
+def add_rss_source(source: dict = Body(...)):
+    return rss_store.add_source(source)
+
+
+@app.get("/internal/rss/source", dependencies=[Depends(require_internal_service)])
+def list_rss_sources():
+    return rss_store.list_sources()
+
+
+@app.post("/internal/rss/fetch/{source_id}", dependencies=[Depends(require_internal_service)])
+def fetch_rss(source_id: str):
+    """抓取一次并返回结构化结果；`ok=false` 时 `error` 说明失败原因。"""
+    return rss_store.crawl(source_id)
+
+
+@app.get("/internal/rss/articles", dependencies=[Depends(require_internal_service)])
+def list_rss_articles(source_id: str | None = None):
+    """列出已标准化文章；可选 `source_id` 过滤到单个资讯源。"""
+    return rss_store.list_articles(source_id)
 
 
 @app.get("/api/health", dependencies=[Depends(require_internal_service)])
