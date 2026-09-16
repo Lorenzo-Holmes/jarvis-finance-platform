@@ -54,8 +54,13 @@ FIN_SYS_PROMPT = (
 )
 
 
-def _research_context_message(raw_context: Optional[Dict[str, Any]]) -> Optional[Dict[str, str]]:
-    calculated = deterministic_context(raw_context)
+def _research_context_message(raw_context: Optional[Dict[str, Any]],
+                              metrics: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, str]]:
+    # Java 主后端已用同一份自营数据算好确定性上下文时直接引用，不再本地重算。
+    # 判据用非空字典：上下文本身没有 available 字段（只有其中的 portfolio 段有），
+    # 所以不能照抄风险面/趋势面那种看 available 的判据。
+    provided = metrics if isinstance(metrics, dict) and metrics else None
+    calculated = provided if provided is not None else deterministic_context(raw_context)
     if not calculated:
         return None
     return {
@@ -118,14 +123,15 @@ def _chat_request(messages: List[Dict[str, str]], temperature: float = 0.7,
 
 
 def open_chat_stream(messages: List[Dict[str, str]], temperature: float = 0.7,
-                     research_context: Optional[Dict[str, Any]] = None) -> Iterator[Dict[str, Any]]:
+                     research_context: Optional[Dict[str, Any]] = None,
+                     metrics: Optional[Dict[str, Any]] = None) -> Iterator[Dict[str, Any]]:
     """打开 OpenAI-compatible 流式对话并返回增量事件迭代器。
 
     上游连接和 HTTP 状态会在本函数返回前完成校验，因此 FastAPI 可以在开始
     SSE 响应之前把连接/鉴权等错误映射为 502，而不是先返回 200 再失败。
     """
     full = [{"role": "system", "content": FIN_SYS_PROMPT}]
-    context_message = _research_context_message(research_context)
+    context_message = _research_context_message(research_context, metrics)
     if context_message:
         full.append(context_message)
     full.extend(messages)
@@ -199,10 +205,11 @@ def open_chat_stream(messages: List[Dict[str, str]], temperature: float = 0.7,
 
 
 def chat(messages: List[Dict[str, str]], temperature: float = 0.7,
-         research_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """通用对话。量化上下文先由 Python 确定性计算，再交给模型解释。"""
+         research_context: Optional[Dict[str, Any]] = None,
+         metrics: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """通用对话。量化上下文优先引用 Java 下发的确定性结果，缺省回退本地计算。"""
     full = [{"role": "system", "content": FIN_SYS_PROMPT}]
-    context_message = _research_context_message(research_context)
+    context_message = _research_context_message(research_context, metrics)
     if context_message:
         full.append(context_message)
     full.extend(messages)

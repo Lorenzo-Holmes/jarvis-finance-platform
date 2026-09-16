@@ -44,6 +44,7 @@ class ChatReq(BaseModel):
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     # 仅由 Java 主后端注入；Python 会在调用 LLM 前对其中行情/K线做确定性计算。
     research_context: Optional[Dict[str, Any]] = None
+    metrics: Optional[Dict[str, Any]] = None
 
 
 class ReportReq(BaseModel):
@@ -156,6 +157,7 @@ def chat(req: ChatReq):
         messages=messages,
         temperature=req.temperature,
         research_context=req.research_context,
+        metrics=req.metrics,
     )}
 
 
@@ -167,6 +169,7 @@ def chat_stream(req: ChatReq):
             messages=messages,
             temperature=req.temperature,
             research_context=req.research_context,
+            metrics=req.metrics,
         )
     except RuntimeError as e:
         raise HTTPException(status_code=502, detail=str(e))
