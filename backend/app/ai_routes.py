@@ -114,6 +114,7 @@ class TrendReq(BaseModel):
     closes: List[float] = Field(default_factory=list, max_length=2000)
     horizon_days: Optional[int] = Field(default=None, ge=1, le=60)
     confidence: Optional[float] = Field(default=None, ge=0.5, le=0.99)
+    metrics: Optional[Dict[str, Any]] = None
     symbol: Optional[str] = Field(default=None, max_length=32)
 
 
@@ -232,7 +233,8 @@ def analyze_trend(req: TrendReq):
                            closes=req.closes,
                            horizon_days=req.horizon_days,
                            confidence=req.confidence,
-                           symbol=req.symbol)}
+                           symbol=req.symbol,
+                           metrics=req.metrics)}
 
 
 @router.post("/quote")

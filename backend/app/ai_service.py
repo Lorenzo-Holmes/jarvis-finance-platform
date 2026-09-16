@@ -558,7 +558,8 @@ _TREND_FORECAST_KEYS = (
 
 def market_trend(closes: List[Any], horizon_days: Optional[int] = None,
                  confidence: Optional[float] = None,
-                 symbol: Optional[str] = None) -> Dict[str, Any]:
+                 symbol: Optional[str] = None,
+                 metrics: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """市场趋势预测（FR-12）：趋势区间与技术依据由确定性层计算，LLM 只写解读。
 
     返回 {available, forecast, indicators, direction, content}；样本不足时 available=False。
@@ -567,8 +568,15 @@ def market_trend(closes: List[Any], horizon_days: Optional[int] = None,
       近 20 日支撑/阻力与均线排列
     - direction：方向标签 {key, label}
     """
-    result = trend_metrics(closes, horizon_days=horizon_days,
-                           confidence=confidence, symbol=symbol)
+    # Java 主后端已用同一份自营收盘价算好趋势结果时，直接引用，不再本地重算。
+    # 判据与风险面一致：market_trend 无论可用与否都带 available 字段，所以看该字段是否存在；
+    # 报价面不同（quote_metrics 的结果里没有 available），那边用的是字典非空判断。
+    provided = metrics if isinstance(metrics, dict) and metrics.get("available") is not None else None
+    if provided is not None:
+        result = provided
+    else:
+        result = trend_metrics(closes, horizon_days=horizon_days,
+                               confidence=confidence, symbol=symbol)
     if not result.get("available"):
         return {"available": False, "reason": result.get("reason"), "bars": result.get("bars")}
 
