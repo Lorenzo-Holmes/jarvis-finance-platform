@@ -33,6 +33,34 @@ class MarketDataProvidersTest {
         assertNotNull(SinaMarketDataProvider.class.getAnnotation(Component.class));
     }
 
+    /**
+     * 通用不变量：**声明支持某市场的 provider，必须至少在该市场能做一件事**。
+     *
+     * <p>注意 {@code supportsQuote}/{@code supportsKline} 是默认 {@code true} 的
+     * **opt-out 能力开关**（为「只提供K线」的来源如新浪而设），本身不代表市场归属；
+     * 市场归属只看 {@code supports(market)}。注册表也是先按 {@code supports} 取链、
+     * 再用这两个开关过滤。所以有意义的检查方向是 supports ⇒ 至少一项能力，
+     * 而不是 supportsQuote ⇒ supports。</p>
+     *
+     * <p>我最初把这条写反了，测试立刻报出「Yahoo 声明能报 gold_etf 却不支持该市场」——
+     * 报错是对的、断言是错的，这也正好说明这类不变量值得先写下来再验证。</p>
+     */
+    @Test
+    void everySupportedMarketHasAtLeastOneCapability() {
+        List<String> markets = List.of("gold_etf", "london_gold", "a_share", "us_stock", "crypto");
+
+        for (MarketDataProvider provider : List.of(yahoo, eastMoney, binance, sina)) {
+            for (String market : markets) {
+                if (!provider.supports(market)) {
+                    continue;
+                }
+                assertTrue(provider.supportsQuote(market) || provider.supportsKline(market),
+                        provider.name() + " 声明支持 " + market
+                                + "，却既不报价也不取K线——进链只会空转");
+            }
+        }
+    }
+
     // ==================== Yahoo ====================
 
     @Test
@@ -42,13 +70,16 @@ class MarketDataProvidersTest {
         assertEquals("Yahoo Finance (GC=F 期货)", yahoo.displayName());
 
         assertTrue(yahoo.supports("london_gold"));
-        assertTrue(yahoo.supports("us_stock"));
         assertTrue(yahoo.supports("LONDON_GOLD"));
         assertFalse(yahoo.supports("gold_etf"));
         assertFalse(yahoo.supports("a_share"));
         assertFalse(yahoo.supports("crypto"));
         assertFalse(yahoo.supports(null));
+        // us_stock 的报价逻辑尚未迁移：quote() 对权益类标的必然返回 error，
+        // 所以不能声明支持它（见 yahooNeverDeclaresMarketItCannotQuote）。
+        assertFalse(yahoo.supports("us_stock"));
 
+        // sourceKey 与能力声明是两件事：us_stock 的键是扩展行情服务既有的熔断键，保持不变。
         assertEquals("core.yahoo.gold-futures", yahoo.sourceKey("london_gold"));
         assertEquals("extended.yahoo.stock", yahoo.sourceKey("us_stock"));
         assertEquals("core.yahoo.crypto", yahoo.sourceKey("crypto"));
@@ -64,6 +95,28 @@ class MarketDataProvidersTest {
     void yahooRejectsUnmigratedSymbolWithoutNetwork() {
         Map<String, Object> quote = yahoo.quote("AAPL");
         assertTrue(quote.containsKey("error"), "非黄金标的应显式返回 error 而不是错标的的数据");
+    }
+
+    /**
+     * 不变量：**声明支持的市场，其真实调用 symbol 必须能过标的闸门**。
+     *
+     * <p>这条不变量曾被违反：{@code supports("us_stock")} 返回 true，
+     * 而 {@code quote("AAPL")} 必然失败。代价不是"取不到数"这么轻——注册表会把必然失败的
+     * provider 选进 us_stock 的链里，调用方据此以为该市场可服务，熔断器还会为
+     * {@code extended.yahoo.stock} 记下一次永远不该发生的失败。</p>
+     *
+     * <p>把闸门与声明放在同一条测试里断言，两者就无法再悄悄分叉。</p>
+     */
+    @Test
+    void yahooNeverDeclaresMarketItCannotQuote() {
+        assertTrue(yahoo.acceptsQuoteSymbol("hf_XAU"), "core london_gold 链用 hf_XAU 调用");
+        assertTrue(yahoo.acceptsQuoteSymbol("GC=F"), "Yahoo 侧的黄金合约代码");
+        assertTrue(yahoo.acceptsQuoteSymbol(null), "symbol 缺失时仍走原实现路径");
+        assertFalse(yahoo.acceptsQuoteSymbol("AAPL"), "权益类标的被闸门拒绝");
+
+        assertFalse(yahoo.supports("us_stock"),
+                "既然 quote(AAPL) 必然失败，supports(us_stock) 就不能为 true");
+        assertTrue(yahoo.supports("london_gold"), "而 london_gold 的 symbol 确实能过闸门");
     }
 
     // ==================== EastMoney ====================

@@ -50,10 +50,20 @@ public class YahooMarketDataProvider implements MarketDataProvider {
         return "Yahoo";
     }
 
+    /**
+     * 只声明**真正能取数**的市场。
+     *
+     * <p>{@code us_stock} 的 Yahoo 报价逻辑尚未迁移——{@link #quote} 对权益类标的会直接返回
+     * error，因此这里不能声明支持它。声明支持却必然失败不是"取不到数"这么轻：注册表会把
+     * 它选进该市场的链里，调用方据此以为该市场可服务，而熔断器还会为
+     * {@code extended.yahoo.stock} 记下一次永远不该发生的失败。</p>
+     *
+     * <p>{@code sourceKey("us_stock")} 仍返回 {@code extended.yahoo.stock}：
+     * 那是扩展行情服务既有的熔断键，与"本 Provider 是否具备该能力"是两件事。</p>
+     */
     @Override
     public boolean supports(String market) {
-        return "london_gold".equalsIgnoreCase(market)
-                || "us_stock".equalsIgnoreCase(market);
+        return "london_gold".equalsIgnoreCase(market);
     }
 
     @Override
@@ -88,7 +98,7 @@ public class YahooMarketDataProvider implements MarketDataProvider {
      */
     @Override
     public Map<String, Object> quote(String symbol) {
-        if (!isGoldSymbol(symbol)) {
+        if (!acceptsQuoteSymbol(symbol)) {
             // 美股的 Yahoo 报价逻辑不在本次迁移范围内，宁可显式失败也不要返回错标的的数据。
             log.warn("Yahoo Provider 未迁移该标的的实时行情: symbol={}", symbol);
             return Map.of("error", "Yahoo 未迁移该标的的实时行情: " + symbol);
@@ -134,8 +144,15 @@ public class YahooMarketDataProvider implements MarketDataProvider {
         return List.of();
     }
 
-    /** 原实现完全忽略入参 symbol；这里只对黄金类标的走同一路径，其余标的显式报错。 */
-    private boolean isGoldSymbol(String symbol) {
+    /**
+     * 标的闸门：本 Provider 只承接黄金类标的。
+     *
+     * <p>原实现完全忽略入参 symbol；这里只对黄金类标的走同一路径，其余标的显式报错。</p>
+     *
+     * <p>包级可见**仅供测试**，用于断言不变量「{@code supports(market)} 为 true 的市场，
+     * 其真实调用 symbol 必须能过这道闸门」。没有这条断言，声明与能力就可能再次悄悄分叉。</p>
+     */
+    boolean acceptsQuoteSymbol(String symbol) {
         if (symbol == null || symbol.isBlank()) {
             return true;
         }
