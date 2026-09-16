@@ -117,10 +117,16 @@ public class BinanceMarketDataProvider implements MarketDataProvider {
             out.put("open", textDouble(root, "openPrice"));
             out.put("high", textDouble(root, "highPrice"));
             out.put("low", textDouble(root, "lowPrice"));
+            // quote_time 用 Instant.toString()（UTC，带 Z），这是 extended 信封的约定：
+            // 扩展行情服务原本就是 Instant.ofEpochMilli(closeTime).toString()。
+            //
+            // 不要改成带时区的形式。本 Provider 的 quote 此前只被 core 链路引用过，
+            // 而 core 链路根本不含 crypto（MarketDataService 只取 gold_etf / london_gold），
+            // 所以这个值一直没人真正消费过；一旦加密货币报价接到扩展行情服务上，
+            // 它就会直接成为用户看到的报价时间。
             out.put("quote_time", root.path("closeTime").isNumber()
-                    ? Instant.ofEpochMilli(root.path("closeTime").asLong())
-                            .atZone(CRYPTO_QUOTE_ZONE).toString()
-                    : LocalDateTime.now().atZone(CRYPTO_QUOTE_ZONE).toString());
+                    ? Instant.ofEpochMilli(root.path("closeTime").asLong()).toString()
+                    : LocalDateTime.now().toString());
             return out;
         } catch (Exception e) {
             log.warn("Binance 行情失败: symbol={}, message={}", pair, e.getMessage());

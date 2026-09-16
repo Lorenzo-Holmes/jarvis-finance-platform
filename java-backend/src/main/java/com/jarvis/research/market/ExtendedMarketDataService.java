@@ -144,8 +144,8 @@ public class ExtendedMarketDataService {
         try {
             Map<String, Object> resolved = switch (instrument.market()) {
                 case "a_share" -> registryQuote(instrument, "EastMoney (fallback)");
-                case "us_stock" -> quoteYahooWithCircuit(instrument);
-                case "crypto" -> quoteCryptoWithFallback(instrument);
+                case "us_stock" -> registryQuote(instrument, "Yahoo Finance (fallback)");
+                case "crypto" -> registryQuote(instrument, "Yahoo Finance (fallback)");
                 default -> Map.of();
             };
             Object resolvedName = resolved.get("name");
@@ -195,8 +195,8 @@ public class ExtendedMarketDataService {
         try {
             Map<String, Object> result = switch (instrument.market()) {
                 case "a_share" -> registryQuote(instrument, "EastMoney (fallback)");
-                case "us_stock" -> quoteYahooWithCircuit(instrument);
-                case "crypto" -> quoteCryptoWithFallback(instrument);
+                case "us_stock" -> registryQuote(instrument, "Yahoo Finance (fallback)");
+                case "crypto" -> registryQuote(instrument, "Yahoo Finance (fallback)");
                 default -> throw invalid("不支持的市场: " + instrument.market());
             };
             cacheQuote(cacheKey, result, now);
@@ -356,43 +356,6 @@ public class ExtendedMarketDataService {
         }
     }
 
-    private Map<String, Object> quoteYahoo(Instrument instrument) throws Exception {
-        return quoteYahoo(instrument, yahooStockSymbol(instrument.symbol()));
-    }
-
-    private Map<String, Object> quoteYahoo(Instrument instrument, String providerSymbol) throws Exception {
-        JsonNode result = yahooResult(providerSymbol, "1d", "1d");
-        JsonNode meta = result.path("meta");
-        Double price = number(meta, "regularMarketPrice");
-        Double previous = number(meta, "previousClose");
-        if (previous == null) previous = number(meta, "chartPreviousClose");
-        if (price == null) throw upstream("美股价格为空");
-        Map<String, Object> out = quoteBase(instrument);
-        String displayName = meta.path("longName").asText(meta.path("shortName").asText(""));
-        if (!displayName.isBlank()) out.put("name", displayName);
-        out.put("price", price);
-        out.put("prev_close", previous);
-        out.put("change", price - (previous == null ? price : previous));
-        out.put("change_pct", previous == null || previous == 0 ? 0.0 : (price - previous) / previous * 100.0);
-        out.put("quote_time", meta.path("regularMarketTime").isNumber()
-                ? Instant.ofEpochSecond(meta.path("regularMarketTime").asLong()).toString()
-                : LocalDateTime.now().toString());
-        return out;
-    }
-
-    private Map<String, Object> quoteYahooWithCircuit(Instrument instrument) throws Exception {
-        String source = "extended.yahoo.stock";
-        if (!allowSource(source)) throw upstream("Yahoo Finance 行情源熔断中");
-        try {
-            Map<String, Object> result = quoteYahoo(instrument);
-            recordSourceSuccess(source);
-            return result;
-        } catch (Exception e) {
-            recordSourceFailure(source);
-            throw e;
-        }
-    }
-
     /**
      * 按 {@link ProviderRegistry} 的降级链取行情，并包装成扩展行情信封。
      *
@@ -438,7 +401,21 @@ public class ExtendedMarketDataService {
                 Map<String, Object> out = quoteBase(instrument);
                 out.putAll(raw);
                 out.put("source", index == 0 ? instrument.source() : fallbackLabel);
-                out.put("quote_time", LocalDateTime.now().toString());
+                // quote_time 由 Provider 决定：它给了就用它的（那是行情源自己的成交时间），
+                // 没给才由这里补成本地当前时间。
+                //
+                // 判据必须是 raw（Provider 的产出），**不能是 out**——quoteBase 已经先放了一个
+                // 带时区的占位值（...+08:00[Asia/Shanghai]），拿 out 判永远不会命中，
+                // 于是 A股的 quote_time 会从原本不带时区的 LocalDateTime 悄悄变成带时区的 ZonedDateTime。
+                // 这个错误当时真的写出来了，是被 A股契约测试当场拦下的。
+                //
+                // A股不该产出 Provider 时间（腾讯口径本来就没有），所以由这里补；
+                // 而美股与加密货币的 quote_time 是**行情源的市场时间**
+                // （Yahoo regularMarketTime / Binance closeTime，Instant 形态），必须原样保留，
+                // 否则用户看到的报价时间会从"上游成交时刻"退化成"我们取数的时刻"。
+                if (!raw.containsKey("quote_time")) {
+                    out.put("quote_time", LocalDateTime.now().toString());
+                }
                 return out;
             } catch (Exception e) {
                 recordSourceFailure(source);
@@ -503,55 +480,6 @@ public class ExtendedMarketDataService {
 
     private void recordSourceFailure(String source) {
         if (circuitBreaker != null) circuitBreaker.recordFailure(source);
-    }
-
-    private Map<String, Object> quoteCryptoWithFallback(Instrument instrument) throws Exception {
-        if (allowSource("extended.binance")) {
-            try {
-                Map<String, Object> primary = quoteBinance(instrument);
-                recordSourceSuccess("extended.binance");
-                return primary;
-            } catch (Exception binanceError) {
-                recordSourceFailure("extended.binance");
-                log.warn("Binance 行情不可用，切换 Yahoo 备用源 symbol={}, message={}",
-                        instrument.symbol(), binanceError.getMessage());
-            }
-        }
-        if (!allowSource("extended.yahoo.crypto")) {
-            throw upstream("加密货币备用行情源熔断中");
-        }
-        try {
-            Map<String, Object> fallback = quoteYahoo(instrument, yahooCryptoSymbol(instrument.symbol()));
-            fallback.put("source", "Yahoo Finance (fallback)");
-            recordSourceSuccess("extended.yahoo.crypto");
-            return fallback;
-        } catch (Exception yahooError) {
-            recordSourceFailure("extended.yahoo.crypto");
-            throw yahooError;
-        }
-    }
-
-    private Map<String, Object> quoteBinance(Instrument instrument) throws Exception {
-        JsonNode root = objectMapper.readTree(webClient.get()
-                .uri("https://api.binance.com/api/v3/ticker/24hr?symbol=" + instrument.symbol())
-                .retrieve()
-                .bodyToMono(String.class)
-                .block());
-        Double price = textDouble(root, "lastPrice");
-        Double previous = textDouble(root, "prevClosePrice");
-        if (price == null) throw upstream("加密货币价格为空");
-        Map<String, Object> out = quoteBase(instrument);
-        out.put("price", price);
-        out.put("prev_close", previous);
-        out.put("change", textDouble(root, "priceChange"));
-        out.put("change_pct", textDouble(root, "priceChangePercent"));
-        out.put("open", textDouble(root, "openPrice"));
-        out.put("high", textDouble(root, "highPrice"));
-        out.put("low", textDouble(root, "lowPrice"));
-        out.put("quote_time", root.path("closeTime").isNumber()
-                ? Instant.ofEpochMilli(root.path("closeTime").asLong()).toString()
-                : LocalDateTime.now().toString());
-        return out;
     }
 
     private List<Map<String, Object>> klineTencentIntraday(Instrument instrument,

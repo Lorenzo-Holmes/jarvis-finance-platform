@@ -79,50 +79,63 @@ class MarketDataProvidersTest {
         assertTrue(yahoo.supports("LONDON_GOLD"));
         assertFalse(yahoo.supports("gold_etf"));
         assertFalse(yahoo.supports("a_share"));
-        assertFalse(yahoo.supports("crypto"));
         assertFalse(yahoo.supports(null));
-        // us_stock 的报价逻辑尚未迁移：quote() 对权益类标的必然返回 error，
-        // 所以不能声明支持它（见 yahooNeverDeclaresMarketItCannotQuote）。
-        assertFalse(yahoo.supports("us_stock"));
+        // 美股与加密货币的报价本已实现，所以可以声明支持。
+        assertTrue(yahoo.supports("us_stock"));
+        assertTrue(yahoo.supports("crypto"));
 
-        // sourceKey 与能力声明是两件事：us_stock 的键是扩展行情服务既有的熔断键，保持不变。
         assertEquals("core.yahoo.gold-futures", yahoo.sourceKey("london_gold"));
         assertEquals("extended.yahoo.stock", yahoo.sourceKey("us_stock"));
-        assertEquals("core.yahoo.crypto", yahoo.sourceKey("crypto"));
+        // 显式写死：接口默认推导会给出 core.yahoo.crypto，
+        // 而加密货币备用源的既有运维键是 extended.yahoo.crypto。
+        assertEquals("extended.yahoo.crypto", yahoo.sourceKey("crypto"));
 
         assertTrue(yahoo.supportsQuote("london_gold"));
         assertFalse(yahoo.supportsKline("london_gold"));
+        // K线仍未迁移：声明支持报价不等于能做K线。
         assertFalse(yahoo.supportsKline("us_stock"));
+        assertFalse(yahoo.supportsKline("crypto"));
 
         assertEquals(List.of(), yahoo.kline("GC=F", "1d", 10));
     }
 
     @Test
-    void yahooRejectsUnmigratedSymbolWithoutNetwork() {
-        Map<String, Object> quote = yahoo.quote("AAPL");
-        assertTrue(quote.containsKey("error"), "非黄金标的应显式返回 error 而不是错标的的数据");
+    void yahooRejectsUnmappableCryptoSymbolWithoutNetwork() {
+        // ETH 无法映射成 Yahoo 交易对（只有 xxxUSDT 形式才认），应显式报错且不发请求。
+        Map<String, Object> quote = yahoo.quote("crypto", "ETH");
+        assertTrue(quote.containsKey("error"), "映射不了就报错，而不是拿错标的去请求");
+    }
+
+    @Test
+    void yahooRejectsBlankStockSymbolWithoutNetwork() {
+        Map<String, Object> quote = yahoo.quote("us_stock", "   ");
+        assertTrue(quote.containsKey("error"));
     }
 
     /**
-     * 不变量：**声明支持的市场，其真实调用 symbol 必须能过标的闸门**。
-     *
-     * <p>这条不变量曾被违反：{@code supports("us_stock")} 返回 true，
-     * 而 {@code quote("AAPL")} 必然失败。代价不是"取不到数"这么轻——注册表会把必然失败的
-     * provider 选进 us_stock 的链里，调用方据此以为该市场可服务，熔断器还会为
-     * {@code extended.yahoo.stock} 记下一次永远不该发生的失败。</p>
-     *
-     * <p>把闸门与声明放在同一条测试里断言，两者就无法再悄悄分叉。</p>
+     * 标的映射：美股把 {@code .} 换成 {@code -}，加密货币由 {@code xxxUSDT} 换成 {@code xxx-USD}。
+     * 这两条是扩展行情服务既有的映射规则，搬进 Provider 时不能走样。
      */
     @Test
-    void yahooNeverDeclaresMarketItCannotQuote() {
-        assertTrue(yahoo.acceptsQuoteSymbol("hf_XAU"), "core london_gold 链用 hf_XAU 调用");
-        assertTrue(yahoo.acceptsQuoteSymbol("GC=F"), "Yahoo 侧的黄金合约代码");
-        assertTrue(yahoo.acceptsQuoteSymbol(null), "symbol 缺失时仍走原实现路径");
-        assertFalse(yahoo.acceptsQuoteSymbol("AAPL"), "权益类标的被闸门拒绝");
+    void yahooMapsSymbolsTheWayTheExtendedServiceDid() {
+        assertEquals("BRK-B", YahooMarketDataProvider.stockSymbol("BRK.B"));
+        assertEquals("AAPL", YahooMarketDataProvider.stockSymbol("AAPL"));
+        assertEquals("BTC-USD", YahooMarketDataProvider.cryptoSymbol("BTCUSDT"));
+        assertEquals("SOL-USD", YahooMarketDataProvider.cryptoSymbol("SOLUSDT"));
+    }
 
-        assertFalse(yahoo.supports("us_stock"),
-                "既然 quote(AAPL) 必然失败，supports(us_stock) 就不能为 true");
-        assertTrue(yahoo.supports("london_gold"), "而 london_gold 的 symbol 确实能过闸门");
+    /**
+     * 单参调用时的市场推断。{@link MarketDataProvider#quote(String)} 属冻结契约，
+     * 不区分市场的调用方仍按标的调用，所以要能推断对。
+     */
+    @Test
+    void yahooInfersMarketFromSymbolOnlyAsAFallback() {
+        assertEquals("london_gold", YahooMarketDataProvider.marketOf("hf_XAU"));
+        assertEquals("london_gold", YahooMarketDataProvider.marketOf("GC=F"));
+        assertEquals("london_gold", YahooMarketDataProvider.marketOf(null));
+        assertEquals("crypto", YahooMarketDataProvider.marketOf("BTCUSDT"));
+        assertEquals("us_stock", YahooMarketDataProvider.marketOf("AAPL"));
+        assertEquals("us_stock", YahooMarketDataProvider.marketOf("BRK.B"));
     }
 
     // ==================== EastMoney ====================
