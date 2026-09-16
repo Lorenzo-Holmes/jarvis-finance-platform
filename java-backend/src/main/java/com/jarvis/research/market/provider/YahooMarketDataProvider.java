@@ -53,6 +53,17 @@ public class YahooMarketDataProvider implements MarketDataProvider {
         this.webClient = ExternalWebClients.create(Duration.ofSeconds(10));
     }
 
+    /**
+     * 包级可见**仅供测试**：注入 WebClient 以便对请求参数与解析做真实的桩测试。
+     *
+     * <p>chart 接口的 {@code range}/{@code interval} 传错了不会报错，
+     * 只会换一段历史回来；标的映射错了会拿回**别的标的**的数据。
+     * 这些只有把请求与报文一起钉住才测得到。</p>
+     */
+    YahooMarketDataProvider(WebClient webClient) {
+        this.webClient = webClient;
+    }
+
     @Override
     public String name() {
         return "Yahoo";

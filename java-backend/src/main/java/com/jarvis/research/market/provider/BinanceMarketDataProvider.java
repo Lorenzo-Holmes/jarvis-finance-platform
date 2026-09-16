@@ -50,6 +50,11 @@ public class BinanceMarketDataProvider implements MarketDataProvider {
         this.webClient = ExternalWebClients.create(Duration.ofSeconds(10));
     }
 
+    /** 包级可见**仅供测试**：注入 WebClient 以便对请求参数与解析做真实的桩测试。 */
+    BinanceMarketDataProvider(WebClient webClient) {
+        this.webClient = webClient;
+    }
+
     @Override
     public String name() {
         return "Binance";

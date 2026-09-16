@@ -36,6 +36,16 @@ public class EastMoneyMarketDataProvider implements MarketDataProvider {
         this.webClient = ExternalWebClients.create(Duration.ofSeconds(10));
     }
 
+    /**
+     * 包级可见**仅供测试**：注入 WebClient 以便对请求参数与解析做真实的桩测试。
+     *
+     * <p>有了这个缝，{@code klt}、{@code secid}、{@code lmt} 这些参数才测得到——
+     * 它们传错了不会报错，只会静默换一种数据回来。</p>
+     */
+    EastMoneyMarketDataProvider(WebClient webClient) {
+        this.webClient = webClient;
+    }
+
     @Override
     public String name() {
         return "EastMoney";
@@ -190,13 +200,30 @@ public class EastMoneyMarketDataProvider implements MarketDataProvider {
             if (values.length < 6) {
                 continue;
             }
+            // 四条价格必须都能解析，否则**丢掉这一行**而不是丢掉整条K线。
+            //
+            // 这个守卫是分钟级原有实现的做法（它显式跳过解析不出的行），而日线原有实现是
+            // 直接 Double.parseDouble：一行畸形就会抛异常、被上层吞成"无数据"，
+            // 于是整条K线变成 502 并触发降级与熔断计数。两份实现合并时必须选一个，
+            // 这里选了分钟级那种——单行的畸形不该让整段历史消失。
+            //
+            // 代价是日线的行为变了：以前"任一行畸形 = 整条不可用"，现在"全行畸形才不可用"。
+            // 这是有意的：任一行畸形就丢掉整段是脆弱，不是设计。
+            Double open = parseDouble(values[1]);
+            Double close = parseDouble(values[2]);
+            Double high = parseDouble(values[3]);
+            Double low = parseDouble(values[4]);
+            if (open == null || close == null || high == null || low == null) {
+                continue;
+            }
+            Double volume = parseDouble(values[5]);
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("date", values[0]);
-            row.put("open", Double.parseDouble(values[1]));
-            row.put("close", Double.parseDouble(values[2]));
-            row.put("high", Double.parseDouble(values[3]));
-            row.put("low", Double.parseDouble(values[4]));
-            row.put("volume", Double.parseDouble(values[5]));
+            row.put("open", open);
+            row.put("close", close);
+            row.put("high", high);
+            row.put("low", low);
+            row.put("volume", volume == null ? 0.0 : volume);
             rows.add(row);
         }
         return tail(rows, limit);
@@ -206,6 +233,24 @@ public class EastMoneyMarketDataProvider implements MarketDataProvider {
     private static List<Map<String, Object>> tail(List<Map<String, Object>> rows, int limit) {
         int from = Math.max(0, rows.size() - limit);
         return new ArrayList<>(rows.subList(from, rows.size()));
+    }
+
+    /**
+     * 宽松解析：解析不出来返回 null，不抛异常。
+     *
+     * <p>东方财富在停牌、缺量或返回尚未成形的当根K线时，字段可能是 {@code "-"} 或空串。
+     * 直接 {@code Double.parseDouble} 会抛异常，一路冒到最外层 catch 变成"无数据"——
+     * 于是一个字段的缺失会把整条K线变成 502 并触发降级与熔断计数。</p>
+     */
+    private static Double parseDouble(String value) {
+        if (value == null || value.isBlank() || "-".equals(value.trim())) {
+            return null;
+        }
+        try {
+            return Double.parseDouble(value.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     /**
