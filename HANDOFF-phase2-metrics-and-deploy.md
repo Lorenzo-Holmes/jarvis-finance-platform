@@ -62,6 +62,21 @@ chat 面**放到最后**：它的 `deterministic_context` 同时依赖 quote 与
 - **不要混入** `run-h2-migration.sh`：那是 H2 → PostgreSQL 的**一次性数据迁移**
   （目标表必须为空、逐表核对行数），与代码发布无关，误用后果严重
 
+### 4.1 已核实：线上确实缺研究任务链路（只读探查）
+
+- 线上 release `/opt/jarvis/releases/20260915-093931-a21da31`，`app.jar` 日期 2026-09-15
+- **带对照组的 grep**：`AiController=2`、`MarketDataService=8`（对照组，证明检查方法有效），
+  而 `ResearchController=0`、`ResearchTask=0` → 该能力**不在线上构建里**。
+  也就是说这次发布交付的是**一个缺失的能力**，不是版本号刷新
+- **不要用 HTTP 状态码判断接口是否存在**：`/api/research/tasks` 返回 **401 而非 404**，
+  但那是 Spring Security 在路由**之前**就拦截的结果——**不存在的路径同样 401**，
+  它证明不了任何事。要判断"线上有没有这个功能"，请用上面那种**带对照组的 jar 检查**
+- **不要用 `unzip -l ... | grep -c` 做交叉验证**：服务器上未必装了 unzip，
+  工具缺失时它恒返回 0，那是**空验证**（我踩过一次，差点把它当成旁证）
+- SSH 提示：PowerShell 会把内层双引号吃掉再传给 ssh（`grep -E "a|b"` 会变成未加引号的
+  括号而报语法错）。远端命令尽量写成**不含引号与括号**的形式，或把脚本落盘后
+  `ssh host bash -s < script.sh`
+
 ## 5. 踩过的坑（都已验证，值得保留）
 
 - **归档界面必须"可信点击"**：JS `.click()`、甚至手工派发完整 pointer 事件序列都无效，
