@@ -118,3 +118,42 @@ def test_the_route_field_accepts_java_metrics(monkeypatch, payload):
     req = RiskReq(closes=[100.0] * 12, metrics=payload)
 
     assert req.metrics == payload
+
+
+# Java 侧对**翻倍序列**算出的那份指标（形状与取值）。
+# 这些字符串不是我编的：Java 的 RiskMetricsTest 与
+# test_risk_metrics_contract.py 各自独立地钉住了同一组值（两端逐字一致）。
+JAVA_SHAPE_FOR_DOUBLING = {
+    "available": True,
+    "symbol": "gold_etf",
+    "confidence": "0.950000",
+    "bars": 11,
+    "last_close": "102400.000000",
+    "var_pct": "100.0000",
+    "es_pct": "100.0000",
+    "vol_annual_pct": "0.0000",
+    "max_drawdown_pct": "0.0000",
+    "alerts": [
+        {"level": "high", "metric": "var", "rule": "单日VaR绝对值 >= 4%",
+         "message": "单日最大预期亏损约 100.0000%，风险敞口偏高。"},
+        {"level": "high", "metric": "es", "rule": "尾部风险ES绝对值 >= 5%",
+         "message": "极端情形平均亏损约 100.0000%，尾部风险显著。"},
+    ],
+}
+
+
+def test_referencing_java_metrics_gives_the_identical_response(monkeypatch):
+    """同向量同参数下，指标来自 Java 还是来自本地，**最终响应必须完全一致**。
+
+    这才是"统一口径"可验证的含义：换个来源不该改变任何一个字节。
+    如果 Python 的本地口径哪天漂移了，这条断言会立刻失败——而不是等它在页面上
+    被某个人偶然发现。
+    """
+    stub_chat(monkeypatch)
+    closes = [100.0 * (2 ** i) for i in range(11)]
+
+    local = ai_service.analyze_risk(closes, confidence=0.95, symbol="gold_etf")
+    switched = ai_service.analyze_risk(closes, confidence=0.95, symbol="gold_etf",
+                                       metrics=dict(JAVA_SHAPE_FOR_DOUBLING))
+
+    assert switched == local
