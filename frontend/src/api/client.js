@@ -289,6 +289,14 @@ export const api = {
   // 个性化策略生成（FR-11）：风险偏好问卷 → 风险等级 + 建议配置比例 + AI 策略说明
   aiStrategy: (payload) => post(API_BASE, '/api/ai/analyze/strategy', payload, { csrfRetry: true }),
 
+  // 研究任务 (Phase 2 AI Research Core)：**有状态**的研究工作流——任务落库、可回看、失败有原因。
+  // 与 /api/ai/* 的透传端点不同，这里返回 Java 自己的 {code,message,data} 信封，
+  // 浏览器不需要知道 Python 服务的信封长什么样。
+  researchTasks: (page = 0, size = 20) => get(API_BASE, '/api/research/tasks', { page, size }),
+  researchTask: (id) => get(API_BASE, `/api/research/tasks/${id}`),
+  createResearchTask: (body) => post(API_BASE, '/api/research/tasks', body),
+  runResearchTask: (id) => post(API_BASE, `/api/research/tasks/${id}/run`, {}),
+
   // 管理员账户、配额和功能权限
   adminUsers: (query = '', limit = 50) => get(API_BASE, '/api/admin/users', { query, limit }),
   adminUser: (userId) => get(API_BASE, `/api/admin/users/${userId}`),

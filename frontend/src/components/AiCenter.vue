@@ -3,10 +3,16 @@ import { computed, ref, onMounted, nextTick, watch } from 'vue'
 import { api } from '../api/client'
 import DataState from './common/DataState.vue'
 import MarkdownContent from './common/MarkdownContent.vue'
+import ResearchTasksPanel from './ResearchTasksPanel.vue'
 
 const props = defineProps({
   researchContext: { type: Object, default: null },
 })
+
+// 研究台有两个视图：对话（无状态、即时）与研究任务（有状态、落库可回看）。
+// 任务归档是冻结的 13 个模块之一（本组件就是「研究助手」模块），
+// 所以新的研究任务视图挂在这里，而不是新增第 14 个模块。
+const deskView = ref('chat')
 
 // ---- 对话 ----
 const messages = ref([])
@@ -209,6 +215,13 @@ onMounted(() => {
       </div>
     </div>
 
+    <div class="desk-switch" role="tablist" aria-label="研究台视图">
+      <button type="button" role="tab" :aria-selected="deskView === 'chat'" :class="{ on: deskView === 'chat' }"
+        data-testid="research-desk-switch-chat" @click="deskView = 'chat'">研究对话</button>
+      <button type="button" role="tab" :aria-selected="deskView === 'tasks'" :class="{ on: deskView === 'tasks' }"
+        data-testid="research-desk-switch-tasks" @click="deskView = 'tasks'">研究任务</button>
+    </div>
+
     <div v-if="props.researchContext" class="context-target">
       <span>GLOBAL RESEARCH CONTEXT</span>
       <strong>{{ props.researchContext.symbol || props.researchContext.name }}</strong>
@@ -216,7 +229,11 @@ onMounted(() => {
       <button type="button" @click="useResearchContext">USE IN RESEARCH TASK</button>
     </div>
 
-    <div class="research-layout">
+    <div v-if="deskView === 'tasks'" class="desk-tasks">
+      <ResearchTasksPanel />
+    </div>
+
+    <div v-else class="research-layout">
       <aside class="toolbox">
         <section class="tool-section">
           <div class="tool-head"><div><b>01 / MARKET EVIDENCE</b><span>黄金ETF行情快照</span></div><button type="button" class="text-action" @click="runQuote" :disabled="quoteLoading">{{ quoteLoading ? '分析中' : '生成' }}</button></div>
@@ -280,6 +297,10 @@ onMounted(() => {
 <style scoped>
 .ai { display: flex; flex-direction: column; gap: 12px; }
 .context-target { min-height: 38px; display: flex; align-items: center; gap: 12px; padding: 0 12px; border: 1px solid var(--line); background: rgba(161,132,88,.045); }
+.desk-switch { display: flex; gap: 0; border: 1px solid var(--line); }
+.desk-switch button { min-height: 30px; padding: 0 16px; border: 0; border-right: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; font: 650 8px/1 ui-monospace, monospace; letter-spacing: .08em; }
+.desk-switch button:last-child { border-right: 0; }
+.desk-switch button.on { background: rgba(161,132,88,.09); color: var(--text); }
 .context-target span { color: var(--subtle); font: 600 7px/1 ui-monospace, monospace; letter-spacing: .1em; }
 .context-target strong { color: var(--text); font: 650 10px/1 ui-monospace, monospace; }
 .context-target small { color: var(--muted); font-size: 9px; }
