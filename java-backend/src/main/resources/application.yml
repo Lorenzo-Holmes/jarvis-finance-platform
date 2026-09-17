@@ -53,6 +53,18 @@ jarvis:
   jd:
     live-poll-interval-ms: ${JD_LIVE_POLL_INTERVAL_MS:1000}
     persist-interval-ms: ${JD_PERSIST_INTERVAL_MS:30000}
+  # 用户自建的定时任务（PRD V1.2「用户定时任务与任务管理」）。
+  # 调度池刻意与 spring.task.scheduling 分开：后者跑着 8 个秒级常驻任务（行情/积存金/SSE/止损），
+  # 用户任务含分钟级的回测与报告生成，共用会把行情线程饿死。
+  scheduled-task:
+    pool-size: ${SCHEDULED_TASK_POOL_SIZE:3}
+    # 进程被强杀后遗留的 RUNNING 记录，超过此时长在启动时改判 TIMEOUT。
+    zombie-timeout-minutes: ${SCHEDULED_TASK_ZOMBIE_TIMEOUT_MINUTES:30}
+    # 连续失败达此值自动暂停，避免坏任务一直按时重试。
+    max-consecutive-failures: ${SCHEDULED_TASK_MAX_CONSECUTIVE_FAILURES:5}
+    # 触发频率下限：低于它的 cron 直接 400，防用户配出每秒一次的任务打满服务。
+    min-interval-seconds: ${SCHEDULED_TASK_MIN_INTERVAL_SECONDS:60}
+    max-tasks-per-user: ${SCHEDULED_TASK_MAX_PER_USER:20}
   # Python 辅助微服务 (数据采集/AI预处理), 可选
   python-service:
     enabled: true

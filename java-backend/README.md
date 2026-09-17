@@ -85,6 +85,8 @@ java -jar target/gold-research-backend-*.jar
 - 登录按账号/IP/设备限流；注册按 IP/设备限流；验证码按邮箱/IP/设备分别限流。内存窗口有过期回收和最大 key 数保护，避免随机来源造成内存型 DoS。
 - AI 请求按用户限流，Python 只接受 `X-Internal-Service-Token`；聊天上下文中的行情、K线和当前用户模拟盘快照由 Java 服务端注入，客户端同名字段会被覆盖。
 - AI 功能权限由 Java 后端按 `AI_CHAT`、`AI_CHAT_STREAM`、`AI_REPORT`、`AI_SENTIMENT`、`AI_CHAIN`、`AI_QUOTE`、`AI_RISK`、`AI_STRATEGY`、`AI_TREND` 白名单校验。
+- 用户定时任务（`scheduled_task`）的创建/编辑/恢复/立即执行按 `TASK_MANAGE` 校验；列表、详情、暂停、删除只做归属校验，保证被收回权限的账号也能关掉自己在跑的任务。调度走独立的 `jarvis-task-` 线程池，与秒级行情任务的 `jarvis-scheduler-` 池隔离。
+- 定时任务执行器（SPI `ScheduledTaskExecutor`）现有 3 个：`MARKET_SCAN`（只读内存行情缓存，不重复访问上游）、`BACKTEST`（复用 `BacktestService`，手续费/策略版本/数据指纹口径只留在那一处）、`RISK_CHECK`（只读调 `SimTradeService.getAccountOverview`，**绝不触发强平**——强平属系统级风控职责，用户创建的任务一旦能触发它就能影响他人账户）。未注册执行器的类型在创建接口直接 400，不会建出必然每次失败的任务。
 - AI 流式链路使用 MVC `SseEmitter`；浏览器主动停止/断开时取消 Java → Python 订阅。
 - 核心行情与模拟交易接入 Micrometer：采集成功/失败、源延迟、stale tick、采集调度 heartbeat、快照拒绝落库、SSE 在线数/广播 heartbeat/发送失败、订单成功/幂等重放、风控 stale skip、强平次数均暴露到 Prometheus；指标不使用 userId 或自由 symbol 作为标签。
 - 生产 Hikari 获取连接超时 5 秒、validation 2 秒，readiness 使用数据库 `SELECT 1`。
