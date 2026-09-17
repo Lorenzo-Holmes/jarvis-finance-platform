@@ -255,7 +255,6 @@ function navigateWorkspace(routeKey) {
   switchTab(routeKey)
 
   if (splitViewRoute.value === routeKey) splitViewRoute.value = ''
-
   if (fromArchive && !['行情', '多市场'].includes(routeKey)) {
     nextTick(async () => {
       await waitForTwoPaints()
@@ -273,7 +272,6 @@ function openSplitView(routeKey) {
 function closeSplitView() {
   splitViewRoute.value = ''
 }
-
 async function handleWorkspaceReady(routeKey = activeTab.value) {
   if (routeKey !== activeTab.value || activeTab.value === '研究终端') return
   await waitForTwoPaints()

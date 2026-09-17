@@ -1,6 +1,8 @@
 package com.jarvis.research.service;
 
 import com.jarvis.research.market.MarketDataService;
+import com.jarvis.research.market.dto.DailyKlineDTO;
+import com.jarvis.research.market.dto.KlineBarDTO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -50,23 +52,20 @@ public class BacktestService {
             }
         }
 
-        Map<String, Object> kline = asOf == null || asOf.isBlank()
+        DailyKlineDTO kline = asOf == null || asOf.isBlank()
                 ? marketDataService.getDailyKline(market, limit)
                 : marketDataService.getDailyKline(market, limit, asOf.trim());
-        Object raw = kline.get("data");
-        if (!(raw instanceof List<?> rows) || rows.size() < longMa) {
+        List<KlineBarDTO> rows = kline.data();
+        if (rows == null || rows.size() < longMa) {
             throw new IllegalArgumentException("K线数据不足，至少需要 " + longMa + " 根");
         }
 
         List<Double> closes = new ArrayList<>();
         List<String> dates = new ArrayList<>();
-        for (Object rowObj : rows) {
-            if (!(rowObj instanceof Map<?, ?> row)) continue;
-            Object closeObj = row.get("close");
-            Object dateObj = row.get("date");
-            if (!(closeObj instanceof Number) || dateObj == null) continue;
-            closes.add(((Number) closeObj).doubleValue());
-            dates.add(String.valueOf(dateObj));
+        for (KlineBarDTO row : rows) {
+            if (row == null || row.close() == null || row.date() == null) continue;
+            closes.add(row.close());
+            dates.add(row.date());
         }
         if (closes.size() < longMa) {
             throw new IllegalArgumentException("有效K线数据不足，至少需要 " + longMa + " 根");

@@ -3,6 +3,7 @@ package com.jarvis.research.service;
 import com.jarvis.research.audit.AuditEventRepository;
 import com.jarvis.research.market.ExtendedMarketDataService;
 import com.jarvis.research.market.MarketDataService;
+import com.jarvis.research.market.dto.MarketStatusDTO;
 import com.jarvis.research.user.SimAccount;
 import com.jarvis.research.user.SimAccountRepository;
 import com.jarvis.research.user.SimPositionRepository;
@@ -57,7 +58,7 @@ class SimTradeCustomInstrumentTest {
         long userId = 73001L;
         accountRepository.save(account(userId));
         when(extendedMarketDataService.session("us_stock"))
-                .thenReturn(Map.of("is_open", true, "label", "交易中"));
+                .thenReturn(marketStatus(true, "交易中"));
         when(extendedMarketDataService.quote("us_stock", "AAPL"))
                 .thenReturn(Map.of(
                         "market", "us_stock", "symbol", "AAPL", "price", 200.0,
@@ -79,7 +80,7 @@ class SimTradeCustomInstrumentTest {
         long userId = 73002L;
         accountRepository.save(account(userId));
         when(extendedMarketDataService.session("us_stock"))
-                .thenReturn(Map.of("is_open", false, "label", "非交易时段"));
+                .thenReturn(marketStatus(false, "非交易时段"));
 
         var error = assertThrows(org.springframework.web.server.ResponseStatusException.class,
                 () -> tradeService.placeOrder(userId, "BUY", "AAPL",
@@ -101,5 +102,11 @@ class SimTradeCustomInstrumentTest {
                 .status("ACTIVE")
                 .createdAt(LocalDateTime.now())
                 .build();
+    }
+
+    /** 交易时段桩：本次只关心 is_open 与 label，其余字段给稳定值即可。 */
+    private static MarketStatusDTO marketStatus(boolean open, String label) {
+        return new MarketStatusDTO("us_stock", open, open ? "open" : "closed", label,
+                "America/New_York", LocalDateTime.now().toString(), "测试桩");
     }
 }

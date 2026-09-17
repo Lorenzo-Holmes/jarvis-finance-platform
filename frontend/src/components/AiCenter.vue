@@ -3,11 +3,17 @@ import { computed, ref, onBeforeUnmount, onMounted, nextTick, watch } from 'vue'
 import { api } from '../api/client'
 import DataState from './common/DataState.vue'
 import MarkdownContent from './common/MarkdownContent.vue'
+import ResearchTasksPanel from './ResearchTasksPanel.vue'
 
 const props = defineProps({
   researchContext: { type: Object, default: null },
 })
 const emit = defineEmits(['navigate-module'])
+
+// 研究台有两个视图：对话（无状态、即时）与研究任务（有状态、落库可回看）。
+// 任务归档是冻结的 13 个模块之一（本组件就是「研究助手」模块），
+// 所以新的研究任务视图挂在这里，而不是新增第 14 个模块。
+const deskView = ref('chat')
 
 // ---- 对话 ----
 const messages = ref([])
@@ -292,7 +298,30 @@ onBeforeUnmount(() => {
       </div>
     </header>
 
-    <div class="research-layout" :class="{ 'inspector-collapsed': inspectorCollapsed }">
+    <div class="desk-switch" role="tablist" aria-label="研究台视图">
+      <button
+        type="button"
+        role="tab"
+        :aria-selected="deskView === 'chat'"
+        :class="{ on: deskView === 'chat' }"
+        data-testid="research-desk-switch-chat"
+        @click="deskView = 'chat'"
+      >研究对话</button>
+      <button
+        type="button"
+        role="tab"
+        :aria-selected="deskView === 'tasks'"
+        :class="{ on: deskView === 'tasks' }"
+        data-testid="research-desk-switch-tasks"
+        @click="deskView = 'tasks'"
+      >研究任务</button>
+    </div>
+
+    <div v-if="deskView === 'tasks'" class="desk-tasks">
+      <ResearchTasksPanel />
+    </div>
+
+    <div v-else class="research-layout" :class="{ 'inspector-collapsed': inspectorCollapsed }">
       <aside class="evidence-dock" aria-label="研究证据">
         <div class="dock-head">
           <div><b>证据</b></div>
@@ -499,6 +528,30 @@ onBeforeUnmount(() => {
 .context-action:hover { color: var(--text); background: var(--workspace-hover-bg); }
 .context-action:active { transform: scale(.97); }
 .engine-status { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 9px; }
+.desk-switch {
+  align-self: flex-start;
+  display: inline-flex;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--material-border, var(--line));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--material-glass, transparent) 62%, transparent);
+}
+.desk-switch button {
+  min-height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: 600 9px/1 Inter, "MiSans", "PingFang SC", sans-serif;
+  transition: color var(--motion-fast, 110ms) ease, background var(--motion-fast, 110ms) ease, transform var(--motion-fast, 110ms) ease;
+}
+.desk-switch button:hover { color: var(--text); background: var(--workspace-hover-bg); }
+.desk-switch button:active { transform: scale(.97); }
+.desk-switch button.on { color: var(--text); background: color-mix(in srgb, var(--workspace-accent-wash) 68%, transparent); }
+.desk-tasks { min-height: 0; flex: 1; overflow: auto; }
 .engine-status i { width: 6px; height: 6px; border-radius: 50%; background: var(--bad); }
 .engine-status i.ok { background: var(--ok); }
 

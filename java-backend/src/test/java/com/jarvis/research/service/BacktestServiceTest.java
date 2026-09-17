@@ -1,6 +1,9 @@
 package com.jarvis.research.service;
 
 import com.jarvis.research.market.MarketDataService;
+import com.jarvis.research.market.dto.DailyKlineDTO;
+import com.jarvis.research.market.dto.KlineBarDTO;
+import com.jarvis.research.market.dto.KlineRangeDTO;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDate;
@@ -18,7 +21,6 @@ class BacktestServiceTest {
     @Test
     void sellTradeKeepsActualQuantityAndReturnsStableMetrics() {
         MarketDataService marketDataService = mock(MarketDataService.class);
-        List<Map<String, Object>> rows = new ArrayList<>();
         LocalDate start = LocalDate.of(2026, 1, 1);
 
         // 先上涨触发买入，再下跌触发卖出。
@@ -28,14 +30,12 @@ class BacktestServiceTest {
                 14, 13, 12, 11, 10,
                 9, 8, 8, 8, 8
         };
+        List<KlineBarDTO> bars = new ArrayList<>();
         for (int i = 0; i < closes.length; i++) {
-            Map<String, Object> row = new LinkedHashMap<>();
-            row.put("date", start.plusDays(i).toString());
-            row.put("close", closes[i]);
-            rows.add(row);
+            bars.add(new KlineBarDTO(start.plusDays(i).toString(), null, closes[i], null, null, 0.0));
         }
         when(marketDataService.getDailyKline("gold_etf", 20))
-                .thenReturn(Map.of("data", rows));
+                .thenReturn(dailyKline(bars));
 
         BacktestService service = new BacktestService(marketDataService);
         Map<String, Object> result = service.run("gold_etf", 3, 5, 100000.0, 20);
@@ -59,15 +59,12 @@ class BacktestServiceTest {
     @Test
     void supportsAsOfBoundaryForReproducibleRuns() {
         MarketDataService marketDataService = mock(MarketDataService.class);
-        List<Map<String, Object>> rows = new ArrayList<>();
+        List<KlineBarDTO> bars = new ArrayList<>();
         for (int i = 1; i <= 5; i++) {
-            Map<String, Object> row = new LinkedHashMap<>();
-            row.put("date", "2026-02-0" + i);
-            row.put("close", 10.0 + i);
-            rows.add(row);
+            bars.add(new KlineBarDTO("2026-02-0" + i, null, 10.0 + i, null, null, 0.0));
         }
         when(marketDataService.getDailyKline("gold_etf", 5, "2026-02-05"))
-                .thenReturn(Map.of("data", rows));
+                .thenReturn(dailyKline(bars));
 
         BacktestService service = new BacktestService(marketDataService);
         Map<String, Object> result = service.run(
@@ -84,5 +81,13 @@ class BacktestServiceTest {
         BacktestService service = new BacktestService(marketDataService);
         assertThrows(IllegalArgumentException.class,
                 () -> service.run("gold_etf", 20, 5, 100000.0, 120));
+    }
+
+    /** 日K信封桩：回测只用每根的 date/close，其余字段给 null 即可。 */
+    private static DailyKlineDTO dailyKline(List<KlineBarDTO> bars) {
+        String min = bars.isEmpty() ? null : bars.get(0).date();
+        String max = bars.isEmpty() ? null : bars.get(bars.size() - 1).date();
+        return new DailyKlineDTO("gold_etf", new KlineRangeDTO(min, max, bars.size()),
+                max, bars.size(), bars);
     }
 }

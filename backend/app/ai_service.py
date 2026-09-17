@@ -13,6 +13,7 @@ from typing import Iterator, List, Dict, Optional, Any
 
 import requests
 
+from . import research_report as research_report_prompts
 from .research_tools import (
     deterministic_context,
     market_trend as trend_metrics,
@@ -53,8 +54,13 @@ FIN_SYS_PROMPT = (
 )
 
 
-def _research_context_message(raw_context: Optional[Dict[str, Any]]) -> Optional[Dict[str, str]]:
-    calculated = deterministic_context(raw_context)
+def _research_context_message(raw_context: Optional[Dict[str, Any]],
+                              metrics: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, str]]:
+    # Java 主后端已用同一份自营数据算好确定性上下文时直接引用，不再本地重算。
+    # 判据用非空字典：上下文本身没有 available 字段（只有其中的 portfolio 段有），
+    # 所以不能照抄风险面/趋势面那种看 available 的判据。
+    provided = metrics if isinstance(metrics, dict) and metrics else None
+    calculated = provided if provided is not None else deterministic_context(raw_context)
     if not calculated:
         return None
     return {
@@ -117,14 +123,15 @@ def _chat_request(messages: List[Dict[str, str]], temperature: float = 0.7,
 
 
 def open_chat_stream(messages: List[Dict[str, str]], temperature: float = 0.7,
-                     research_context: Optional[Dict[str, Any]] = None) -> Iterator[Dict[str, Any]]:
+                     research_context: Optional[Dict[str, Any]] = None,
+                     metrics: Optional[Dict[str, Any]] = None) -> Iterator[Dict[str, Any]]:
     """打开 OpenAI-compatible 流式对话并返回增量事件迭代器。
 
     上游连接和 HTTP 状态会在本函数返回前完成校验，因此 FastAPI 可以在开始
     SSE 响应之前把连接/鉴权等错误映射为 502，而不是先返回 200 再失败。
     """
     full = [{"role": "system", "content": FIN_SYS_PROMPT}]
-    context_message = _research_context_message(research_context)
+    context_message = _research_context_message(research_context, metrics)
     if context_message:
         full.append(context_message)
     full.extend(messages)
@@ -198,14 +205,49 @@ def open_chat_stream(messages: List[Dict[str, str]], temperature: float = 0.7,
 
 
 def chat(messages: List[Dict[str, str]], temperature: float = 0.7,
-         research_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """通用对话。量化上下文先由 Python 确定性计算，再交给模型解释。"""
+         research_context: Optional[Dict[str, Any]] = None,
+         metrics: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """通用对话。量化上下文优先引用 Java 下发的确定性结果，缺省回退本地计算。"""
     full = [{"role": "system", "content": FIN_SYS_PROMPT}]
-    context_message = _research_context_message(research_context)
+    context_message = _research_context_message(research_context, metrics)
     if context_message:
         full.append(context_message)
     full.extend(messages)
     return _chat_request(full, temperature=temperature)
+
+
+def research_report(task: Dict[str, Any], metrics: Optional[Dict[str, Any]] = None,
+                    quote: Optional[Dict[str, Any]] = None,
+                    warnings: Optional[List[str]] = None) -> Dict[str, Any]:
+    """研究任务报告：让模型解释 Java 确定性计算层给出的数值。
+
+    与 chat 的口径差别是**有意的**：chat 走 Python 的确定性计算层
+    （research_tools.deterministic_context，接收原始 prices/klines 后自行计算），
+    研究任务则直接引用 Java 算好的 metrics，不做任何重算——
+    报告里的数字必须与任务详情页里展示的数字逐字相同，否则同一份研究会有两个口径。
+
+    数值与数据缺口都原样回传（metrics_used / data_gaps），
+    落库后能回答"这份报告当时看到的是哪些数、缺了哪些数"。
+    """
+    messages = research_report_prompts.build_messages(
+        task=task, metrics=metrics, quote=quote, warnings=warnings,
+    )
+    # 研究报告要的是稳定而不是文采：温度压低，长度给足
+    response = _chat_request(messages, temperature=0.3, max_tokens=3000)
+    parsed = research_report_prompts.parse_report(response.get("content"))
+
+    return {
+        "task_type": str(task.get("task_type") or "REPORT").upper(),
+        "model": response.get("model"),
+        "usage": response.get("usage"),
+        "summary": parsed["summary"],
+        "sections": parsed["sections"],
+        "risks": parsed["risks"],
+        "parsed": parsed["parsed"],
+        # 原样回传，便于落库存档；模型无权改动这两项
+        "metrics_used": metrics or {},
+        "data_gaps": list(warnings or []),
+    }
 
 
 def capabilities() -> Dict[str, Any]:
@@ -231,6 +273,7 @@ def capabilities() -> Dict[str, Any]:
             "模拟盘持仓与杠杆风险分析",
             "个性化策略生成（风险偏好问卷）",
             "市场趋势预测（单资产日K统计基线）",
+            "研究任务报告（结构化、可归档，数值口径由 Java 计算层提供）",
         ],
     }
 
@@ -351,7 +394,8 @@ def analyze_chain(node: str, context: str = "") -> Dict[str, Any]:
 def smart_quote(price_data: Dict[str, Any], closes: Optional[List[Any]] = None,
                 horizon_days: Optional[int] = None,
                 confidence: Optional[float] = None,
-                symbol: Optional[str] = None) -> Dict[str, Any]:
+                symbol: Optional[str] = None,
+                metrics: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """智能报价解读（FR-07）：派生数值与趋势区间先由 Python 计算，LLM 只负责文字解释。
 
     返回 {available, metrics, forecast?, content}。
@@ -360,8 +404,14 @@ def smart_quote(price_data: Dict[str, Any], closes: Optional[List[Any]] = None,
     - content：模型原文（语义与既有调用方兼容，不因新增 forecast 而改变）
 
     调用方（Java）应以自身业务数据层注入的收盘价为准，不信任客户端传入。
+
+    `metrics`（Phase 2 ⑧）：Java 侧用**同一个快照**算好的派生指标，随请求下发。传了就直接引用、
+    不再自算。缺省回退到本地 quote_metrics，老调用方不受影响。
+    注意与风险面的判据不同：quote_metrics 的结果里**没有 available 字段**，
+    所以这里用"非空字典"判断，而不是像 analyze_risk 那样看 available。
     """
-    metrics = quote_metrics(price_data)
+    provided = metrics if isinstance(metrics, dict) and metrics else None
+    metrics = dict(provided) if provided is not None else quote_metrics(price_data)
     sections = [
         "你是黄金投资助手。以下【确定性计算结果】由程序生成，禁止自行修改其中数值；",
         "请基于这些结果给出简洁的行情解读与操作参考。",
@@ -400,13 +450,23 @@ def smart_quote(price_data: Dict[str, Any], closes: Optional[List[Any]] = None,
 
 def analyze_risk(closes: List[Any], confidence: float = 0.95,
                  portfolio_value: Optional[float] = None,
-                 symbol: Optional[str] = None) -> Dict[str, Any]:
+                 symbol: Optional[str] = None,
+                 metrics: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """风险预警（FR-10）：数值（VaR/ES/波动率/最大回撤）由确定性层计算，LLM 只写风险报告。
 
     返回 {available, metrics, alerts, content}；样本不足时 available=False。
+
+    `metrics` 是 Java 侧随请求下发的**同一份**指标（Phase 2 ⑧ 统一口径）。传了就直接引用、
+    不再自算——"同一组数字只有一个来源"的落点就在这里。缺省回退到本地确定性层，
+    保证老调用方与既有测试不受影响。
     """
-    metrics = risk_metrics(closes, confidence=str(confidence),
-                           portfolio_value=portfolio_value, symbol=symbol)
+    provided = metrics if isinstance(metrics, dict) and metrics.get("available") is not None else None
+    if provided is not None:
+        # 复制一份：下面会对 alerts 做 pop，不能改到调用方传进来的 dict
+        metrics = dict(provided, alerts=list(provided.get("alerts") or []))
+    else:
+        metrics = risk_metrics(closes, confidence=str(confidence),
+                               portfolio_value=portfolio_value, symbol=symbol)
     if not metrics.get("available"):
         return {"available": False, "reason": metrics.get("reason"), "bars": metrics.get("bars")}
 
@@ -505,7 +565,8 @@ _TREND_FORECAST_KEYS = (
 
 def market_trend(closes: List[Any], horizon_days: Optional[int] = None,
                  confidence: Optional[float] = None,
-                 symbol: Optional[str] = None) -> Dict[str, Any]:
+                 symbol: Optional[str] = None,
+                 metrics: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """市场趋势预测（FR-12）：趋势区间与技术依据由确定性层计算，LLM 只写解读。
 
     返回 {available, forecast, indicators, direction, content}；样本不足时 available=False。
@@ -514,8 +575,15 @@ def market_trend(closes: List[Any], horizon_days: Optional[int] = None,
       近 20 日支撑/阻力与均线排列
     - direction：方向标签 {key, label}
     """
-    result = trend_metrics(closes, horizon_days=horizon_days,
-                           confidence=confidence, symbol=symbol)
+    # Java 主后端已用同一份自营收盘价算好趋势结果时，直接引用，不再本地重算。
+    # 判据与风险面一致：market_trend 无论可用与否都带 available 字段，所以看该字段是否存在；
+    # 报价面不同（quote_metrics 的结果里没有 available），那边用的是字典非空判断。
+    provided = metrics if isinstance(metrics, dict) and metrics.get("available") is not None else None
+    if provided is not None:
+        result = provided
+    else:
+        result = trend_metrics(closes, horizon_days=horizon_days,
+                               confidence=confidence, symbol=symbol)
     if not result.get("available"):
         return {"available": False, "reason": result.get("reason"), "bars": result.get("bars")}
 

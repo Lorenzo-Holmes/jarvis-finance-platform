@@ -1,6 +1,9 @@
 package com.jarvis.research.controller;
 
 import com.jarvis.research.market.MarketDataService;
+import com.jarvis.research.market.dto.DailyKlineDTO;
+import com.jarvis.research.market.dto.KlineBarDTO;
+import com.jarvis.research.market.dto.KlineRangeDTO;
 import com.jarvis.research.service.AiProxyService;
 import com.jarvis.research.service.AiRateLimitService;
 import com.jarvis.research.service.FeaturePermissionService;
@@ -51,7 +54,7 @@ class AiControllerTest {
         SimTradeService simTradeService = mock(SimTradeService.class);
         when(marketDataService.getLatestPrices()).thenReturn(Map.of(
                 "gold_etf", Map.of("price", 7.88)));
-        when(marketDataService.getDailyKline(any(), eq(60))).thenReturn(Map.of("data", java.util.List.of()));
+        when(marketDataService.getDailyKline(any(), eq(60))).thenReturn(dailyKline());
         when(simTradeService.getAccountOverview(42L)).thenReturn(Map.of(
                 "cash", 90000, "positions", Map.of()));
         when(proxy.post(eq("/api/ai/chat"), any())).thenReturn(Map.of("code", 200));
@@ -116,11 +119,10 @@ class AiControllerTest {
         MarketDataService marketDataService = mock(MarketDataService.class);
         SimTradeService simTradeService = mock(SimTradeService.class);
 
-        when(marketDataService.getDailyKline("gold_etf", 60)).thenReturn(Map.of(
-                "data", java.util.List.of(
-                        Map.of("date", "2026-08-01", "close", 100.0),
-                        Map.of("date", "2026-08-02", "close", 101.0),
-                        Map.of("date", "2026-08-03", "close", 102.0))));
+        when(marketDataService.getDailyKline("gold_etf", 60)).thenReturn(dailyKline(
+                bar("2026-08-01", 100.0),
+                bar("2026-08-02", 101.0),
+                bar("2026-08-03", 102.0)));
         when(proxy.post(eq("/api/ai/analyze/risk"), any())).thenReturn(Map.of("code", 200));
 
         SecurityContextHolder.getContext().setAuthentication(
@@ -205,11 +207,10 @@ class AiControllerTest {
         MarketDataService marketDataService = mock(MarketDataService.class);
         SimTradeService simTradeService = mock(SimTradeService.class);
 
-        when(marketDataService.getDailyKline("gold_etf", 250)).thenReturn(Map.of(
-                "data", java.util.List.of(
-                        Map.of("date", "2026-08-01", "close", 100.0),
-                        Map.of("date", "2026-08-02", "close", 101.0),
-                        Map.of("date", "2026-08-03", "close", 102.0))));
+        when(marketDataService.getDailyKline("gold_etf", 250)).thenReturn(dailyKline(
+                bar("2026-08-01", 100.0),
+                bar("2026-08-02", 101.0),
+                bar("2026-08-03", 102.0)));
         when(proxy.post(eq("/api/ai/quote"), any())).thenReturn(Map.of("code", 200));
 
         SecurityContextHolder.getContext().setAuthentication(
@@ -279,7 +280,7 @@ class AiControllerTest {
         MarketDataService marketDataService = mock(MarketDataService.class);
         SimTradeService simTradeService = mock(SimTradeService.class);
 
-        when(marketDataService.getDailyKline("gold_etf", 250)).thenReturn(Map.of("data", java.util.List.of()));
+        when(marketDataService.getDailyKline("gold_etf", 250)).thenReturn(dailyKline());
         when(proxy.post(eq("/api/ai/quote"), any())).thenReturn(Map.of("code", 200));
 
         SecurityContextHolder.getContext().setAuthentication(
@@ -309,11 +310,10 @@ class AiControllerTest {
         MarketDataService marketDataService = mock(MarketDataService.class);
         SimTradeService simTradeService = mock(SimTradeService.class);
 
-        when(marketDataService.getDailyKline("gold_etf", 250)).thenReturn(Map.of(
-                "data", java.util.List.of(
-                        Map.of("date", "2026-08-01", "close", 100.0),
-                        Map.of("date", "2026-08-02", "close", 101.0),
-                        Map.of("date", "2026-08-03", "close", 102.0))));
+        when(marketDataService.getDailyKline("gold_etf", 250)).thenReturn(dailyKline(
+                bar("2026-08-01", 100.0),
+                bar("2026-08-02", 101.0),
+                bar("2026-08-03", 102.0)));
         when(proxy.post(eq("/api/ai/analyze/trend"), any())).thenReturn(Map.of("code", 200));
 
         SecurityContextHolder.getContext().setAuthentication(
@@ -378,7 +378,7 @@ class AiControllerTest {
         MarketDataService marketDataService = mock(MarketDataService.class);
         SimTradeService simTradeService = mock(SimTradeService.class);
 
-        when(marketDataService.getDailyKline("gold_etf", 250)).thenReturn(Map.of("data", java.util.List.of()));
+        when(marketDataService.getDailyKline("gold_etf", 250)).thenReturn(dailyKline());
         when(proxy.post(eq("/api/ai/analyze/trend"), any())).thenReturn(Map.of("code", 200));
 
         SecurityContextHolder.getContext().setAuthentication(
@@ -398,5 +398,21 @@ class AiControllerTest {
         Map<String, Object> low = (Map<String, Object>) bodies.get(1);
         assertEquals(60, high.get("horizon_days"));
         assertEquals(1, low.get("horizon_days"));
+    }
+
+    /**
+     * 日K信封桩。
+     *
+     * AI 上下文只用 data 里每根的 date/close（服务端自持的收盘价序列），
+     * 因此其余字段给 null 即可——它们不参与这些断言。
+     */
+    private static DailyKlineDTO dailyKline(KlineBarDTO... bars) {
+        java.util.List<KlineBarDTO> data = java.util.List.of(bars);
+        return new DailyKlineDTO("gold_etf", new KlineRangeDTO(null, null, data.size()),
+                null, data.size(), data);
+    }
+
+    private static KlineBarDTO bar(String date, double close) {
+        return new KlineBarDTO(date, null, close, null, null, 0.0);
     }
 }

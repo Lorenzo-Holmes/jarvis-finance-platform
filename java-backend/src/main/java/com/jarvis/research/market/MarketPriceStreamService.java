@@ -83,7 +83,8 @@ public class MarketPriceStreamService {
 
     Map<String, Object> buildPayload() {
         Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("market", marketDataService.getLatestPrices());
+        // 与 /api/market/prices 走同一个带类型视图，保证两条前端通道的行情形状不会各自漂移。
+        payload.put("market", marketDataService.getLatestPriceView());
         payload.put("jd", jdGoldService.latestPrices());
         payload.put("server_time", Instant.now().toString());
         return payload;

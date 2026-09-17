@@ -1,17 +1,18 @@
 package com.jarvis.research.market;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.jarvis.research.common.ExternalWebClients;
-import com.jarvis.research.config.JarvisProperties;
+import com.jarvis.research.market.dto.DailyKlineDTO;
+import com.jarvis.research.market.dto.KlineBarDTO;
+import com.jarvis.research.market.dto.KlineRangeDTO;
+import com.jarvis.research.market.dto.MinuteKlineDTO;
+import com.jarvis.research.market.dto.QuoteDTO;
+import com.jarvis.research.market.provider.MarketDataProvider;
+import com.jarvis.research.market.provider.ProviderRegistry;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
-import org.springframework.web.reactive.function.client.WebClient;
 
-import java.nio.charset.StandardCharsets;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -21,8 +22,6 @@ import java.time.format.DateTimeFormatter;
 import java.time.ZonedDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * 市场数据服务 (Java 主管数据存储)
@@ -40,38 +39,38 @@ public class MarketDataService {
     private static final DateTimeFormatter TENCENT_COMPACT_TIME = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
     private static final DateTimeFormatter SPACE_DATE_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
-    private final JarvisProperties props;
-    private final WebClient webClient;
+    /** 每日K线一次落库的条数上限；与重构前各行情源请求的 500 根保持一致。 */
+    private static final int DAILY_KLINE_LIMIT = 500;
+
     private final PriceSnapshotRepository snapshotRepo;
     private final KlineDailyRepository klineRepo;
-    private final ObjectMapper objectMapper;
     private final MarketSourceCircuitBreaker circuitBreaker;
-    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private final ProviderRegistry providerRegistry;
+    @Autowired(required = false)
     private MarketTelemetry telemetry;
     /** 秒级实时报价只保存在内存；数据库仍按较低频率落快照，避免长期产生海量 tick 行。 */
     private final Map<String, Map<String, Object>> livePriceCache = new ConcurrentHashMap<>();
 
-    public MarketDataService(JarvisProperties props,
-                             PriceSnapshotRepository snapshotRepo,
-                             KlineDailyRepository klineRepo,
-                             ObjectMapper objectMapper) {
-        this(props, snapshotRepo, klineRepo, objectMapper, null);
+    /** 不依赖 Spring 的最小构造，供单元测试直连使用（无熔断器、无 Provider）。 */
+    public MarketDataService(PriceSnapshotRepository snapshotRepo, KlineDailyRepository klineRepo) {
+        this(snapshotRepo, klineRepo, null, null);
     }
 
+    /**
+     * 业务稳定层依赖。
+     *
+     * 行情源的 URL、协议与字段解析已全部下沉到 {@code market.provider} 包，
+     * 因此这里不再需要 {@code JarvisProperties} / {@code ObjectMapper} / {@code WebClient}。
+     */
     @Autowired
-    public MarketDataService(JarvisProperties props,
-                             PriceSnapshotRepository snapshotRepo,
+    public MarketDataService(PriceSnapshotRepository snapshotRepo,
                              KlineDailyRepository klineRepo,
-                             ObjectMapper objectMapper,
-                             MarketSourceCircuitBreaker circuitBreaker) {
-        this.props = props;
+                             MarketSourceCircuitBreaker circuitBreaker,
+                             ProviderRegistry providerRegistry) {
         this.snapshotRepo = snapshotRepo;
         this.klineRepo = klineRepo;
-        this.objectMapper = objectMapper;
         this.circuitBreaker = circuitBreaker;
-        this.webClient = ExternalWebClients.create(java.time.Duration.ofSeconds(10)).mutate()
-                .codecs(c -> c.defaultCodecs().maxInMemorySize(10 * 1024 * 1024))
-                .build();
+        this.providerRegistry = providerRegistry;
     }
 
     // ==================== 实时价格 ====================
@@ -103,14 +102,14 @@ public class MarketDataService {
     public Map<String, Object> refreshLivePrices() {
         Map<String, Object> out = new LinkedHashMap<>();
         if (isChinaEtfTradingTime()) {
-            Map<String, Object> quote = fetchOne("gold_etf", "sh518850", false);
+            Map<String, Object> quote = fetchOne("gold_etf", "sh518850");
             out.put("gold_etf", quote);
             if (!quote.containsKey("error")) livePriceCache.put("gold_etf", quote);
         } else {
             out.put("gold_etf", Map.of("status", "market_closed"));
         }
         if (isLondonTradingDay()) {
-            Map<String, Object> quote = fetchOne("london_gold", "hf_XAU", true);
+            Map<String, Object> quote = fetchOne("london_gold", "hf_XAU");
             out.put("london_gold", quote);
             if (!quote.containsKey("error")) livePriceCache.put("london_gold", quote);
         } else {
@@ -146,6 +145,32 @@ public class MarketDataService {
         return out;
     }
 
+    /**
+     * 面向前端的两条行情通道共用的带类型视图：{@code /api/market/prices} 与
+     * {@code /api/market/prices/stream}。
+     *
+     * <p>内部仍以 Map 流通（{@code MarketDataProvider.quote()} 冻结为 Map，积存金与扩展市场
+     * 子系统同样如此，模拟交易侧对三者统一处理），因此这里只做**边界适配**，
+     * 且转换点唯一（{@link QuoteDTO#from}）——两条通道都走这个方法，不会各自漂移。</p>
+     */
+    public Map<String, QuoteDTO> getLatestPriceView() {
+        Map<String, QuoteDTO> out = new LinkedHashMap<>();
+        getLatestPrices().forEach((market, raw) -> {
+            if (raw instanceof Map<?, ?> map) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> typed = (Map<String, Object>) map;
+                out.put(market, QuoteDTO.from(typed));
+            } else {
+                // getLatestPrices() 的值类型历史上声明为 Object（实际恒为 Map）。
+                // 万一日后有人塞进非 Map 的值，这里宁可漏掉并在日志里喊一声，
+                // 也不要产出 {market: null} 这种凭空多出来的键。
+                log.warn("行情信封值不是 Map，已跳过 market={}, type={}", market,
+                        raw == null ? "null" : raw.getClass().getName());
+            }
+        });
+        return out;
+    }
+
     private Optional<Map<String, Object>> latestPrice(String market, String symbol, String name) {
         return snapshotRepo.findTopByMarketOrderByTsDesc(market).map(s -> {
             Map<String, Object> item = new LinkedHashMap<>();
@@ -166,43 +191,56 @@ public class MarketDataService {
         });
     }
 
-    private Map<String, Object> fetchOne(String market, String symbol, boolean london) {
-        String primarySource = london ? "core.tencent.london" : "core.tencent.etf";
-        String fallbackSource = london ? "core.yahoo.gold-futures" : "core.eastmoney.etf";
-        if (!allowSource(primarySource)) {
-            return fetchFallback(market, symbol, london, fallbackSource);
+    /**
+     * 按 ProviderRegistry 给出的降级链逐个尝试，返回第一个成功的行情。
+     *
+     * 这里只保留业务稳定层职责——熔断、遥测、来源标注与陈旧判定；
+     * 各行情源的 URL、协议与字段解析已下沉到 Provider，本类不认识任何一家行情源。
+     */
+    private Map<String, Object> fetchOne(String market, String symbol) {
+        List<MarketDataProvider> chain = quoteChain(market);
+        if (chain.isEmpty()) {
+            return Map.of("error", "无可用行情源: " + market);
         }
-        try {
-            Map<String, Object> quote = london ? fetchLondonRealtime() : fetchTencentRealtime(symbol);
-            if (quote.containsKey("error")) {
-                throw new IllegalStateException(String.valueOf(quote.get("error")));
+
+        String lastError = "行情源均不可用: " + market;
+        for (int index = 0; index < chain.size(); index++) {
+            MarketDataProvider provider = chain.get(index);
+            String source = provider.sourceKey(market);
+            if (!allowSource(source)) {
+                lastError = "行情源熔断中: " + source;
+                continue;
             }
-            recordSourceSuccess(primarySource);
-            return withQuoteMetadata(market, quote, "Tencent");
-        } catch (Exception e) {
-            recordSourceFailure(primarySource);
-            if (telemetry != null) telemetry.recordFetchFailure(market);
-            log.warn("主行情源失败，准备切换备用源 market={}, source={}, message={}",
-                    market, primarySource, e.getMessage());
-            return fetchFallback(market, symbol, london, fallbackSource);
+            try {
+                Map<String, Object> quote = provider.quote(market, symbol);
+                if (quote == null || quote.containsKey("error")) {
+                    throw new IllegalStateException(quote == null
+                            ? "行情源返回空结果"
+                            : String.valueOf(quote.get("error")));
+                }
+                recordSourceSuccess(source);
+                if (index > 0 && telemetry != null) {
+                    telemetry.recordSourceSwitch(market, source);
+                }
+                return withQuoteMetadata(market, quote, provider.displayName());
+            } catch (Exception e) {
+                recordSourceFailure(source);
+                if (telemetry != null) telemetry.recordFetchFailure(market);
+                log.warn("行情源失败，尝试下一个 market={}, provider={}, source={}, message={}",
+                        market, provider.name(), source, e.getMessage());
+                lastError = e.getMessage() == null ? "行情源调用失败" : e.getMessage();
+            }
         }
+        return Map.of("error", lastError);
     }
 
-    private Map<String, Object> fetchFallback(String market, String symbol, boolean london, String source) {
-        if (!allowSource(source)) return Map.of("error", "行情源熔断中: " + source);
-        try {
-            Map<String, Object> quote = london
-                    ? fetchYahooGoldRealtime()
-                    : fetchEastmoneyRealtime(symbol);
-            recordSourceSuccess(source);
-            if (telemetry != null) telemetry.recordSourceSwitch(market, source);
-            return withQuoteMetadata(market, quote, source);
-        } catch (Exception e) {
-            recordSourceFailure(source);
-            if (telemetry != null) telemetry.recordFetchFailure(market);
-            log.warn("备用行情源失败 market={}, source={}, message={}", market, source, e.getMessage());
-            return Map.of("error", e.getMessage());
+    /** 指定市场的实时行情降级链；未注入 Registry 时为空链。 */
+    private List<MarketDataProvider> quoteChain(String market) {
+        if (providerRegistry == null) {
+            log.warn("ProviderRegistry 未注入，无法获取行情 market={}", market);
+            return List.of();
         }
+        return providerRegistry.quoteChain(market);
     }
 
     private Map<String, Object> withQuoteMetadata(String market, Map<String, Object> quote, String source) {
@@ -307,119 +345,6 @@ public class MarketDataService {
         }
     }
 
-    /** 腾讯 A股/ETF 实时 (~ 分隔) */
-    private Map<String, Object> fetchTencentRealtime(String symbol) {
-        String url = props.getGold().getRealtimeUrl().replace("{symbol}", symbol);
-        byte[] bytes = webClient.get().uri(url)
-                .retrieve().bodyToMono(byte[].class).block();
-        if (bytes == null) return Map.of("error", "empty");
-        String raw = new String(bytes, java.nio.charset.Charset.forName("GBK"));
-        Matcher m = Pattern.compile("\"(.+?)\"").matcher(raw);
-        if (!m.find()) return Map.of("error", "no data");
-        String[] v = m.group(1).split("~");
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("symbol", symbol);
-        out.put("name", v.length > 1 ? v[1] : symbol);
-        out.put("price", parseD(v, 3));
-        out.put("prev_close", parseD(v, 4));
-        out.put("open", parseD(v, 5));
-        if (v.length > 30 && v[30] != null && !v[30].isBlank()) out.put("source_quote_time", v[30].trim());
-        out.put("change", parseD(v, 31));
-        out.put("change_pct", parseD(v, 32));
-        out.put("high", parseD(v, 33));
-        out.put("low", parseD(v, 34));
-        return out;
-    }
-
-    /** 腾讯伦敦金实时 (, 分隔) */
-    private Map<String, Object> fetchLondonRealtime() {
-        String url = props.getGold().getRealtimeUrl().replace("{symbol}", "hf_XAU");
-        byte[] bytes = webClient.get().uri(url)
-                .retrieve().bodyToMono(byte[].class).block();
-        if (bytes == null) return Map.of("error", "empty");
-        String raw = new String(bytes, java.nio.charset.Charset.forName("GBK"));
-        Matcher m = Pattern.compile("\"(.+?)\"").matcher(raw);
-        if (!m.find()) return Map.of("error", "no data");
-        String[] v = m.group(1).split(",");
-        // [0]现价 [1]涨跌 [2]今开 [3]昨收 [4]最高 [5]最低 [6]时间 [13]名称
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("symbol", "hf_XAU");
-        out.put("name", v.length > 13 ? v[13] : "伦敦金");
-        out.put("price", parseD(v, 0));
-        out.put("change", parseD(v, 1));
-        out.put("open", parseD(v, 2));
-        out.put("prev_close", parseD(v, 3));
-        out.put("high", parseD(v, 4));
-        out.put("low", parseD(v, 5));
-        if (v.length > 6 && v[6] != null && !v[6].isBlank()) out.put("source_quote_time", v[6].trim());
-        Double price = (Double) out.get("price");
-        Double prev = (Double) out.get("prev_close");
-        out.put("change_pct", (price != null && prev != null && prev != 0)
-                ? (price - prev) / prev * 100 : 0.0);
-        return out;
-    }
-
-    /** EastMoney 备用 A 股报价源，仅作为腾讯故障时的切换目标。 */
-    private Map<String, Object> fetchEastmoneyRealtime(String symbol) throws Exception {
-        String normalized = symbol.toLowerCase(Locale.ROOT);
-        String secid = normalized.startsWith("sh") ? "1." : "0.";
-        String code = normalized.length() > 2 ? normalized.substring(2) : normalized;
-        String body = webClient.get()
-                .uri(uriBuilder -> uriBuilder.scheme("https").host("push2.eastmoney.com")
-                        .path("/api/qt/stock/get")
-                        .queryParam("secid", secid + code)
-                        .queryParam("fields", "f43,f44,f45,f46,f57,f58,f60,f169,f170")
-                        .build())
-                .retrieve().bodyToMono(String.class).block();
-        JsonNode data = objectMapper.readTree(body).path("data");
-        if (!data.isObject() || data.path("f43").isMissingNode()) throw new IllegalStateException("EastMoney A股报价为空");
-        double price = data.path("f43").asDouble() / 1000.0;
-        double previous = data.path("f60").asDouble() / 1000.0;
-        if (price <= 0) throw new IllegalStateException("EastMoney A股价格为空");
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("symbol", symbol);
-        out.put("name", data.path("f58").asText(symbol));
-        out.put("price", price);
-        out.put("prev_close", previous);
-        out.put("open", data.path("f46").asDouble() / 1000.0);
-        out.put("high", data.path("f44").asDouble() / 1000.0);
-        out.put("low", data.path("f45").asDouble() / 1000.0);
-        out.put("change", data.path("f169").asDouble() / 1000.0);
-        out.put("change_pct", data.path("f170").asDouble() / 100.0);
-        return out;
-    }
-
-    /** Yahoo GC=F 作为伦敦金腾讯源故障时的降级报价，响应中明确标注为期货替代源。 */
-    private Map<String, Object> fetchYahooGoldRealtime() throws Exception {
-        String body = webClient.get()
-                .uri("https://query1.finance.yahoo.com/v8/finance/chart/GC=F?range=1d&interval=1m")
-                .retrieve().bodyToMono(String.class).block();
-        JsonNode result = objectMapper.readTree(body).path("chart").path("result").get(0);
-        if (result == null || result.isMissingNode()) throw new IllegalStateException("Yahoo 黄金报价为空");
-        JsonNode meta = result.path("meta");
-        double price = meta.path("regularMarketPrice").asDouble(0.0);
-        double previous = meta.path("previousClose").asDouble(meta.path("chartPreviousClose").asDouble(0.0));
-        if (price <= 0) throw new IllegalStateException("Yahoo 黄金价格为空");
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("symbol", "GC=F");
-        out.put("price", price);
-        out.put("prev_close", previous);
-        out.put("change", price - previous);
-        out.put("change_pct", previous == 0 ? 0.0 : (price - previous) / previous * 100.0);
-        if (meta.path("regularMarketTime").isNumber()) {
-            out.put("source_quote_time", LocalDateTime.ofInstant(
-                    java.time.Instant.ofEpochSecond(meta.path("regularMarketTime").asLong()), QUOTE_ZONE));
-        }
-        return out;
-    }
-
-    private Double parseD(String[] v, int idx) {
-        if (v.length > idx && v[idx] != null && !v[idx].isEmpty()) {
-            try { return Double.parseDouble(v[idx]); } catch (Exception ignored) {}
-        }
-        return null;
-    }
-
     // ==================== 日K线 (定时刷新 + API纯查询) ====================
 
     /**
@@ -428,8 +353,36 @@ public class MarketDataService {
      */
     @Scheduled(initialDelay = 5000, fixedDelayString = "${jarvis.market.daily-kline-refresh-ms:1800000}")
     public void refreshDailyKlines() {
-        refreshDailyKlineMarket("gold_etf", fetchTencentKline("sh518850"));
-        refreshDailyKlineMarket("london_gold", fetchLondonKline());
+        refreshDailyKlineMarket("gold_etf", fetchKline("gold_etf", "sh518850"));
+        refreshDailyKlineMarket("london_gold", fetchKline("london_gold", "hf_XAU"));
+    }
+
+    /**
+     * 按 ProviderRegistry 的K线候选链取数，第一个返回非空结果者胜出。
+     *
+     * 伦敦金正是这种分工的例子：实时行情主源是腾讯，但腾讯不提供它的日K
+     * （{@code supportsKline} 为 false），于是链上顺延到新浪。
+     *
+     * 与实时行情不同，K线不参与熔断——这是重构前的既有行为，本次不改变其语义。
+     */
+    private List<Map<String, Object>> fetchKline(String market, String symbol) {
+        if (providerRegistry == null) {
+            log.warn("ProviderRegistry 未注入，无法刷新K线 market={}", market);
+            return List.of();
+        }
+        for (MarketDataProvider provider : providerRegistry.klineChain(market)) {
+            try {
+                List<Map<String, Object>> rows = provider.kline(symbol, "1d", DAILY_KLINE_LIMIT);
+                if (rows != null && !rows.isEmpty()) {
+                    return rows;
+                }
+                log.debug("K线源无数据，尝试下一个 market={}, provider={}", market, provider.name());
+            } catch (Exception e) {
+                log.warn("K线源失败，尝试下一个 market={}, provider={}, message={}",
+                        market, provider.name(), e.getMessage());
+            }
+        }
+        return List.of();
     }
 
     private void refreshDailyKlineMarket(String market, List<Map<String, Object>> fetched) {
@@ -481,12 +434,12 @@ public class MarketDataService {
     }
 
     /** API 只读数据库最近 N 根日K，不触发任何外部请求或写入。 */
-    public Map<String, Object> getDailyKline(String market, int limit) {
+    public DailyKlineDTO getDailyKline(String market, int limit) {
         return getDailyKline(market, limit, null);
     }
 
     /** 按可选截止日读取最近 N 根日K，用于可复现回测。 */
-    public Map<String, Object> getDailyKline(String market, int limit, String asOf) {
+    public DailyKlineDTO getDailyKline(String market, int limit, String asOf) {
         List<KlineDaily> latest = new ArrayList<>(
                 asOf == null || asOf.isBlank()
                         ? klineRepo.findByMarketOrderByDateDesc(market, PageRequest.of(0, limit))
@@ -494,30 +447,23 @@ public class MarketDataService {
                                 market, asOf.trim(), PageRequest.of(0, limit)));
         Collections.reverse(latest);
 
-        List<Map<String, Object>> data = new ArrayList<>();
+        List<KlineBarDTO> data = new ArrayList<>();
         for (KlineDaily k : latest) {
-            Map<String, Object> m = new LinkedHashMap<>();
-            m.put("date", k.getDate());
-            m.put("open", k.getOpen());
-            m.put("close", k.getClose());
-            m.put("high", k.getHigh());
-            m.put("low", k.getLow());
-            m.put("volume", k.getVolume() == null ? 0.0 : k.getVolume());
-            data.add(m);
+            data.add(new KlineBarDTO(k.getDate(), k.getOpen(), k.getClose(),
+                    k.getHigh(), k.getLow(), k.getVolume() == null ? 0.0 : k.getVolume()));
         }
 
-        Map<String, Object> rng = new LinkedHashMap<>();
-        rng.put("min", data.isEmpty() ? null : data.get(0).get("date"));
-        rng.put("max", data.isEmpty() ? null : data.get(data.size() - 1).get("date"));
-        rng.put("count", data.size());
+        KlineRangeDTO range = new KlineRangeDTO(
+                data.isEmpty() ? null : data.get(0).date(),
+                data.isEmpty() ? null : data.get(data.size() - 1).date(),
+                data.size());
 
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("market", market);
-        out.put("range", rng);
-        out.put("as_of", data.isEmpty() ? asOf : data.get(data.size() - 1).get("date"));
-        out.put("count", data.size());
-        out.put("data", data);
-        return out;
+        return new DailyKlineDTO(
+                market,
+                range,
+                data.isEmpty() ? asOf : data.get(data.size() - 1).date(),
+                data.size(),
+                data);
     }
 
     private Double asDouble(Object value) {
@@ -530,77 +476,6 @@ public class MarketDataService {
         }
     }
 
-    /** 腾讯日K线 */
-    private List<Map<String, Object>> fetchTencentKline(String symbol) {
-        String param = symbol + ",day,,,500,qfq";
-        String body = webClient.get()
-                .uri(uriBuilder -> uriBuilder.scheme("https").host("web.ifzq.gtimg.cn")
-                        .path("/appstock/app/fqkline/get")
-                        .queryParam("param", param).build())
-                .retrieve().bodyToMono(String.class).block();
-        if (body == null) return List.of();
-        try {
-            JsonNode root = objectMapper.readTree(body);
-            JsonNode node = root.path("data").path(symbol);
-            if (node.isMissingNode() || node.isNull()) return List.of();
-            JsonNode raw = node.get("day");
-            if (raw == null || !raw.isArray()) raw = node.get("qfqday");
-            if (raw == null || !raw.isArray()) return List.of();
-
-            List<Map<String, Object>> out = new ArrayList<>();
-            for (JsonNode item : raw) {
-                if (!item.isArray() || item.size() < 5) continue;
-                Map<String, Object> k = new LinkedHashMap<>();
-                k.put("date", item.get(0).asText());
-                k.put("open", Double.parseDouble(item.get(1).asText()));
-                k.put("close", Double.parseDouble(item.get(2).asText()));
-                k.put("high", Double.parseDouble(item.get(3).asText()));
-                k.put("low", Double.parseDouble(item.get(4).asText()));
-                k.put("volume", item.size() > 5 ? Double.parseDouble(item.get(5).asText("0")) : 0.0);
-                out.add(k);
-            }
-            return out;
-        } catch (Exception e) {
-            log.warn("腾讯K线解析失败: {}", e.getMessage());
-            return List.of();
-        }
-    }
-
-    /** 新浪伦敦金日K线 */
-    private List<Map<String, Object>> fetchLondonKline() {
-        String url = "https://stock2.finance.sina.com.cn/futures/api/jsonp.php/var%20_=/GlobalFuturesService.getGlobalFuturesDailyKLine";
-        String text = webClient.get().uri(uriBuilder -> uriBuilder
-                        .scheme("https").host("stock2.finance.sina.com.cn")
-                        .path("/futures/api/jsonp.php/var%20_=/GlobalFuturesService.getGlobalFuturesDailyKLine")
-                        .queryParam("symbol", "XAU").build())
-                .header("Referer", "https://finance.sina.com.cn")
-                .retrieve().bodyToMono(String.class).block();
-        if (text == null) return List.of();
-        Matcher m = Pattern.compile("\\(\\[(.*)\\]\\)", Pattern.DOTALL).matcher(text);
-        if (!m.find()) return List.of();
-        String json = "[" + m.group(1) + "]";
-        try {
-            JsonNode raw = objectMapper.readTree(json);
-            if (!raw.isArray()) return List.of();
-            List<Map<String, Object>> out = new ArrayList<>();
-            for (JsonNode k : raw) {
-                Map<String, Object> item = new LinkedHashMap<>();
-                item.put("date", k.path("date").asText());
-                item.put("open", Double.parseDouble(k.path("open").asText()));
-                item.put("close", Double.parseDouble(k.path("close").asText()));
-                item.put("high", Double.parseDouble(k.path("high").asText()));
-                item.put("low", Double.parseDouble(k.path("low").asText()));
-                item.put("volume", k.hasNonNull("volume")
-                        ? Double.parseDouble(k.path("volume").asText("0")) : 0.0);
-                out.add(item);
-            }
-            return out;
-        } catch (Exception e) {
-            log.warn("新浪K线解析失败: {}", e.getMessage());
-            return List.of();
-        }
-    }
-
     // ==================== 分钟K线 (基于实时价格快照) ====================
 
     /**
@@ -609,7 +484,7 @@ public class MarketDataService {
      * @param minutes 分钟数 (1/5/15/30/60)
      * @param limit 返回根数
      */
-    public Map<String, Object> getMinuteKline(String market, int minutes, int limit) {
+    public MinuteKlineDTO getMinuteKline(String market, int minutes, int limit) {
         // 只读取生成所需 K 线的大致快照量，避免运行越久每次请求扫描越多历史数据。
         int samplesPerMinute = market.startsWith("jd_") ? 1 : 2;
         long estimatedRows = (long) limit * minutes * samplesPerMinute * 2L;
@@ -623,7 +498,7 @@ public class MarketDataService {
             String bucket = bucketKey(s.getTs(), minutes);
             buckets.computeIfAbsent(bucket, k -> new ArrayList<>()).add(s);
         }
-        List<Map<String, Object>> data = new ArrayList<>();
+        List<KlineBarDTO> data = new ArrayList<>();
         for (Map.Entry<String, List<PriceSnapshot>> e : buckets.entrySet()) {
             List<PriceSnapshot> list = e.getValue();
             PriceSnapshot first = list.get(0);
@@ -632,23 +507,12 @@ public class MarketDataService {
             double close = last.getPrice();
             double high = list.stream().mapToDouble(PriceSnapshot::getPrice).max().orElse(close);
             double low = list.stream().mapToDouble(PriceSnapshot::getPrice).min().orElse(close);
-            Map<String, Object> k = new LinkedHashMap<>();
-            k.put("date", e.getKey());
-            k.put("open", open);
-            k.put("close", close);
-            k.put("high", high);
-            k.put("low", low);
-            k.put("volume", 0.0);
-            data.add(k);
+            // 快照不含成交量，该口径下 volume 恒为 0.0
+            data.add(new KlineBarDTO(e.getKey(), open, close, high, low, 0.0));
         }
         int from = Math.max(0, data.size() - limit);
-        List<Map<String, Object>> sliced = new ArrayList<>(data.subList(from, data.size()));
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("market", market);
-        out.put("interval", minutes + "m");
-        out.put("count", sliced.size());
-        out.put("data", sliced);
-        return out;
+        List<KlineBarDTO> sliced = new ArrayList<>(data.subList(from, data.size()));
+        return new MinuteKlineDTO(market, minutes + "m", sliced.size(), sliced);
     }
 
     private String bucketKey(LocalDateTime ts, int minutes) {

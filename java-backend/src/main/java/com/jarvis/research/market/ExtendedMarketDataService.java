@@ -3,6 +3,9 @@ package com.jarvis.research.market;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jarvis.research.common.ExternalWebClients;
+import com.jarvis.research.market.dto.MarketStatusDTO;
+import com.jarvis.research.market.provider.MarketDataProvider;
+import com.jarvis.research.market.provider.ProviderRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -48,8 +51,28 @@ public class ExtendedMarketDataService {
     private static final ZoneId SHANGHAI_ZONE = ZoneId.of("Asia/Shanghai");
     private static final ZoneId NEW_YORK_ZONE = ZoneId.of("America/New_York");
     private static final DateTimeFormatter INTRADAY_DATE = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
-    private static final Set<String> YAHOO_INTERVALS = Set.of("1d", "5m", "15m", "30m", "1h");
-    private static final Set<String> BINANCE_INTERVALS = Set.of("1d", "1h", "30m", "15m", "5m");
+    /**
+     * 对外承诺支持的K线周期，按市场区分（*API 契约*，不是来源能力）。
+     *
+     * <p>客户端传了个不存在的周期，那是客户端的问题（400），不该掉进降级循环
+     * 最后变成"上游网关错误"（502）。</p>
+     *
+     * <p><b>加密货币有意不在此表中</b>：它一直没有这个校验，同样的错误会得到 502。
+     * 这个不对称是重构前就有的，本次原样保留——要统一得单独做，
+     * 顺手改掉会让一个既有的 API 行为在重构里悄悄变样。</p>
+     */
+    private static final Map<String, Set<String>> KLINE_INTERVALS_BY_MARKET = Map.of(
+            "a_share", Set.of("1d", "5m", "10m", "15m", "30m", "1h"),
+            "us_stock", Set.of("1d", "5m", "10m", "15m", "30m", "1h"));
+
+    /** 400 文案里的市场名，与切换前逐字一致。 */
+    private static String klineMarketLabel(String market) {
+        return switch (market) {
+            case "a_share" -> "A股";
+            case "us_stock" -> "美股";
+            default -> market;
+        };
+    }
     private static final Pattern A_SHARE_PATTERN = Pattern.compile(
             "^(?:(SH|SZ|BJ))?(\\d{6})(?:(SH|SZ|BJ))?$", Pattern.CASE_INSENSITIVE);
     private static final Pattern US_STOCK_PATTERN = Pattern.compile(
@@ -61,6 +84,13 @@ public class ExtendedMarketDataService {
     private final ObjectMapper objectMapper;
     private final MarketSourceCircuitBreaker circuitBreaker;
     private final MarketDataCacheRepository cacheRepository;
+    /**
+     * 行情源降级链。A股报价已改由它驱动；其余市场仍在迁移中。
+     *
+     * <p>可为 null（不加载 Spring 容器的旧测试走这条路），此时 A股报价会明确报"无可用行情源"，
+     * 而不是回落到某个内联实现——内联实现已经删掉了，留着半份才是真的危险。</p>
+     */
+    private final ProviderRegistry providerRegistry;
     /** 多用户秒级轮询时对同一标的做极短缓存，减少重复打第三方报价源。 */
     private final Map<String, CachedQuote> quoteCache = new ConcurrentHashMap<>();
     private final AtomicLong quoteCacheWrites = new AtomicLong();
@@ -81,29 +111,44 @@ public class ExtendedMarketDataService {
     );
 
     public ExtendedMarketDataService(ObjectMapper objectMapper) {
-        this(objectMapper, null, null, ExternalWebClients.create(java.time.Duration.ofSeconds(12)));
+        this(objectMapper, null, null, null, ExternalWebClients.create(java.time.Duration.ofSeconds(12)));
     }
 
     @Autowired
     public ExtendedMarketDataService(ObjectMapper objectMapper, MarketSourceCircuitBreaker circuitBreaker,
-                                     MarketDataCacheRepository cacheRepository) {
-        this(objectMapper, circuitBreaker, cacheRepository,
+                                     MarketDataCacheRepository cacheRepository,
+                                     ProviderRegistry providerRegistry) {
+        this(objectMapper, circuitBreaker, cacheRepository, providerRegistry,
                 ExternalWebClients.create(java.time.Duration.ofSeconds(12)));
     }
 
     ExtendedMarketDataService(ObjectMapper objectMapper, MarketSourceCircuitBreaker circuitBreaker,
                               MarketDataCacheRepository cacheRepository,
+                              ProviderRegistry providerRegistry,
                               WebClient webClient) {
         this.objectMapper = objectMapper;
         this.circuitBreaker = circuitBreaker;
         this.cacheRepository = cacheRepository;
+        this.providerRegistry = providerRegistry;
         this.webClient = webClient;
     }
 
     /** 兼容不加载 Spring 容器的旧单元测试。 */
     ExtendedMarketDataService(ObjectMapper objectMapper, MarketSourceCircuitBreaker circuitBreaker,
                               WebClient webClient) {
-        this(objectMapper, circuitBreaker, null, webClient);
+        this(objectMapper, circuitBreaker, null, null, webClient);
+    }
+
+    /** 测试用：注入持久化缓存与可伪造的上游客户端，降级链为空。 */
+    ExtendedMarketDataService(ObjectMapper objectMapper, MarketSourceCircuitBreaker circuitBreaker,
+                              MarketDataCacheRepository cacheRepository, WebClient webClient) {
+        this(objectMapper, circuitBreaker, cacheRepository, null, webClient);
+    }
+
+    /** 测试用：注入指定的降级链，不启动 Spring 容器。 */
+    ExtendedMarketDataService(ObjectMapper objectMapper, MarketSourceCircuitBreaker circuitBreaker,
+                              ProviderRegistry providerRegistry, WebClient webClient) {
+        this(objectMapper, circuitBreaker, null, providerRegistry, webClient);
     }
 
     public List<Map<String, Object>> listInstruments() {
@@ -118,9 +163,9 @@ public class ExtendedMarketDataService {
         Instrument instrument = parseInstrument(market, query);
         try {
             Map<String, Object> resolved = switch (instrument.market()) {
-                case "a_share" -> quoteAShareWithFallback(instrument);
-                case "us_stock" -> quoteYahooWithCircuit(instrument);
-                case "crypto" -> quoteCryptoWithFallback(instrument);
+                case "a_share" -> registryQuote(instrument, "EastMoney (fallback)");
+                case "us_stock" -> registryQuote(instrument, "Yahoo Finance (fallback)");
+                case "crypto" -> registryQuote(instrument, "Yahoo Finance (fallback)");
                 default -> Map.of();
             };
             Object resolvedName = resolved.get("name");
@@ -136,7 +181,7 @@ public class ExtendedMarketDataService {
     }
 
     /** 返回交易时段状态；节假日历未接入，因此只按工作日和交易时段判断。 */
-    public Map<String, Object> session(String market) {
+    public MarketStatusDTO session(String market) {
         String normalizedMarket = normalizeMarket(market);
         LocalDateTime now = LocalDateTime.now(zoneFor(normalizedMarket));
         boolean weekday = now.getDayOfWeek() != DayOfWeek.SATURDAY && now.getDayOfWeek() != DayOfWeek.SUNDAY;
@@ -149,15 +194,14 @@ public class ExtendedMarketDataService {
                     LocalTime.of(9, 30), LocalTime.of(16, 0));
             default -> false;
         };
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("market", normalizedMarket);
-        out.put("is_open", open);
-        out.put("status", open ? "open" : "closed");
-        out.put("label", open ? "交易中" : "非交易时段");
-        out.put("timezone", zoneFor(normalizedMarket).getId());
-        out.put("checked_at", now.toString());
-        out.put("disclaimer", "交易状态按工作日和常规时段估算，未接入交易所节假日历");
-        return out;
+        return new MarketStatusDTO(
+                normalizedMarket,
+                open,
+                open ? "open" : "closed",
+                open ? "交易中" : MarketStatusDTO.DEFAULT_CLOSED_LABEL,
+                zoneFor(normalizedMarket).getId(),
+                now.toString(),
+                "交易状态按工作日和常规时段估算，未接入交易所节假日历");
     }
 
     public Map<String, Object> quote(String market, String symbol) {
@@ -170,9 +214,9 @@ public class ExtendedMarketDataService {
         }
         try {
             Map<String, Object> result = switch (instrument.market()) {
-                case "a_share" -> quoteAShareWithFallback(instrument);
-                case "us_stock" -> quoteYahooWithCircuit(instrument);
-                case "crypto" -> quoteCryptoWithFallback(instrument);
+                case "a_share" -> registryQuote(instrument, "EastMoney (fallback)");
+                case "us_stock" -> registryQuote(instrument, "Yahoo Finance (fallback)");
+                case "crypto" -> registryQuote(instrument, "Yahoo Finance (fallback)");
                 default -> throw invalid("不支持的市场: " + instrument.market());
             };
             cacheQuote(cacheKey, result, now);
@@ -215,11 +259,8 @@ public class ExtendedMarketDataService {
         String normalized = normalizeInterval(interval);
         try {
             List<Map<String, Object>> data = switch (instrument.market()) {
-                case "a_share" -> "1d".equals(normalized)
-                        ? klineAShareWithFallback(instrument, limit)
-                        : klineTencentIntraday(instrument, normalized, limit);
-                case "us_stock" -> klineYahoo(instrument, normalized, limit);
-                case "crypto" -> klineCryptoWithFallback(instrument, normalized, limit);
+                // 三个市场现在同一条路：周期白名单、来源能力、降级都在 registryKline 里。
+                case "a_share", "us_stock", "crypto" -> registryKline(instrument, normalized, limit);
                 default -> throw invalid("不支持的市场: " + instrument.market());
             };
             writeCache(klineCacheKey(instrument, normalized), "kline", data,
@@ -332,184 +373,148 @@ public class ExtendedMarketDataService {
         }
     }
 
-    private Map<String, Object> quoteTencent(Instrument instrument) {
-        byte[] bytes = webClient.get()
-                .uri("https://qt.gtimg.cn/q=" + instrument.symbol())
-                .retrieve()
-                .bodyToMono(byte[].class)
-                .block();
-        if (bytes == null) throw upstream("A股行情为空");
-        String raw = new String(bytes, GBK);
-        Matcher matcher = Pattern.compile("\\\"(.+?)\\\"").matcher(raw);
-        if (!matcher.find()) throw upstream("A股行情格式异常");
-        String[] values = matcher.group(1).split("~", -1);
-        Double price = parseDouble(values, 3);
-        Double previous = parseDouble(values, 4);
-        if (price == null) throw upstream("A股价格为空");
-        Map<String, Object> out = quoteBase(instrument);
-        if (values.length > 1 && values[1] != null && !values[1].isBlank()) {
-            out.put("name", values[1].trim());
+    /**
+     * 按 {@link ProviderRegistry} 的降级链取行情，并包装成扩展行情信封。
+     *
+     * <p>信封语义与切换前的内联实现逐项对齐：</p>
+     * <ul>
+     *   <li>基础字段来自 {@link #quoteBase}（market/symbol/name/currency/source/quote_time），
+     *       再由 Provider 的字段覆盖。{@code name} 因此保持原语义——Provider 给了就用它的，
+     *       没给（字段空白）就回落到标的登记名，而不是编一个</li>
+     *   <li>{@code quote_time} 统一覆盖为 {@code LocalDateTime.now().toString()}，
+     *       与原 {@code quoteTencent} 最后的覆盖一致（不是 quoteBase 里那个带时区的形式）</li>
+     *   <li>{@code source}：主源沿用标的登记名，备用源用调用方给的标签。
+     *       标签**必须显式传入**而不是由 provider.displayName() 拼——Yahoo 的 displayName 是
+     *       "Yahoo Finance (GC=F 期货)"，拼出来的备用标签会是错的</li>
+     * </ul>
+     *
+     * <p>A股K线此时尚未迁移到 Provider，所以这里只管报价；熔断键沿用 Provider 的
+     * {@link MarketDataProvider#sourceKey(String)}（extended.tencent.stock / extended.eastmoney.stock）。</p>
+     */
+    private Map<String, Object> registryQuote(Instrument instrument, String fallbackLabel) {
+        List<MarketDataProvider> chain = providerRegistry == null
+                ? List.of()
+                : providerRegistry.quoteChain(instrument.market());
+        if (chain.isEmpty()) {
+            throw upstream(instrument.market() + " 无可用行情源");
         }
-        out.put("price", price);
-        out.put("prev_close", previous);
-        out.put("change", parseDouble(values, 31));
-        out.put("change_pct", parseDouble(values, 32));
-        out.put("open", parseDouble(values, 5));
-        out.put("high", parseDouble(values, 33));
-        out.put("low", parseDouble(values, 34));
-        out.put("quote_time", LocalDateTime.now().toString());
-        return out;
-    }
 
-    private Map<String, Object> quoteYahoo(Instrument instrument) throws Exception {
-        return quoteYahoo(instrument, yahooStockSymbol(instrument.symbol()));
-    }
-
-    private Map<String, Object> quoteYahoo(Instrument instrument, String providerSymbol) throws Exception {
-        JsonNode result = yahooResult(providerSymbol, "1d", "1d");
-        JsonNode meta = result.path("meta");
-        Double price = number(meta, "regularMarketPrice");
-        Double previous = number(meta, "previousClose");
-        if (previous == null) previous = number(meta, "chartPreviousClose");
-        if (price == null) throw upstream("美股价格为空");
-        Map<String, Object> out = quoteBase(instrument);
-        String displayName = meta.path("longName").asText(meta.path("shortName").asText(""));
-        if (!displayName.isBlank()) out.put("name", displayName);
-        out.put("price", price);
-        out.put("prev_close", previous);
-        out.put("change", price - (previous == null ? price : previous));
-        out.put("change_pct", previous == null || previous == 0 ? 0.0 : (price - previous) / previous * 100.0);
-        out.put("quote_time", meta.path("regularMarketTime").isNumber()
-                ? Instant.ofEpochSecond(meta.path("regularMarketTime").asLong()).toString()
-                : LocalDateTime.now().toString());
-        return out;
-    }
-
-    private Map<String, Object> quoteYahooWithCircuit(Instrument instrument) throws Exception {
-        String source = "extended.yahoo.stock";
-        if (!allowSource(source)) throw upstream("Yahoo Finance 行情源熔断中");
-        try {
-            Map<String, Object> result = quoteYahoo(instrument);
-            recordSourceSuccess(source);
-            return result;
-        } catch (Exception e) {
-            recordSourceFailure(source);
-            throw e;
-        }
-    }
-
-    private Map<String, Object> quoteAShareWithFallback(Instrument instrument) throws Exception {
-        String primary = "extended.tencent.stock";
-        String fallback = "extended.eastmoney.stock";
-        if (allowSource(primary)) {
+        String lastError = "行情源均不可用: " + instrument.market();
+        for (int index = 0; index < chain.size(); index++) {
+            MarketDataProvider provider = chain.get(index);
+            String source = provider.sourceKey(instrument.market());
+            if (!allowSource(source)) {
+                lastError = "行情源熔断中: " + source;
+                continue;
+            }
             try {
-                Map<String, Object> result = quoteTencent(instrument);
-                recordSourceSuccess(primary);
-                return result;
+                Map<String, Object> raw = provider.quote(instrument.market(), instrument.symbol());
+                if (raw == null || raw.containsKey("error")) {
+                    throw new IllegalStateException(raw == null
+                            ? "行情源返回空结果"
+                            : String.valueOf(raw.get("error")));
+                }
+                recordSourceSuccess(source);
+                Map<String, Object> out = quoteBase(instrument);
+                out.putAll(raw);
+                out.put("source", index == 0 ? instrument.source() : fallbackLabel);
+                // quote_time 由 Provider 决定：它给了就用它的（那是行情源自己的成交时间），
+                // 没给才由这里补成本地当前时间。
+                //
+                // 判据必须是 raw（Provider 的产出），**不能是 out**——quoteBase 已经先放了一个
+                // 带时区的占位值（...+08:00[Asia/Shanghai]），拿 out 判永远不会命中，
+                // 于是 A股的 quote_time 会从原本不带时区的 LocalDateTime 悄悄变成带时区的 ZonedDateTime。
+                // 这个错误当时真的写出来了，是被 A股契约测试当场拦下的。
+                //
+                // A股不该产出 Provider 时间（腾讯口径本来就没有），所以由这里补；
+                // 而美股与加密货币的 quote_time 是**行情源的市场时间**
+                // （Yahoo regularMarketTime / Binance closeTime，Instant 形态），必须原样保留，
+                // 否则用户看到的报价时间会从"上游成交时刻"退化成"我们取数的时刻"。
+                if (!raw.containsKey("quote_time")) {
+                    out.put("quote_time", LocalDateTime.now().toString());
+                }
+                return out;
             } catch (Exception e) {
-                recordSourceFailure(primary);
-                log.warn("腾讯 A股行情不可用，切换 EastMoney symbol={}, message={}",
-                        instrument.symbol(), e.getMessage());
+                recordSourceFailure(source);
+                log.warn("扩展行情源失败，尝试下一个 market={}, provider={}, source={}, message={}",
+                        instrument.market(), provider.name(), source, e.getMessage());
+                lastError = e.getMessage() == null ? "行情源调用失败" : e.getMessage();
             }
         }
-        if (!allowSource(fallback)) throw upstream("A股备用行情源熔断中");
-        try {
-            Map<String, Object> result = quoteEastmoney(instrument);
-            result.put("source", "EastMoney (fallback)");
-            recordSourceSuccess(fallback);
-            return result;
-        } catch (Exception e) {
-            recordSourceFailure(fallback);
-            throw e;
+        throw upstream(lastError);
+    }
+
+    /**
+     * 按注册表取K线，并保持切换前的降级语义。
+     *
+     * <p>与报价的一个关键差别：**空列表等同于失败**。切换前的 A股内联实现
+     * 在无数据时抛异常、从而触发降级；Provider 按契约返回空列表，
+     * 所以判定失败的活儿落在这一层——否则"K线为空"会当成功返回，降级永远不会发生。</p>
+     *
+     * <p>10 分钟周期在这里用 5 分钟数据聚合：它是个**派生**周期，没有任何来源真正提供它。
+     * 放进 Provider 会让 Provider 对外声称支持一个上游并不存在的周期。</p>
+     *
+     * <p>是否参与熔断也由 Provider 决定（默认参与）。美股K线刻意不参与，
+     * 理由是它的熔断键与美股报价共用，见
+     * {@link MarketDataProvider#klineUsesCircuitBreaker(String)}。</p>
+     */
+    private List<Map<String, Object>> registryKline(Instrument instrument, String interval, int limit) {
+        // 周期白名单是**对外 API 契约**，不是来源能力。
+        Set<String> allowed = KLINE_INTERVALS_BY_MARKET.get(instrument.market());
+        if (allowed != null && !allowed.contains(interval)) {
+            throw invalid(klineMarketLabel(instrument.market()) + "不支持该周期: " + interval);
         }
-    }
 
-    private Map<String, Object> quoteEastmoney(Instrument instrument) throws Exception {
-        String symbol = instrument.symbol().toLowerCase(Locale.ROOT);
-        String secid = symbol.startsWith("sh") ? "1." : "0.";
-        String code = symbol.substring(2);
-        String body = webClient.get()
-                .uri(uriBuilder -> uriBuilder.scheme("https").host("push2.eastmoney.com")
-                        .path("/api/qt/stock/get")
-                        .queryParam("secid", secid + code)
-                        .queryParam("fields", "f43,f44,f45,f46,f57,f58,f60,f169,f170")
-                        .build())
-                .retrieve().bodyToMono(String.class).block();
-        JsonNode data = objectMapper.readTree(body).path("data");
-        if (!data.isObject() || !data.path("f43").isNumber()) throw upstream("A股备用行情为空");
-        double price = data.path("f43").asDouble() / 1000.0;
-        double previous = data.path("f60").asDouble() / 1000.0;
-        if (price <= 0) throw upstream("A股备用价格为空");
-        Map<String, Object> out = quoteBase(instrument);
-        out.put("name", data.path("f58").asText(instrument.name()));
-        out.put("price", price);
-        out.put("prev_close", previous);
-        out.put("change", data.path("f169").asDouble() / 1000.0);
-        out.put("change_pct", data.path("f170").asDouble() / 100.0);
-        out.put("open", data.path("f46").asDouble() / 1000.0);
-        out.put("high", data.path("f44").asDouble() / 1000.0);
-        out.put("low", data.path("f45").asDouble() / 1000.0);
-        out.put("quote_time", LocalDateTime.now().toString());
-        return out;
-    }
+        // 查链用的是**来源要取的周期**：10 分钟由本层用 5 分钟聚合，
+        // 所以问的是"谁能给 5 分钟"，而不是"谁能给 10 分钟"——没有来源能直接给 10 分钟。
+        String sourceInterval = "10m".equals(interval) ? "5m" : interval;
+        List<MarketDataProvider> chain = providerRegistry == null
+                ? List.of()
+                : providerRegistry.klineChain(instrument.market(), sourceInterval);
+        if (chain.isEmpty()) {
+            throw upstream(instrument.market() + " 无可用K线源");
+        }
 
-    private List<Map<String, Object>> klineAShareWithFallback(Instrument instrument, int limit) throws Exception {
-        String primary = "extended.tencent.kline";
-        String fallback = "extended.eastmoney.kline";
-        if (allowSource(primary)) {
+        String lastError = "K线源均不可用: " + instrument.market();
+        for (MarketDataProvider provider : chain) {
+            boolean guarded = provider.klineUsesCircuitBreaker(instrument.market());
+            String source = provider.klineSourceKey(instrument.market());
+            if (guarded && !allowSource(source)) {
+                lastError = "K线源熔断中: " + source;
+                continue;
+            }
             try {
-                List<Map<String, Object>> result = klineTencent(instrument, limit);
-                recordSourceSuccess(primary);
-                return result;
+                List<Map<String, Object>> rows = fetchKlineFrom(provider, instrument, interval, limit);
+                if (rows == null || rows.isEmpty()) {
+                    throw new IllegalStateException("K线源返回空数据");
+                }
+                if (guarded) recordSourceSuccess(source);
+                return rows;
             } catch (Exception e) {
-                recordSourceFailure(primary);
-                log.warn("腾讯 A股日K不可用，切换 EastMoney symbol={}, message={}",
-                        instrument.symbol(), e.getMessage());
+                if (guarded) recordSourceFailure(source);
+                log.warn("扩展K线源失败，尝试下一个 market={}, provider={}, source={}, message={}",
+                        instrument.market(), provider.name(), source, e.getMessage());
+                lastError = e.getMessage() == null ? "K线源调用失败" : e.getMessage();
             }
         }
-        if (!allowSource(fallback)) throw upstream("A股日K备用行情源熔断中");
-        try {
-            List<Map<String, Object>> result = klineEastmoney(instrument, limit);
-            recordSourceSuccess(fallback);
-            return result;
-        } catch (Exception e) {
-            recordSourceFailure(fallback);
-            throw e;
-        }
+        throw upstream(lastError);
     }
 
-    private List<Map<String, Object>> klineEastmoney(Instrument instrument, int limit) throws Exception {
-        String symbol = instrument.symbol().toLowerCase(Locale.ROOT);
-        String secid = (symbol.startsWith("sh") ? "1." : "0.") + symbol.substring(2);
-        String body = webClient.get()
-                .uri(uriBuilder -> uriBuilder.scheme("https").host("push2his.eastmoney.com")
-                        .path("/api/qt/stock/kline/get")
-                        .queryParam("secid", secid)
-                        .queryParam("klt", 101)
-                        .queryParam("fqt", 1)
-                        .queryParam("beg", 0)
-                        .queryParam("end", 20500000)
-                        .queryParam("lmt", Math.min(1000, limit))
-                        .queryParam("fields1", "f1,f2,f3,f4,f5,f6")
-                        .queryParam("fields2", "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61")
-                        .build())
-                .retrieve().bodyToMono(String.class).block();
-        JsonNode raw = objectMapper.readTree(body).path("data").path("klines");
-        if (!raw.isArray() || raw.isEmpty()) throw upstream("A股备用日K为空");
-        List<Map<String, Object>> out = new ArrayList<>();
-        for (JsonNode item : raw) {
-            String[] values = item.asText().split(",", -1);
-            if (values.length < 6) continue;
-            Map<String, Object> row = new LinkedHashMap<>();
-            row.put("date", values[0]);
-            row.put("open", Double.parseDouble(values[1]));
-            row.put("close", Double.parseDouble(values[2]));
-            row.put("high", Double.parseDouble(values[3]));
-            row.put("low", Double.parseDouble(values[4]));
-            row.put("volume", Double.parseDouble(values[5]));
-            out.add(row);
+    /**
+     * 从单个 Provider 取K线；10 分钟周期先取 5 分钟再聚合。
+     *
+     * <p>一次取多少原始K线取决于 {@link MarketDataProvider#maxKlineLimit()}：
+     * Yahoo 上限 500、Binance 1000。这个差别是真实存在的，用统一上限会让某一侧的
+     * 10 分钟视图在 limit 较大时多出一段本没有的历史。</p>
+     */
+    private List<Map<String, Object>> fetchKlineFrom(MarketDataProvider provider, Instrument instrument,
+                                                     String interval, int limit) {
+        if ("10m".equals(interval)) {
+            int rawLimit = Math.min(provider.maxKlineLimit(), limit * 3);
+            return aggregateCandles(
+                    provider.kline(instrument.market(), instrument.symbol(), "5m", rawLimit), 10, limit);
         }
-        return tail(out, limit);
+        return provider.kline(instrument.market(), instrument.symbol(), interval, limit);
     }
 
     private boolean allowSource(String source) {
@@ -522,238 +527,6 @@ public class ExtendedMarketDataService {
 
     private void recordSourceFailure(String source) {
         if (circuitBreaker != null) circuitBreaker.recordFailure(source);
-    }
-
-    private Map<String, Object> quoteCryptoWithFallback(Instrument instrument) throws Exception {
-        if (allowSource("extended.binance")) {
-            try {
-                Map<String, Object> primary = quoteBinance(instrument);
-                recordSourceSuccess("extended.binance");
-                return primary;
-            } catch (Exception binanceError) {
-                recordSourceFailure("extended.binance");
-                log.warn("Binance 行情不可用，切换 Yahoo 备用源 symbol={}, message={}",
-                        instrument.symbol(), binanceError.getMessage());
-            }
-        }
-        if (!allowSource("extended.yahoo.crypto")) {
-            throw upstream("加密货币备用行情源熔断中");
-        }
-        try {
-            Map<String, Object> fallback = quoteYahoo(instrument, yahooCryptoSymbol(instrument.symbol()));
-            fallback.put("source", "Yahoo Finance (fallback)");
-            recordSourceSuccess("extended.yahoo.crypto");
-            return fallback;
-        } catch (Exception yahooError) {
-            recordSourceFailure("extended.yahoo.crypto");
-            throw yahooError;
-        }
-    }
-
-    private Map<String, Object> quoteBinance(Instrument instrument) throws Exception {
-        JsonNode root = objectMapper.readTree(webClient.get()
-                .uri("https://api.binance.com/api/v3/ticker/24hr?symbol=" + instrument.symbol())
-                .retrieve()
-                .bodyToMono(String.class)
-                .block());
-        Double price = textDouble(root, "lastPrice");
-        Double previous = textDouble(root, "prevClosePrice");
-        if (price == null) throw upstream("加密货币价格为空");
-        Map<String, Object> out = quoteBase(instrument);
-        out.put("price", price);
-        out.put("prev_close", previous);
-        out.put("change", textDouble(root, "priceChange"));
-        out.put("change_pct", textDouble(root, "priceChangePercent"));
-        out.put("open", textDouble(root, "openPrice"));
-        out.put("high", textDouble(root, "highPrice"));
-        out.put("low", textDouble(root, "lowPrice"));
-        out.put("quote_time", root.path("closeTime").isNumber()
-                ? Instant.ofEpochMilli(root.path("closeTime").asLong()).toString()
-                : LocalDateTime.now().toString());
-        return out;
-    }
-
-    private List<Map<String, Object>> klineTencent(Instrument instrument, int limit) throws Exception {
-        String param = instrument.symbol() + ",day,,,500,qfq";
-        String body = webClient.get()
-                .uri(uriBuilder -> uriBuilder.scheme("https").host("web.ifzq.gtimg.cn")
-                        .path("/appstock/app/fqkline/get")
-                        .queryParam("param", param).build())
-                .retrieve().bodyToMono(String.class).block();
-        JsonNode root = objectMapper.readTree(body);
-        JsonNode raw = root.path("data").path(instrument.symbol()).path("day");
-        if (!raw.isArray()) raw = root.path("data").path(instrument.symbol()).path("qfqday");
-        if (!raw.isArray()) throw upstream("A股K线为空");
-        List<Map<String, Object>> out = new ArrayList<>();
-        for (JsonNode item : raw) {
-            if (!item.isArray() || item.size() < 5) continue;
-            Map<String, Object> row = new LinkedHashMap<>();
-            row.put("date", item.get(0).asText());
-            row.put("open", item.get(1).asDouble());
-            row.put("close", item.get(2).asDouble());
-            row.put("high", item.get(3).asDouble());
-            row.put("low", item.get(4).asDouble());
-            row.put("volume", item.size() > 5 ? item.get(5).asDouble(0.0) : 0.0);
-            out.add(row);
-        }
-        return tail(out, limit);
-    }
-
-    private List<Map<String, Object>> klineTencentIntraday(Instrument instrument,
-                                                            String interval,
-                                                            int limit) throws Exception {
-        int minutes = switch (interval) {
-            case "5m", "10m", "15m", "30m" -> Integer.parseInt(interval.substring(0, interval.length() - 1));
-            case "1h" -> 60;
-            default -> throw invalid("A股不支持该周期: " + interval);
-        };
-        int sourceMinutes = minutes == 10 ? 5 : minutes;
-        int sourceLimit = Math.min(1000, minutes == 10 ? limit * 3 : limit);
-        String body = webClient.get()
-                .uri(uriBuilder -> uriBuilder.scheme("https").host("push2his.eastmoney.com")
-                        .path("/api/qt/stock/kline/get")
-                        .queryParam("secid", eastmoneySecId(instrument))
-                        .queryParam("klt", sourceMinutes)
-                        .queryParam("fqt", 1)
-                        .queryParam("beg", 0)
-                        .queryParam("end", 20500000)
-                        .queryParam("lmt", sourceLimit)
-                        .queryParam("fields1", "f1,f2,f3,f4,f5,f6")
-                        .queryParam("fields2", "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61")
-                        .build())
-                .retrieve().bodyToMono(String.class).block();
-        JsonNode raw = objectMapper.readTree(body).path("data").path("klines");
-        if (!raw.isArray() || raw.isEmpty()) throw upstream("A股分钟K线为空");
-        List<Map<String, Object>> out = new ArrayList<>();
-        for (JsonNode item : raw) {
-            String[] values = item.asText().split(",", -1);
-            if (values.length < 6) continue;
-            Double open = parseDouble(values[1]);
-            Double close = parseDouble(values[2]);
-            Double high = parseDouble(values[3]);
-            Double low = parseDouble(values[4]);
-            if (open == null || close == null || high == null || low == null) continue;
-            Map<String, Object> row = new LinkedHashMap<>();
-            row.put("date", values[0]);
-            row.put("open", open);
-            row.put("close", close);
-            row.put("high", high);
-            row.put("low", low);
-            row.put("volume", parseDouble(values[5]) == null ? 0.0 : parseDouble(values[5]));
-            out.add(row);
-        }
-        return minutes == sourceMinutes ? tail(out, limit) : aggregateCandles(out, minutes, limit);
-    }
-
-    private String eastmoneySecId(Instrument instrument) {
-        String symbol = instrument.symbol().toLowerCase(Locale.ROOT);
-        return (symbol.startsWith("sh") ? "1." : "0.") + symbol.substring(2);
-    }
-
-    private List<Map<String, Object>> klineYahoo(Instrument instrument, String interval, int limit) throws Exception {
-        return klineYahoo(instrument, yahooStockSymbol(instrument.symbol()), interval, limit);
-    }
-
-    private List<Map<String, Object>> klineYahoo(Instrument instrument, String providerSymbol,
-                                                 String interval, int limit) throws Exception {
-        if ("10m".equals(interval)) {
-            return aggregateCandles(klineYahoo(instrument, providerSymbol, "5m", Math.min(500, limit * 3)), 10, limit);
-        }
-        JsonNode result = yahooResult(providerSymbol, yahooRange(interval), interval);
-        JsonNode timestamps = result.path("timestamp");
-        JsonNode quote = result.path("indicators").path("quote").path(0);
-        List<Map<String, Object>> out = new ArrayList<>();
-        for (int i = 0; i < timestamps.size(); i++) {
-            if (!numberAt(quote.path("open"), i) || !numberAt(quote.path("close"), i)
-                    || !numberAt(quote.path("high"), i) || !numberAt(quote.path("low"), i)) continue;
-            Map<String, Object> row = new LinkedHashMap<>();
-            row.put("date", Instant.ofEpochSecond(timestamps.get(i).asLong()).toString());
-            row.put("open", quote.path("open").get(i).asDouble());
-            row.put("close", quote.path("close").get(i).asDouble());
-            row.put("high", quote.path("high").get(i).asDouble());
-            row.put("low", quote.path("low").get(i).asDouble());
-            row.put("volume", numberAt(quote.path("volume"), i) ? quote.path("volume").get(i).asDouble() : 0.0);
-            out.add(row);
-        }
-        return tail(out, limit);
-    }
-
-    private String yahooStockSymbol(String symbol) {
-        return symbol.replace('.', '-');
-    }
-
-    private String yahooRange(String interval) {
-        return "1d".equals(interval) ? "1y" : "5d";
-    }
-
-    private List<Map<String, Object>> klineCryptoWithFallback(Instrument instrument,
-                                                               String interval, int limit) throws Exception {
-        if (allowSource("extended.binance")) {
-            try {
-                List<Map<String, Object>> result;
-                if ("10m".equals(interval)) {
-                    result = aggregateCandles(klineBinance(instrument, "5m", Math.min(1000, limit * 3)), 10, limit);
-                } else {
-                    result = klineBinance(instrument, interval, limit);
-                }
-                recordSourceSuccess("extended.binance");
-                return result;
-            } catch (Exception binanceError) {
-                recordSourceFailure("extended.binance");
-                log.warn("Binance K线不可用，切换 Yahoo 备用源 symbol={}, message={}",
-                        instrument.symbol(), binanceError.getMessage());
-            }
-        }
-        if (!allowSource("extended.yahoo.crypto")) {
-            throw upstream("加密货币 K线备用行情源熔断中");
-        }
-        try {
-            if ("10m".equals(interval)) {
-                List<Map<String, Object>> result = aggregateCandles(
-                        klineYahoo(instrument, yahooCryptoSymbol(instrument.symbol()), "5m",
-                                Math.min(500, limit * 3)), 10, limit);
-                recordSourceSuccess("extended.yahoo.crypto");
-                return result;
-            }
-            List<Map<String, Object>> result = klineYahoo(instrument, yahooCryptoSymbol(instrument.symbol()), interval, limit);
-            recordSourceSuccess("extended.yahoo.crypto");
-            return result;
-        } catch (Exception yahooError) {
-            recordSourceFailure("extended.yahoo.crypto");
-            throw yahooError;
-        }
-    }
-
-    private List<Map<String, Object>> klineBinance(Instrument instrument, String interval, int limit) throws Exception {
-        JsonNode root = objectMapper.readTree(webClient.get()
-                .uri("https://api.binance.com/api/v3/klines?symbol=" + instrument.symbol()
-                        + "&interval=" + interval + "&limit=" + limit)
-                .retrieve().bodyToMono(String.class).block());
-        if (!root.isArray()) throw upstream("加密货币K线为空");
-        List<Map<String, Object>> out = new ArrayList<>();
-        for (JsonNode item : root) {
-            if (!item.isArray() || item.size() < 6) continue;
-            Map<String, Object> row = new LinkedHashMap<>();
-            row.put("date", Instant.ofEpochMilli(item.get(0).asLong()).toString());
-            row.put("open", item.get(1).asDouble());
-            row.put("high", item.get(2).asDouble());
-            row.put("low", item.get(3).asDouble());
-            row.put("close", item.get(4).asDouble());
-            row.put("volume", item.get(5).asDouble());
-            out.add(row);
-        }
-        return out;
-    }
-
-    private JsonNode yahooResult(String symbol, String range, String interval) throws Exception {
-        if (!YAHOO_INTERVALS.contains(interval)) throw invalid("美股不支持该周期: " + interval);
-        String body = webClient.get()
-                .uri("https://query1.finance.yahoo.com/v8/finance/chart/" + symbol
-                        + "?range=" + range + "&interval=" + interval)
-                .retrieve().bodyToMono(String.class).block();
-        JsonNode result = objectMapper.readTree(body).path("chart").path("result").path(0);
-        if (result.isMissingNode() || result.isNull()) throw upstream("美股行情为空");
-        return result;
     }
 
     private List<Map<String, Object>> aggregateCandles(List<Map<String, Object>> rows, int minutes, int limit) {
@@ -769,7 +542,14 @@ public class ExtendedMarketDataService {
                 initial.put("close", row.get("close"));
                 initial.put("high", row.get("high"));
                 initial.put("low", row.get("low"));
-                initial.put("volume", row.getOrDefault("volume", 0.0));
+                // 成交量从 0 起算，**不能**先塞首根的成交量：computeIfAbsent 之后那段
+                // 无条件累加会把当前这根再加一次，于是每个桶的首根被算了两次。
+                //
+                // 这是本次重构前就存在的错误（原先只影响 10 分钟周期，
+                // 因为只有它走聚合），结果是 10 分钟K线的成交量恒偏高"一根5分钟"的量。
+                // 高/低没事是因为 max/min 幂等，收盘价是覆盖写，只有成交量会累加。
+                // 成交量会流进 enrichTechnicalIndicators 的量能指标，所以不是显示问题。
+                initial.put("volume", 0.0);
                 return initial;
             });
             target.put("close", row.get("close"));
@@ -793,13 +573,6 @@ public class ExtendedMarketDataService {
     private String normalizeInterval(String interval) {
         if (interval == null || interval.isBlank() || "day".equalsIgnoreCase(interval)) return "1d";
         return interval.trim().toLowerCase();
-    }
-
-    private String yahooCryptoSymbol(String symbol) {
-        if (symbol != null && symbol.endsWith("USDT") && symbol.length() > 4) {
-            return symbol.substring(0, symbol.length() - 4) + "-USD";
-        }
-        throw invalid("不支持的加密货币标的: " + symbol);
     }
 
     private Instrument requireInstrument(String market, String symbol) {
@@ -1276,11 +1049,6 @@ public class ExtendedMarketDataService {
 
     private Double finiteOrNull(double value) {
         return Double.isFinite(value) ? value : null;
-    }
-
-    private boolean numberAt(JsonNode node, int index) {
-        return node != null && node.isArray() && index < node.size()
-                && node.get(index) != null && node.get(index).isNumber();
     }
 
     private Double number(JsonNode node, String field) {

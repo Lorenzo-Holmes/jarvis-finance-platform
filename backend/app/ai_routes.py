@@ -44,6 +44,7 @@ class ChatReq(BaseModel):
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     # 仅由 Java 主后端注入；Python 会在调用 LLM 前对其中行情/K线做确定性计算。
     research_context: Optional[Dict[str, Any]] = None
+    metrics: Optional[Dict[str, Any]] = None
 
 
 class ReportReq(BaseModel):
@@ -72,6 +73,9 @@ class QuoteReq(BaseModel):
     horizon_days: Optional[int] = Field(default=None, ge=1, le=60)
     confidence: Optional[float] = Field(default=None, ge=0.5, le=0.99)
     symbol: Optional[str] = Field(default=None, max_length=32)
+    # Phase 2 ⑧：Java 侧用**同一个快照**算好的派生指标，随请求下发；有则引用、无则回退本地。
+    # 该模型同样没有开 extra=forbid，新增字段不会导致 422。
+    metrics: Optional[Dict[str, Any]] = None
 
 
 class RiskReq(BaseModel):
@@ -84,6 +88,9 @@ class RiskReq(BaseModel):
     confidence: float = Field(default=0.95, ge=0.5, le=0.99)
     portfolio_value: Optional[float] = Field(default=None, gt=0)
     symbol: Optional[str] = Field(default=None, max_length=32)
+    # Phase 2 ⑧：Java 侧用**同一次服务端取数**算好的指标，随请求下发。
+    # 有就直接引用（"同一组数字只有一个来源"），没有则回退到本地确定性层。
+    metrics: Optional[Dict[str, Any]] = None
 
 
 class StrategyReq(BaseModel):
@@ -108,7 +115,25 @@ class TrendReq(BaseModel):
     closes: List[float] = Field(default_factory=list, max_length=2000)
     horizon_days: Optional[int] = Field(default=None, ge=1, le=60)
     confidence: Optional[float] = Field(default=None, ge=0.5, le=0.99)
+    metrics: Optional[Dict[str, Any]] = None
     symbol: Optional[str] = Field(default=None, max_length=32)
+
+
+class ResearchReportReq(BaseModel):
+    """研究任务报告（Phase 2 AI Research Core）。
+
+    与其它端点最重要的区别：**metrics 由 Java 确定性计算层算好传进来，Python 不重算**。
+    报告里的数字必须与任务详情页展示的数字逐字相同，否则同一份研究会有两个口径。
+    warnings 同理——"缺了什么数据"由程序判断，不让模型自己猜自己缺什么。
+    """
+    task_type: Literal["REPORT", "SENTIMENT", "CHAIN", "RISK", "TREND", "STRATEGY"] = "REPORT"
+    title: Optional[str] = Field(default=None, max_length=200)
+    question: Optional[str] = Field(default=None, max_length=2000)
+    market: Optional[str] = Field(default=None, max_length=20)
+    symbol: Optional[str] = Field(default=None, max_length=32)
+    metrics: Dict[str, Any] = Field(default_factory=dict)
+    quote: Optional[Dict[str, Any]] = None
+    warnings: List[str] = Field(default_factory=list, max_length=20)
 
 
 def _guard(fn, **kw):
@@ -132,6 +157,7 @@ def chat(req: ChatReq):
         messages=messages,
         temperature=req.temperature,
         research_context=req.research_context,
+        metrics=req.metrics,
     )}
 
 
@@ -143,6 +169,7 @@ def chat_stream(req: ChatReq):
             messages=messages,
             temperature=req.temperature,
             research_context=req.research_context,
+            metrics=req.metrics,
         )
     except RuntimeError as e:
         raise HTTPException(status_code=502, detail=str(e))
@@ -187,7 +214,8 @@ def analyze_risk(req: RiskReq):
                            closes=req.closes,
                            confidence=req.confidence,
                            portfolio_value=req.portfolio_value,
-                           symbol=req.symbol)}
+                           symbol=req.symbol,
+                           metrics=req.metrics)}
 
 
 @router.post("/analyze/strategy")
@@ -208,7 +236,8 @@ def analyze_trend(req: TrendReq):
                            closes=req.closes,
                            horizon_days=req.horizon_days,
                            confidence=req.confidence,
-                           symbol=req.symbol)}
+                           symbol=req.symbol,
+                           metrics=req.metrics)}
 
 
 @router.post("/quote")
@@ -219,4 +248,17 @@ def smart_quote(req: QuoteReq):
                            closes=req.closes,
                            horizon_days=req.horizon_days,
                            confidence=req.confidence,
-                           symbol=req.symbol)}
+                           symbol=req.symbol,
+                           metrics=req.metrics)}
+
+
+@router.post("/research/report")
+def research_report(req: ResearchReportReq):
+    return {"code": 200, "message": "ok",
+            "data": _guard(ai_service.research_report,
+                           task=req.model_dump(include={
+                               "task_type", "title", "question", "market", "symbol",
+                           }),
+                           metrics=req.metrics,
+                           quote=req.quote,
+                           warnings=req.warnings)}

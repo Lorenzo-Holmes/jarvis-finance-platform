@@ -1,6 +1,7 @@
 package com.jarvis.research.market;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jarvis.research.market.dto.MarketStatusDTO;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.springframework.http.HttpStatus;
 import org.junit.jupiter.api.Test;
@@ -56,9 +57,10 @@ class ExtendedMarketDataServiceTest {
 
     @Test
     void reportsCryptoAsAlwaysOpen() {
-        var status = service.session("crypto");
-        assertEquals("open", status.get("status"));
-        assertEquals(true, status.get("is_open"));
+        MarketStatusDTO status = service.session("crypto");
+        assertEquals("open", status.status());
+        assertEquals(true, status.isOpen());
+        assertEquals("crypto", status.market());
     }
 
     @Test
@@ -108,31 +110,10 @@ class ExtendedMarketDataServiceTest {
         assertNotNull(summary.get("resistance_20"));
     }
 
-    @Test
-    void switchesToEastmoneyAndStopsCallingTencentAfterCircuitOpens() {
-        AtomicInteger tencentCalls = new AtomicInteger();
-        WebClient client = WebClient.builder().exchangeFunction(request -> {
-            if ("qt.gtimg.cn".equals(request.url().getHost())) {
-                tencentCalls.incrementAndGet();
-                return Mono.error(new IllegalStateException("injected Tencent failure"));
-            }
-            return Mono.just(ClientResponse.create(HttpStatus.OK)
-                    .header("Content-Type", "application/json")
-                    .body("{\"data\":{\"f43\":123000,\"f60\":122000,\"f58\":\"测试标的\",\"f169\":1000,\"f170\":82,\"f46\":122000,\"f44\":124000,\"f45\":121000}}")
-                    .build());
-        }).build();
-        MarketSourceCircuitBreaker breaker = new MarketSourceCircuitBreaker(
-                new SimpleMeterRegistry(), 1, Duration.ofHours(1), Clock.systemUTC());
-        ExtendedMarketDataService isolated = new ExtendedMarketDataService(new ObjectMapper(), breaker, client);
-
-        Map<String, Object> first = isolated.quote("a_share", "sh600519");
-        Map<String, Object> second = isolated.quote("a_share", "sh600520");
-
-        assertEquals("EastMoney (fallback)", first.get("source"));
-        assertEquals("EastMoney (fallback)", second.get("source"));
-        assertEquals(1, tencentCalls.get(), "Tencent 熔断后不应再次被调用");
-        assertEquals("OPEN", breaker.state("extended.tencent.stock"));
-    }
+    // 「切到 EastMoney、熔断后不再调用 Tencent」这条测试已迁往
+    // ExtendedAShareQuoteTest#opensThePrimaryCircuitAndStopsCallingItOnTheNextRequest。
+    // A股报价改由 ProviderRegistry 驱动后，该行为不再住在内联实现里，
+    // 靠伪造 HTTP 响应已经驱动不到它——改由 stub Provider + 真实熔断器表达，断言逐条保留。
 
     @Test
     void returnsPersistedQuoteWhenAllUpstreamSourcesFail() throws Exception {

@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { api } from '../../api/client'
+import { buildModuleNavGroups } from '../data/moduleNav'
 
 const props = defineProps({
   module: { type: Object, required: true },
@@ -32,17 +33,7 @@ const historyTravel = ref(false)
 let returnTimer = 0
 let switchTimer = 0
 
-const MODULE_GROUPS = Object.freeze([
-  { key: 'market', label: '市场', glyph: '市', modules: ['market', 'cross-market', 'smart-quote', 'market-trend'] },
-  { key: 'research', label: '研究', glyph: '研', modules: ['ai-research', 'bull-bear', 'financial', 'industry-chain'] },
-  { key: 'strategy', label: '策略', glyph: '策', modules: ['strategy', 'backtest', 'risk'] },
-  { key: 'execution', label: '交易', glyph: '交', modules: ['sim-trade'] },
-  { key: 'system', label: '系统', glyph: '系', modules: ['ops'] },
-])
-const moduleGroups = computed(() => MODULE_GROUPS.map(group => ({
-  ...group,
-  items: group.modules.map(key => props.modules.find(item => item.key === key)).filter(Boolean),
-})))
+const moduleGroups = computed(() => buildModuleNavGroups(props.modules))
 const workspaceTabModules = computed(() => props.workspaceTabs
   .map(routeKey => props.modules.find(item => item.routeKey === routeKey))
   .filter(Boolean))
@@ -88,7 +79,7 @@ const splitCandidates = computed(() => SPLIT_ROUTES
 const splitLabel = computed(() => SPLIT_LABELS[props.splitRoute] || '')
 
 function moduleGroupLabel(item) {
-  return moduleGroups.value.find(group => group.items.some(module => module.key === item?.key))?.label || '工作区'
+  return moduleGroups.value.find(group => group.modules.some(module => module.key === item?.key))?.labelZh || '工作区'
 }
 
 watch(() => props.user?.displayName, value => {

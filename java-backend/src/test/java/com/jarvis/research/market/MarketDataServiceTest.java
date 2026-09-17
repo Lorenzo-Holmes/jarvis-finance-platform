@@ -1,7 +1,7 @@
 package com.jarvis.research.market;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.jarvis.research.config.JarvisProperties;
+import com.jarvis.research.market.dto.DailyKlineDTO;
+import com.jarvis.research.market.dto.KlineBarDTO;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.Pageable;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -22,8 +22,7 @@ class MarketDataServiceTest {
     @Test
     void parsesSourceQuoteTimesBeforeFallingBackToServerReceiveTime() {
         MarketDataService service = new MarketDataService(
-                new JarvisProperties(), mock(PriceSnapshotRepository.class),
-                mock(KlineDailyRepository.class), new ObjectMapper());
+                mock(PriceSnapshotRepository.class), mock(KlineDailyRepository.class));
 
         assertEquals("2026-09-08T10:15:30",
                 service.parseSourceQuoteTime("20260908101530").toString());
@@ -38,8 +37,7 @@ class MarketDataServiceTest {
     void dailyKlineQueryIsReadOnlyAndReturnsAscendingBars() {
         PriceSnapshotRepository snapshotRepo = mock(PriceSnapshotRepository.class);
         KlineDailyRepository klineRepo = mock(KlineDailyRepository.class);
-        MarketDataService service = new MarketDataService(
-                new JarvisProperties(), snapshotRepo, klineRepo, new ObjectMapper());
+        MarketDataService service = new MarketDataService(snapshotRepo, klineRepo);
 
         KlineDaily newest = new KlineDaily(
                 "gold_etf", "2026-09-04", 10.1, 10.4, 10.5, 10.0, 1200.0);
@@ -48,13 +46,14 @@ class MarketDataServiceTest {
         when(klineRepo.findByMarketOrderByDateDesc(eq("gold_etf"), any(Pageable.class)))
                 .thenReturn(List.of(newest, older));
 
-        Map<String, Object> result = service.getDailyKline("gold_etf", 2);
+        DailyKlineDTO result = service.getDailyKline("gold_etf", 2);
 
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> data = (List<Map<String, Object>>) result.get("data");
+        List<KlineBarDTO> data = result.data();
         assertEquals(2, data.size());
-        assertEquals("2026-09-03", data.get(0).get("date"));
-        assertEquals("2026-09-04", data.get(1).get("date"));
+        assertEquals("2026-09-03", data.get(0).date());
+        assertEquals("2026-09-04", data.get(1).date());
+        assertEquals(2, result.count());
+        assertEquals("2026-09-04", result.asOf());
 
         verify(klineRepo).findByMarketOrderByDateDesc(eq("gold_etf"), any(Pageable.class));
         verify(klineRepo, never()).save(any());
@@ -67,7 +66,7 @@ class MarketDataServiceTest {
     void cachedQuoteIsMarkedStaleWhenUpstreamHasStoppedRefreshing() {
         PriceSnapshotRepository snapshotRepo = mock(PriceSnapshotRepository.class);
         MarketDataService service = new MarketDataService(
-                new JarvisProperties(), snapshotRepo, mock(KlineDailyRepository.class), new ObjectMapper());
+                snapshotRepo, mock(KlineDailyRepository.class));
         @SuppressWarnings("unchecked")
         Map<String, Map<String, Object>> cache = (Map<String, Map<String, Object>>)
                 ReflectionTestUtils.getField(service, "livePriceCache");
