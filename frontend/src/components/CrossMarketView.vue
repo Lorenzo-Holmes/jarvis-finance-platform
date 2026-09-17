@@ -487,8 +487,8 @@ onBeforeUnmount(() => {
   <div class="cross-market">
     <div class="cross-heading">
       <div>
-        <h1>CROSS MARKET / OBSERVATORY</h1>
-        <span>{{ currentInstrument?.symbol || 'NO SYMBOL' }} · {{ currentInstrument?.name || '选择研究对象' }} · 跨市场行情、技术结构与 AI 研究联动</span>
+        <h1>多市场</h1>
+        <span>{{ currentInstrument?.symbol || '未选择标的' }} · {{ currentInstrument?.name || '选择研究对象' }} · 跨市场行情与技术结构</span>
       </div>
       <strong>{{ currentMarketLabel }} / {{ currentIntervalLabel }}</strong>
     </div>
@@ -521,10 +521,10 @@ onBeforeUnmount(() => {
     <div v-if="error && kline.length" class="error">{{ error }}</div>
 
     <div class="symbol-parser">
-      <span class="parser-label">INSTRUMENT / 自定义标的</span>
+      <span class="parser-label">自定义标的</span>
       <input v-model="customQuery" class="parser-input" :placeholder="market === 'a_share' ? '输入 600519 / SH600519' : market === 'us_stock' ? '输入 AAPL / BRK.B' : '输入 BTC / BTCUSDT'" @keyup.enter="resolveCustomInstrument" />
       <button type="button" class="btn parser-btn" :disabled="resolveLoading || !customQuery.trim()" @click="resolveCustomInstrument">
-        {{ resolveLoading ? 'RESOLVING…' : 'RESOLVE + LOAD' }}
+        {{ resolveLoading ? '解析中…' : '解析并加载' }}
       </button>
       <span class="parser-hint">仅校验代码格式，不会保存密钥或任意外部地址</span>
     </div>
@@ -610,32 +610,32 @@ onBeforeUnmount(() => {
 .period-switch { display: flex; gap: 0; padding: 0; border: 1px solid var(--line); border-radius: 0; background: transparent; }
 .period-btn { border: 0; border-right: 1px solid var(--line); background: transparent; color: var(--muted); border-radius: 0; padding: 6px 8px; font-size: 9px; cursor: pointer; }
 .period-btn:last-child { border-right: 0; }
-.period-btn.active { background: #44473f; color: #f2eee6; font-weight: 700; }
+.period-btn.active { background: var(--workspace-action-bg); color: var(--workspace-action-text); font-weight: 700; }
 .refresh-note { color: var(--subtle); font-size: 9px; white-space: nowrap; }
 .refresh-note.stale { color: var(--warn); }
 .market-status { display: inline-flex; align-items: center; gap: 5px; color: var(--subtle); font-size: 9px; white-space: nowrap; }
-.market-status i { width: 5px; height: 5px; border-radius: 50%; background: #686d72; }
+.market-status i { width: 5px; height: 5px; border-radius: 50%; background: var(--workspace-neutral-dot); }
 .market-status.open { color: #27c46b; }
 .market-status.open i { background: #27c46b; box-shadow: 0 0 0 3px rgba(39,196,107,.1); }
 .btn { min-height: 30px; background: transparent; border: 1px solid var(--line-strong); color: var(--text); border-radius: 0; padding: 5px 11px; cursor: pointer; font-size: 10px; }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
-.error { color: #96564e; padding: 9px 10px; background: rgba(154,91,83,.06); border: 1px solid rgba(154,91,83,.22); border-radius: 0; font-size: 11px; }
+.error { color: var(--bad); padding: 9px 10px; background: var(--danger-soft); border: 1px solid color-mix(in srgb, var(--bad) 34%, transparent); border-radius: 0; font-size: 11px; }
 .symbol-parser { display: flex; align-items: center; gap: 8px; padding: 8px 0; background: transparent; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; }
 .parser-label { color: var(--text); font: 650 9px/1 ui-monospace, monospace; letter-spacing: .07em; white-space: nowrap; }
 .parser-input { flex: 0 1 260px; min-width: 140px; height: 30px; background: transparent; border: 0; border-bottom: 1px solid var(--line-strong); border-radius: 0; color: var(--text); padding: 0 5px; font-size: 10px; outline: none; }
-.parser-input:focus { border-color: #6a5b40; }
+.parser-input:focus { border-color: var(--workspace-focus); }
 .parser-btn { white-space: nowrap; }
 .parser-hint { color: var(--subtle); font-size: 9px; }
 .parser-error { color: #ef5350; font-size: 10px; padding: 0 2px; }
 .preference-status { min-height: 12px; color: var(--subtle); font-size: 9px; }
-.instrument-editor { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 10px; background: rgba(161,132,88,.06); border: 1px solid var(--accent); border-radius: 0; }
+.instrument-editor { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 10px; background: var(--workspace-accent-wash); border: 1px solid var(--accent); border-radius: 0; }
 .editor-title { display: flex; align-items: baseline; gap: 8px; margin-right: 4px; }
 .editor-title b { color: var(--text); font-size: 10px; }
 .editor-title span { color: var(--subtle); font-size: 9px; }
 .instrument-editor .parser-input { flex: 0 1 190px; }
 .editor-cancel { font-size: 10px; }
 .cross-layout { display: grid; grid-template-columns: 220px minmax(0, 1fr) 300px; gap: 0; align-items: stretch; min-width: 0; border: 1px solid var(--line); }
-.panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
+.panel { background: var(--workspace-panel-wash); border: 1px solid var(--line); border-radius: 0; }
 .chart-panel { padding: 13px; min-width: 0; border-top: 0 !important; border-bottom: 0 !important; }
 .symbol-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; min-height: 45px; }
 .symbol-title > div { display: flex; align-items: baseline; gap: 8px; }

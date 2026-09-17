@@ -63,8 +63,8 @@ onMounted(() => { check(); polling.start() })
 <template>
   <div class="ops">
     <div class="ops-head">
-      <div><h2>SYSTEM OPERATIONS / SERVICE TOPOLOGY</h2><span>Java API · PostgreSQL · Python AI · Research Engine</span></div>
-      <div class="ops-summary" :class="allHealthy ? 'ok' : 'bad'" role="status" aria-live="polite"><i></i>{{ allHealthy ? 'ALL SYSTEMS OPERATIONAL' : 'ATTENTION REQUIRED' }}</div>
+      <div><h2>运维</h2><span>Java API · PostgreSQL · Python AI · Research Engine</span></div>
+      <div class="ops-summary" :class="allHealthy ? 'ok' : 'bad'" role="status" aria-live="polite"><i></i>{{ allHealthy ? '服务正常' : '需要检查' }}</div>
     </div>
 
     <section class="health-panel">
@@ -91,7 +91,7 @@ onMounted(() => { check(); polling.start() })
     <div class="ops-footer">
       <span>LAST CHECK <b>{{ lastCheck || '--' }}</b></span>
       <span>AUTO REFRESH <b>10s</b></span>
-      <button type="button" @click="check">RUN PROBE</button>
+      <button type="button" @click="check">重新检查</button>
     </div>
   </div>
 </template>
@@ -125,6 +125,6 @@ onMounted(() => { check(); polling.start() })
 .health-table a:hover { text-decoration: underline; }
 .ops-footer { display: flex; align-items: center; gap: 18px; color: var(--subtle); font-size: 9px; }
 .ops-footer b { color: var(--muted); font-weight: 600; font-variant-numeric: tabular-nums; }
-.ops-footer button { margin-left: auto; border: 1px solid #383b33; background: #383b33; color: #f2eee6; border-radius: 0; padding: 6px 10px; font: 650 8px/1 ui-monospace, monospace; letter-spacing: .06em; cursor: pointer; }
+.ops-footer button { margin-left: auto; border: 1px solid var(--workspace-action-border); background: var(--workspace-action-bg); color: var(--workspace-action-text); border-radius: 0; padding: 6px 10px; font: 650 8px/1 ui-monospace, monospace; letter-spacing: .06em; cursor: pointer; }
 @media (max-width: 650px) { .ops-head { align-items: flex-start; flex-direction: column; } .ops-footer { align-items: flex-start; flex-wrap: wrap; } .ops-footer button { margin-left: 0; } }
 </style>

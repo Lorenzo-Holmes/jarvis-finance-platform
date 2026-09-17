@@ -1,2 +1,7 @@
 -r requirements.txt
 pytest==8.0.0
+# starlette.testclient (used by FastAPI TestClient) needs an http client.
+# It is not a runtime dependency of the service, so it belongs here: without it
+# the suite only passes on machines that happen to have httpx installed already,
+# and fails in CI / any clean environment.
+httpx==0.28.1

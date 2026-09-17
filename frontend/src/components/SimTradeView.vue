@@ -16,7 +16,7 @@ import {
 const props = defineProps({
   user: { type: Object, default: null },
 })
-const emit = defineEmits(['context-change'])
+const emit = defineEmits(['context-change', 'navigate-module'])
 
 const LEGACY_INSTRUMENTS = [
   {
@@ -44,6 +44,7 @@ const initializing = ref(true)
 const submitting = ref(false)
 const msg = ref('')
 const msgType = ref('info')
+const initializeError = ref('')
 const customQuery = ref('')
 const resolveLoading = ref(false)
 const resolveError = ref('')
@@ -319,14 +320,31 @@ const polling = usePolling(async () => {
 
 async function initialize() {
   initializing.value = true
+  initializeError.value = ''
   try {
     await loadPreferences()
     await loadInstruments()
     await Promise.all([loadWorkspace(), loadSession()])
   } catch (initializeError) {
-    msg.value = initializeError?.message || String(initializeError)
+    const message = initializeError?.message || String(initializeError)
+    msg.value = message
     msgType.value = 'error'
+    // 初始化错误单独保存，避免后续订单提示覆盖恢复界面的故障原因。
+    // eslint-disable-next-line no-use-before-define
+    setInitializeError(message)
   } finally { initializing.value = false }
+}
+
+function setInitializeError(message) {
+  initializeError.value = message || '无法读取模拟账户。'
+}
+
+function continueWithMarket() {
+  emit('navigate-module', '行情')
+}
+
+function continueWithResearch() {
+  emit('navigate-module', '研究助手')
 }
 
 watch(market, async () => {
@@ -363,28 +381,53 @@ onBeforeUnmount(() => {
   <div class="sim-terminal-page">
     <DataState v-if="initializing && !account" state="loading" title="正在加载模拟交易终端"
                message="正在同步账户、自选标的、实时行情与挂单。" />
-    <DataState v-else-if="!account" state="error" title="模拟交易终端加载失败"
-               :message="msg || '无法读取模拟账户。'" retryable @retry="initialize" />
+    <section v-else-if="!account" class="terminal-recovery" aria-live="polite">
+      <div class="recovery-mark" aria-hidden="true">!</div>
+      <div class="recovery-copy">
+        <span class="recovery-eyebrow">模拟盘暂不可用</span>
+        <h1>交易账户未能加载</h1>
+        <p>{{ initializeError || msg || '当前无法读取模拟账户，但行情与研究工作区仍可继续使用。' }}</p>
+        <div class="recovery-actions">
+          <button type="button" class="recovery-primary" @click="initialize">重新加载</button>
+          <button type="button" @click="continueWithMarket">返回行情</button>
+          <button type="button" @click="continueWithResearch">继续研究</button>
+        </div>
+      </div>
+      <aside class="recovery-context">
+        <span>当前状态</span>
+        <strong>{{ initializeError?.includes('登录') ? '会话需要恢复' : '账户服务不可用' }}</strong>
+        <small>不会清除当前研究对象、自选标的或已打开的研究页面。</small>
+      </aside>
+    </section>
 
     <template v-if="account">
       <header class="sim-toolbar">
-        <div class="sim-title"><h1>EXECUTION / SIM TRADING</h1><span>专业图表 · 自选标的 · 模拟下单 · 持仓与止损</span></div>
-        <div class="market-switch" role="tablist" aria-label="模拟盘市场切换">
-          <button v-for="item in marketOptions" :key="item.value" type="button" class="market-tab"
-                  role="tab" :aria-selected="market === item.value" :class="{ active: market === item.value }"
-                  @click="market = item.value">{{ item.label }}</button>
+        <div class="sim-title">
+          <span class="sim-kicker">SIMULATION</span>
+          <h1>操作终端</h1>
+          <span>行情、持仓与订单执行集中在同一视图</span>
+        </div>
+        <div class="sim-toolbar-right">
+          <div class="market-switch" role="tablist" aria-label="模拟盘市场切换">
+            <button v-for="item in marketOptions" :key="item.value" type="button" class="market-tab"
+                    role="tab" :aria-selected="market === item.value" :class="{ active: market === item.value }"
+                    @click="market = item.value">{{ item.label }}</button>
+          </div>
+          <span class="session-readout" :class="{ open: marketOpen }">
+            <i></i>{{ marketOpen ? '市场开放' : '市场休市' }}
+          </span>
         </div>
       </header>
 
       <div class="symbol-parser">
-        <span class="parser-label">INSTRUMENT / 导入自选</span>
+        <span class="parser-label">标的搜索</span>
         <input v-model="customQuery" class="parser-input"
                :placeholder="market === 'a_share' ? '输入 600519 / SH600519' : market === 'us_stock' ? '输入 AAPL / BRK.B' : '输入 BTC / BTCUSDT'"
                @keyup.enter="resolveCustomInstrument" />
         <button type="button" class="parser-btn" :disabled="resolveLoading || !customQuery.trim()" @click="resolveCustomInstrument">
-          {{ resolveLoading ? 'RESOLVING…' : 'RESOLVE + WATCH' }}
+          {{ resolveLoading ? '解析中…' : '解析并关注' }}
         </button>
-        <span class="parser-hint">解析成功后自动持久化，可直接用于模拟交易</span>
+        <span class="parser-hint">解析后加入操作端自选，并保持当前市场上下文</span>
       </div>
       <div class="preference-status" aria-live="polite">
         <span v-if="preferenceSaving">自选标的保存中…</span>
@@ -427,31 +470,111 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.sim-terminal-page { display: flex; flex-direction: column; gap: 10px; margin: 0; min-width: 0; }
-.sim-toolbar { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; min-height: 50px; padding: 0 2px 10px; border-bottom: 1px solid var(--line); }
-.sim-title h1 { margin: 0; color: var(--text); font: 650 13px/1 ui-monospace, monospace; letter-spacing: .11em; }
-.sim-title span { display: block; margin-top: 7px; color: var(--subtle); font-size: 10px; }
-.market-switch { display: flex; align-items: stretch; gap: 22px; align-self: stretch; }
-.market-tab { position: relative; border: 0; background: transparent; color: var(--muted); padding: 0 1px 9px; font: 600 9px/1 ui-monospace, monospace; letter-spacing: .06em; cursor: pointer; white-space: nowrap; }
+.sim-terminal-page { display: flex; flex-direction: column; gap: 8px; margin: 0; min-width: 0; }
+.sim-toolbar { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; min-height: 58px; padding: 0 0 10px; border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent); }
+.sim-title { display: grid; gap: 5px; }
+.sim-kicker { color: var(--subtle); font: 600 7px/1 ui-monospace, monospace; letter-spacing: .12em; }
+.sim-title h1 { margin: 0; color: var(--text); font-size: 18px; line-height: 1; font-weight: 650; letter-spacing: -.02em; }
+.sim-title > span:last-child { color: var(--muted); font-size: 9px; }
+.sim-toolbar-right { display: flex; align-items: flex-end; gap: 24px; }
+.market-switch { display: flex; align-items: stretch; gap: 20px; align-self: stretch; }
+.market-tab { position: relative; border: 0; background: transparent; color: var(--muted); padding: 0 1px 9px; font-size: 9px; font-weight: 620; cursor: pointer; white-space: nowrap; transition: color var(--motion-fast, 110ms) ease, transform var(--motion-fast, 110ms) ease; }
 .market-tab.active { color: var(--text); font-weight: 650; }
-.market-tab.active::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--accent); }
-.symbol-parser { display: flex; align-items: center; gap: 8px; padding: 8px 0; background: transparent; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; }
-.parser-label { color: var(--text); font: 650 9px/1 ui-monospace, monospace; letter-spacing: .07em; white-space: nowrap; }
-.parser-input { flex: 0 1 260px; min-width: 140px; height: 30px; background: transparent; border: 0; border-bottom: 1px solid var(--line-strong); border-radius: 0; color: var(--text); padding: 0 6px; font-size: 10px; outline: none; }
-.parser-input:focus { border-color: #6a5b40; }
-.parser-btn { min-height: 30px; border: 1px solid #373a32; border-radius: 0; background: #373a32; color: #f2eee6; padding: 5px 11px; cursor: pointer; font: 650 8px/1 ui-monospace, monospace; letter-spacing: .07em; white-space: nowrap; }
+.market-tab:hover { color: var(--text); }
+.market-tab:active { transform: translateY(1px); }
+.market-tab.active::after { content: ''; position: absolute; left: 0; width: 18px; bottom: -1px; height: 2px; border-radius: 2px; background: var(--accent); }
+.session-readout { display: inline-flex; align-items: center; gap: 6px; min-height: 26px; color: var(--muted); font-size: 8px; font-weight: 600; white-space: nowrap; }
+.session-readout i { width: 5px; height: 5px; border-radius: 50%; background: var(--bad); }
+.session-readout.open i { background: var(--ok); }
+.symbol-parser { display: grid; grid-template-columns: auto minmax(180px, 270px) auto minmax(0, 1fr); align-items: center; gap: 9px; min-height: 38px; padding: 0; background: transparent; border: 0; border-bottom: 1px solid color-mix(in srgb, var(--line) 68%, transparent); border-radius: 0; }
+.parser-label { color: var(--subtle); font-size: 8px; font-weight: 600; white-space: nowrap; }
+.parser-input { flex: 0 1 260px; min-width: 140px; height: 29px; background: color-mix(in srgb, var(--workspace-control-bg, var(--surface)) 54%, transparent); border: 1px solid color-mix(in srgb, var(--line) 76%, transparent); border-radius: 7px; color: var(--text); padding: 0 8px; font-size: 9px; outline: none; transition: border-color var(--motion-fast, 110ms) ease, background var(--motion-fast, 110ms) ease; }
+.parser-input:focus { border-color: var(--workspace-focus); background: var(--workspace-control-bg, var(--surface)); }
+.parser-btn { min-height: 29px; border: 1px solid color-mix(in srgb, var(--accent) 44%, var(--line)); border-radius: 7px; background: color-mix(in srgb, var(--accent) 6%, transparent); color: var(--accent-strong); padding: 5px 10px; cursor: pointer; font-size: 8px; font-weight: 650; white-space: nowrap; transition: background var(--motion-fast, 110ms) ease, transform var(--motion-fast, 110ms) ease; }
+.parser-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.parser-btn:active:not(:disabled) { transform: scale(.98); }
 .parser-btn:disabled { opacity: .45; cursor: not-allowed; }
 .parser-hint, .preference-status { color: var(--subtle); font-size: 9px; }
-.preference-status { min-height: 12px; display: flex; gap: 10px; }
+.preference-status { min-height: 10px; display: flex; gap: 10px; }
 .parser-error { color: var(--warn); }
-.sim-content { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 0; align-items: stretch; min-width: 0; border: 1px solid var(--line); }
-@media (max-width: 900px) { .sim-content { grid-template-columns: 190px minmax(0, 1fr); } }
+.sim-content { display: grid; grid-template-columns: clamp(148px, 10.5vw, 164px) minmax(0, 1fr); gap: 0; align-items: stretch; min-width: 0; border: 0; border-top: 1px solid color-mix(in srgb, var(--line) 72%, transparent); border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent); }
+.terminal-recovery {
+  min-height: 310px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 250px;
+  align-items: center;
+  gap: 24px;
+  padding: 34px 38px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.recovery-mark {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--bad) 58%, var(--line));
+  border-radius: 0;
+  color: var(--bad);
+  font: 650 15px/1 ui-monospace, monospace;
+}
+.recovery-copy { max-width: 620px; }
+.recovery-eyebrow { color: var(--subtle); font-size: 9px; letter-spacing: .04em; }
+.recovery-copy h1 { margin: 8px 0 7px; color: var(--text); font-size: 20px; line-height: 1.2; font-weight: 650; letter-spacing: -.015em; }
+.recovery-copy p { margin: 0; max-width: 590px; color: var(--muted); font-size: 10px; line-height: 1.65; }
+.recovery-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin-top: 18px; }
+.recovery-actions button {
+  min-height: 32px;
+  border: 1px solid var(--line-strong);
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 0 11px;
+  cursor: pointer;
+  font-size: 9px;
+}
+.recovery-actions button:hover { color: var(--text); border-color: var(--accent); }
+.recovery-actions .recovery-primary { border-color: var(--accent); border-left-width: 2px; background: transparent; color: var(--accent-strong); }
+.recovery-context {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 7px;
+  padding-left: 22px;
+  border-left: 1px solid var(--line);
+}
+.recovery-context span { color: var(--subtle); font-size: 8px; }
+.recovery-context strong { color: var(--text); font-size: 11px; font-weight: 620; }
+.recovery-context small { color: var(--muted); font-size: 9px; line-height: 1.55; }
+@media (max-width: 1120px) {
+  .sim-terminal-page { gap: 6px; }
+  .sim-toolbar { min-height: 50px; padding-bottom: 8px; }
+  .sim-title { gap: 3px; }
+  .sim-title > span:last-child { display: none; }
+  .symbol-parser { min-height: 34px; grid-template-columns: auto minmax(160px, 1fr) auto; }
+  .parser-hint { display: none; }
+  .preference-status { min-height: 0; }
+  .sim-content { grid-template-columns: 148px minmax(0, 1fr); }
+}
 @media (max-width: 700px) {
   .sim-toolbar { align-items: flex-start; flex-direction: column; }
-  .market-switch { width: 100%; overflow-x: auto; }
+  .sim-toolbar-right { width: 100%; justify-content: space-between; }
+  .market-switch { overflow-x: auto; }
   .symbol-parser { align-items: stretch; flex-wrap: wrap; }
+  .symbol-parser { display: flex; min-height: auto; padding: 8px 0; }
   .parser-input { flex: 1 1 180px; }
   .parser-hint { width: 100%; }
   .sim-content { grid-template-columns: 1fr; }
+  .terminal-recovery { grid-template-columns: auto minmax(0, 1fr); padding: 24px 20px; }
+  .recovery-context { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--line); padding: 16px 0 0; }
 }
+.market-tab:focus-visible,
+.parser-btn:focus-visible,
+.parser-input:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 65%, transparent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .market-tab, .parser-btn, .parser-input { transition: none !important; } }
 </style>

@@ -12,17 +12,16 @@ const emit = defineEmits(['select'])
 </script>
 
 <template>
-  <div class="quote-strip">
+  <div class="quote-strip market-ticker" aria-label="行情带">
     <template v-if="props.jdPrices">
       <button v-for="(price, key) in props.jdPrices" :key="`jd-${key}`" type="button"
               class="rt-card jd" :class="{ selected: props.marketFocus === 'jd' && props.jdMarket === key }"
               :aria-pressed="props.marketFocus === 'jd' && props.jdMarket === key"
               @click="emit('select', { key: 'jd', jdMarket: key })">
-        <span class="rt-topline"><span class="rt-name">{{ price.label }}</span><span class="rt-source">积存金</span></span>
-        <span class="rt-price jd-price">{{ formatNumber(price.price) }}</span>
-        <span class="rt-sub">
-          <span :class="Number(price.change || 0) >= 0 ? 'pos' : 'neg'">{{ price.change }} ({{ formatPercent(price.change_pct) }})</span>
-          <span class="rt-muted">{{ price.time }}</span>
+        <span class="rt-copy"><b>{{ price.label }}</b><small>积存金</small></span>
+        <span class="rt-value">{{ formatNumber(price.price) }}</span>
+        <span class="rt-delta" :class="Number(price.change || 0) >= 0 ? 'pos' : 'neg'">
+          {{ price.change }} · {{ formatPercent(price.change_pct) }}
         </span>
       </button>
     </template>
@@ -31,11 +30,10 @@ const emit = defineEmits(['select'])
               class="rt-card" :class="{ selected: props.marketFocus === key }"
               :aria-pressed="props.marketFocus === key"
               @click="emit('select', { key })">
-        <span class="rt-topline"><span class="rt-name">{{ price.name }}</span><span class="rt-source">实时</span></span>
-        <span class="rt-price">{{ formatNumber(price.price) }}</span>
-        <span class="rt-sub">
-          <span :class="Number(price.change || 0) >= 0 ? 'pos' : 'neg'">{{ price.change }} ({{ formatPercent(price.change_pct) }})</span>
-          <span class="rt-muted">昨收 {{ price.prev_close }}</span>
+        <span class="rt-copy"><b>{{ price.name }}</b><small>实时</small></span>
+        <span class="rt-value">{{ formatNumber(price.price) }}</span>
+        <span class="rt-delta" :class="Number(price.change || 0) >= 0 ? 'pos' : 'neg'">
+          {{ price.change }} · {{ formatPercent(price.change_pct) }}
         </span>
       </button>
     </template>
@@ -43,21 +41,52 @@ const emit = defineEmits(['select'])
 </template>
 
 <style scoped>
-.quote-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
-.rt-card { width: 100%; text-align: left; color: inherit; background: transparent; border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 11px 13px 10px; position: relative; overflow: hidden; min-width: 0; cursor: pointer; transition: border-color .15s ease, background .15s ease; }
-.rt-card:hover { border-color: var(--line-strong); background: rgba(209,201,188,.24); }
-.rt-card.selected { border-color: var(--accent); background: rgba(161,132,88,.08); }
-.rt-card::before { content: ''; position: absolute; top: 0; left: 0; bottom: 0; width: 2px; background: #6f7479; }
-.rt-card.jd::before { background: var(--accent); }
-.rt-card.jd .rt-price { color: var(--accent-strong); }
-.rt-topline, .rt-sub { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
-.rt-name { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rt-source { color: var(--subtle); font-size: 9px; border: 1px solid var(--line); border-radius: 0; padding: 1px 5px; flex: 0 0 auto; }
-.rt-price { display: block; font-size: 23px; line-height: 1.15; font-weight: 650; color: var(--text); font-variant-numeric: tabular-nums; letter-spacing: -.025em; margin-top: 5px; }
-.rt-sub { margin-top: 5px; font-size: 11px; }
-.rt-muted { color: var(--subtle); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.quote-strip {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  min-height: 42px;
+  padding: 2px 0 6px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-bottom: 0;
+  scrollbar-width: none;
+  scroll-snap-type: x proximity;
+}
+.quote-strip::-webkit-scrollbar { display: none; }
+.rt-card {
+  position: relative;
+  flex: 0 1 260px;
+  min-width: 220px;
+  display: grid;
+  grid-template-columns: minmax(90px, 1fr) auto auto;
+  grid-template-areas: "copy value delta";
+  align-items: center;
+  column-gap: 12px;
+  min-height: 38px;
+  padding: 6px 9px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  scroll-snap-align: start;
+  transition: color var(--motion-standard, 190ms) ease, background var(--motion-standard, 190ms) ease, transform var(--motion-fast, 110ms) ease;
+}
+.rt-card::after { content: ''; position: absolute; left: 10px; right: 10px; bottom: 1px; height: 1px; border-radius: 999px; background: var(--accent); transform: scaleX(0); transform-origin: left center; transition: transform var(--motion-standard, 190ms) var(--motion-ease, cubic-bezier(.22,1,.36,1)); }
+.rt-card:hover { background: var(--workspace-hover-bg, rgba(255,255,255,.028)); }
+.rt-card:active { transform: scale(.98); }
+.rt-card.selected { color: var(--text); background: transparent; }
+.rt-card.selected::after { transform: scaleX(1); }
+.rt-card:focus-visible { outline: 0; background: var(--workspace-hover-bg, rgba(255,255,255,.028)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--workspace-focus, var(--accent)) 11%, transparent); }
+.rt-copy { grid-area: copy; display: grid; gap: 3px; min-width: 0; }
+.rt-copy b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 10.5px; font-weight: 580; }
+.rt-copy small { display: none; }
+.rt-value { grid-area: value; color: var(--text); font: 620 14px/1 ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums; text-align: right; }
+.rt-delta { grid-area: delta; min-width: 76px; font: 580 9px/1 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; text-align: right; }
 .pos { color: var(--ok); }
 .neg { color: var(--bad); }
-@media (max-width: 1100px) { .quote-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 620px) { .quote-strip { grid-template-columns: 1fr; } }
+@media (max-width: 1100px) { .rt-card { flex-basis: 220px; min-width: 210px; } }
+@media (max-width: 620px) { .quote-strip { padding-left: 0; padding-right: 0; } .rt-card { flex-basis: 205px; min-width: 205px; } }
 </style>

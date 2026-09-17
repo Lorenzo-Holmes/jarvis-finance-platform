@@ -155,6 +155,12 @@ function formatMoney(value) {
   return `${activeInstrument.value.currency}${number.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
+function formatAccountMoney(value) {
+  const number = Number(value || 0)
+  if (!Number.isFinite(number)) return '¥0.00'
+  return `¥${number.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
 function signed(value, digits = 2) {
   const number = Number(value || 0)
   const prefix = number > 0 ? '+' : ''
@@ -441,85 +447,142 @@ onBeforeUnmount(() => {
   <section class="trade-terminal">
     <header class="terminal-topbar">
       <button type="button" class="symbol-block" title="切换标的" @click="cycleSymbol">
-        <span class="symbol-square"></span>
-        <b>{{ activeInstrument.ticker }}</b>
+        <span class="symbol-index">标的</span>
+        <span class="symbol-copy">
+          <b>{{ activeInstrument.ticker }}</b>
+          <small>{{ activeInstrument.name }}</small>
+        </span>
         <span class="symbol-price">{{ activeInstrument.currency }}{{ formatPrice(currentPrice) }}</span>
         <span class="symbol-change" :class="Number(currentQuote?.change || 0) >= 0 ? 'up' : 'down'">
-          {{ Number(currentQuote?.change || 0) >= 0 ? '▲' : '▼' }}
-          {{ signed(currentQuote?.change, 2) }} ({{ signed(currentQuote?.change_pct, 2) }}%)
+          {{ signed(currentQuote?.change, 2) }} · {{ signed(currentQuote?.change_pct, 2) }}%
         </span>
       </button>
-
+      <div class="terminal-readout">
+        <span><i :class="{ open: props.sessionOpen }"></i>{{ props.sessionOpen ? '市场开放' : '市场休市' }}</span>
+        <span>{{ quoteStale ? '行情延迟' : '实时行情' }}</span>
+      </div>
     </header>
 
-    <div class="quote-row">
-      <div class="trade-actions">
-        <button type="button" class="quick buy" @click="openOrder('BUY')">买入</button>
-        <button type="button" class="quick sell" @click="openOrder('SELL')">卖出</button>
-      </div>
-      <div class="ohlcv">
-        <span>O <b>{{ formatPrice(latestBar.open) }}</b></span>
-        <span>H <b>{{ formatPrice(latestBar.high) }}</b></span>
-        <span>L <b>{{ formatPrice(latestBar.low) }}</b></span>
-        <span>C <b>{{ formatPrice(latestBar.close) }}</b></span>
-        <span>V <b>{{ Number(latestBar.volume || 0).toLocaleString() }}</b></span>
-      </div>
-      <span v-if="quoteStale" class="stale-badge">行情陈旧</span>
+    <div class="terminal-workspace">
+      <section class="chart-deck">
+        <div class="quote-row">
+          <div class="ohlcv">
+            <span>开 <b>{{ formatPrice(latestBar.open) }}</b></span>
+            <span>高 <b>{{ formatPrice(latestBar.high) }}</b></span>
+            <span>低 <b>{{ formatPrice(latestBar.low) }}</b></span>
+            <span>收 <b>{{ formatPrice(latestBar.close) }}</b></span>
+            <span>量 <b>{{ Number(latestBar.volume || 0).toLocaleString() }}</b></span>
+          </div>
+          <span class="quote-source">{{ activeInstrument.kind === 'extended' ? activeInstrument.market : activeInstrument.quoteKey }}</span>
+        </div>
+
+        <div class="chart-stage">
+          <div ref="chartRef" class="terminal-chart"></div>
+
+          <template v-if="positionMarkerY !== null && activePosition">
+            <div class="chart-marker position-marker" :style="{ top: `${positionMarkerY}px` }">
+              <span>{{ Number(activePosition.quantity || 0).toFixed(0) }}</span>
+              <strong :class="livePnl >= 0 ? 'up' : 'down'">{{ signedMoney(livePnl) }}</strong>
+              <span class="marker-close" aria-hidden="true">×</span>
+            </div>
+            <div class="axis-price-tag position-price-tag" :style="{ top: `${positionMarkerY}px` }">
+              {{ formatPrice(positionPrice) }}
+            </div>
+          </template>
+
+          <template v-if="stopMarkerY !== null && previewStop > 0">
+            <button type="button" class="chart-marker stop-marker" :style="{ top: `${stopMarkerY}px` }" @click="editActiveStop">
+              STOP
+            </button>
+            <div class="axis-price-tag stop-price-tag" :style="{ top: `${stopMarkerY}px` }">
+              {{ formatPrice(previewStop) }}
+            </div>
+          </template>
+
+          <div v-if="chartLoading" class="chart-state">正在加载行情…</div>
+          <div v-else-if="chartError" class="chart-state error">
+            <span>{{ chartError }}</span>
+            <button type="button" @click="loadKline">重试</button>
+          </div>
+          <div v-else-if="!klineData.length" class="chart-state">暂无可绘制的 K 线数据</div>
+        </div>
+
+        <footer class="terminal-rangebar">
+          <nav class="range-list" aria-label="图表范围">
+            <button v-for="item in rangeOptions" :key="item.key" type="button"
+                    :class="{ active: selectedRange === item.key }" @click="setRange(item.key)">
+              {{ item.key }}
+            </button>
+          </nav>
+          <label class="interval-picker">
+            <span>INTERVAL</span>
+            <select v-model="selectedInterval" aria-label="K线周期">
+              <option v-for="item in visibleIntervals" :key="item.value" :value="item.value">{{ item.label }}</option>
+            </select>
+          </label>
+          <button v-if="activeOpenOrder" type="button" class="open-order-chip" @click="editActiveStop">
+            {{ activeOpenOrder.status === 'TRIGGERING' ? 'TRIGGERING' : 'STOP' }} {{ formatPrice(activeOpenOrder.stopPrice) }}
+          </button>
+        </footer>
+      </section>
+
+      <aside class="execution-rail" aria-label="交易执行面板">
+        <header class="execution-head">
+          <div><span>EXECUTION</span><b>执行与持仓</b></div>
+          <small>{{ props.sessionOpen ? '就绪' : '暂停' }}</small>
+        </header>
+
+        <section class="execution-account">
+          <div class="rail-section-head"><span>01</span><b>账户概览</b></div>
+          <dl>
+            <div class="account-primary"><dt>净资产</dt><dd>{{ formatAccountMoney(props.account?.netEquity ?? props.account?.totalAssets) }}</dd></div>
+            <div><dt>可用资金</dt><dd>{{ formatAccountMoney(props.account?.cash) }}</dd></div>
+            <div><dt>持仓市值</dt><dd>{{ formatAccountMoney(props.account?.marketValue) }}</dd></div>
+            <div><dt>总收益率</dt><dd :class="Number(props.account?.totalReturnPct || 0) >= 0 ? 'up' : 'down'">{{ signed(props.account?.totalReturnPct, 2) }}%</dd></div>
+          </dl>
+        </section>
+
+        <section class="execution-position">
+          <div class="rail-section-head"><span>02</span><b>当前持仓</b></div>
+          <template v-if="activePosition">
+            <div class="position-hero">
+              <strong>{{ Number(activePosition.quantity || 0).toLocaleString() }}</strong>
+              <span>持仓数量</span>
+            </div>
+            <dl>
+              <div><dt>平均成本</dt><dd>{{ formatPrice(positionPrice) }}</dd></div>
+              <div><dt>浮动盈亏</dt><dd :class="livePnl >= 0 ? 'up' : 'down'">{{ signedMoney(livePnl) }}</dd></div>
+            </dl>
+          </template>
+          <p v-else class="rail-empty">当前标的暂无持仓。</p>
+        </section>
+
+        <section class="execution-order">
+          <div class="rail-section-head"><span>03</span><b>活动挂单</b></div>
+          <button v-if="activeOpenOrder" type="button" class="working-order" @click="editActiveStop">
+            <span>{{ activeOpenOrder.status === 'TRIGGERING' ? '触发中' : '等待中' }}</span>
+            <b>{{ activeOpenOrder.orderType === 'STOP_MARKET' ? '止损单' : activeOpenOrder.orderType }}</b>
+            <em>{{ formatPrice(activeOpenOrder.stopPrice) }}</em>
+          </button>
+          <p v-else class="rail-empty">无活动挂单。</p>
+        </section>
+
+        <div class="execution-actions execution-segmented" aria-label="买卖执行">
+          <button type="button" class="execute buy" :disabled="!props.sessionOpen || quoteStale" @click="openOrder('BUY')">
+            <span>BUY</span><b>买入</b>
+          </button>
+          <button type="button" class="execute sell" :disabled="!props.sessionOpen || quoteStale" @click="openOrder('SELL')">
+            <span>SELL</span><b>卖出</b>
+          </button>
+        </div>
+        <p class="execution-note">提交前将在右侧确认数量、类型与止损条件。</p>
+      </aside>
     </div>
-
-    <div class="chart-stage">
-      <div ref="chartRef" class="terminal-chart"></div>
-
-      <template v-if="positionMarkerY !== null && activePosition">
-        <div class="chart-marker position-marker" :style="{ top: `${positionMarkerY}px` }">
-          <span>{{ Number(activePosition.quantity || 0).toFixed(0) }}</span>
-          <strong :class="livePnl >= 0 ? 'up' : 'down'">{{ signedMoney(livePnl) }}</strong>
-          <span class="marker-close" aria-hidden="true">×</span>
-        </div>
-        <div class="axis-price-tag position-price-tag" :style="{ top: `${positionMarkerY}px` }">
-          {{ formatPrice(positionPrice) }}
-        </div>
-      </template>
-
-      <template v-if="stopMarkerY !== null && previewStop > 0">
-        <button type="button" class="chart-marker stop-marker" :style="{ top: `${stopMarkerY}px` }" @click="editActiveStop">
-          Stop
-        </button>
-        <div class="axis-price-tag stop-price-tag" :style="{ top: `${stopMarkerY}px` }">
-          {{ formatPrice(previewStop) }}
-        </div>
-      </template>
-
-      <div v-if="chartLoading" class="chart-state">正在加载行情…</div>
-      <div v-else-if="chartError" class="chart-state error">
-        <span>{{ chartError }}</span>
-        <button type="button" @click="loadKline">重试</button>
-      </div>
-      <div v-else-if="!klineData.length" class="chart-state">暂无可绘制的 K 线数据</div>
-    </div>
-
-    <footer class="terminal-rangebar">
-      <nav class="range-list" aria-label="图表范围">
-        <button v-for="item in rangeOptions" :key="item.key" type="button"
-                :class="{ active: selectedRange === item.key }" @click="setRange(item.key)">
-          {{ item.key }}
-        </button>
-      </nav>
-      <label class="interval-picker">
-        <span>Interval:</span>
-        <select v-model="selectedInterval" aria-label="K线周期">
-          <option v-for="item in visibleIntervals" :key="item.value" :value="item.value">{{ item.label }}</option>
-        </select>
-      </label>
-      <button v-if="activeOpenOrder" type="button" class="open-order-chip" @click="editActiveStop">
-        {{ activeOpenOrder.status === 'TRIGGERING' ? '触发中' : 'Stop' }} {{ formatPrice(activeOpenOrder.stopPrice) }}
-      </button>
-    </footer>
 
     <div v-if="modalOpen" class="modal-layer" @mousedown.self="closeModal">
       <section class="order-modal" role="dialog" aria-modal="true" aria-labelledby="order-modal-title">
         <header class="modal-header">
-          <div class="modal-kicker"><span>JARVIS / SIMULATION</span><b>模拟交易 · 下单</b></div>
+          <div class="modal-kicker"><span>SIMULATION</span><b>模拟交易 · 订单确认</b></div>
           <button type="button" class="modal-close" aria-label="关闭" @click="closeModal">×</button>
         </header>
         <div class="modal-title" id="order-modal-title">
@@ -752,5 +815,243 @@ onBeforeUnmount(() => {
   .order-summary { padding-right: 20px; padding-left: 20px; }
   .order-message { margin-right: 20px; margin-left: 20px; }
   .modal-actions { padding-right: 20px; padding-left: 20px; }
+}
+
+/* Trading workspace V4: modern financial app with restrained Rhine accents. */
+.trade-terminal {
+  --trade-ui-font: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --trade-mono-font: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  min-height: 0;
+  border: 0;
+  border-right: 1px solid var(--trade-border);
+  border-radius: 0;
+  background: transparent;
+  font-family: var(--trade-ui-font);
+}
+.terminal-topbar {
+  min-height: 56px;
+  height: auto;
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  border-bottom: 1px solid color-mix(in srgb, var(--trade-border) 72%, transparent);
+  background: transparent;
+}
+.symbol-block {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(108px, auto) auto auto;
+  align-items: center;
+  gap: 11px;
+  padding: 0 14px;
+  border: 0;
+  border-right: 1px solid color-mix(in srgb, var(--trade-border) 72%, transparent);
+  border-radius: 0;
+  background: transparent;
+  transition: background var(--motion-fast, 110ms) ease, transform var(--motion-fast, 110ms) ease;
+}
+.symbol-block:hover { background: color-mix(in srgb, var(--trade-text) 3%, transparent); }
+.symbol-block:active { transform: translateY(1px); }
+.symbol-index { color: var(--trade-subtle); font-size: 8px; font-weight: 600; }
+.symbol-copy { min-width: 0; display: grid; gap: 3px; text-align: left; }
+.symbol-copy b { color: var(--trade-text); font: 650 12px/1 var(--trade-mono-font); }
+.symbol-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--trade-subtle); font-size: 8px; }
+.symbol-price { color: var(--trade-text); font: 650 15px/1 var(--trade-mono-font); }
+.symbol-change { font: 600 9px/1 var(--trade-mono-font); }
+.terminal-readout { display: flex; align-items: center; gap: 16px; padding: 0 14px; color: var(--trade-subtle); font-size: 8px; font-weight: 600; }
+.terminal-readout span { display: inline-flex; align-items: center; gap: 6px; }
+.terminal-readout i { width: 5px; height: 5px; border-radius: 50%; background: var(--trade-sell); }
+.terminal-readout i.open { background: var(--trade-buy); }
+.terminal-workspace { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) clamp(196px, 14vw, 216px); align-items: stretch; }
+.chart-deck { min-width: 0; border-right: 1px solid color-mix(in srgb, var(--trade-border) 72%, transparent); }
+.quote-row {
+  min-height: 38px;
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid color-mix(in srgb, var(--trade-border) 64%, transparent);
+  background: transparent;
+}
+.ohlcv { gap: 15px; color: var(--trade-subtle); font-size: 8px; font-weight: 560; }
+.ohlcv b { margin-left: 4px; color: var(--trade-muted); font: 620 8px/1 var(--trade-mono-font); }
+.quote-source { color: var(--trade-subtle); font: 600 7px/1 var(--trade-mono-font); letter-spacing: .06em; text-transform: uppercase; }
+.chart-stage { height: clamp(360px, calc(100dvh - 420px), 620px); min-height: 360px; background: transparent; }
+.chart-state { background: color-mix(in srgb, var(--trade-bg) 88%, transparent); }
+.chart-state button { border-radius: 7px; background: color-mix(in srgb, var(--trade-text) 4%, transparent); }
+.position-marker,
+.stop-marker,
+.axis-price-tag {
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--material-elevated, var(--trade-panel)) 92%, transparent);
+  box-shadow: 0 8px 22px rgba(0,0,0,.1);
+  backdrop-filter: blur(12px);
+}
+.position-marker { border-left: 2px solid var(--trade-accent); }
+.stop-marker { border-left: 2px solid var(--trade-sell); }
+.stop-price-tag { background: color-mix(in srgb, var(--material-elevated, var(--trade-panel)) 92%, transparent); color: var(--trade-sell); }
+.terminal-rangebar { min-height: 42px; padding: 0 12px; gap: 14px; background: transparent; border-top-color: color-mix(in srgb, var(--trade-border) 64%, transparent); }
+.range-list { gap: 0; }
+.range-list button { position: relative; padding: 7px; border-radius: 6px; font: 600 8px/1 var(--trade-mono-font); transition: color var(--motion-fast, 110ms) ease, background var(--motion-fast, 110ms) ease, transform var(--motion-fast, 110ms) ease; }
+.range-list button:hover { background: color-mix(in srgb, var(--trade-text) 3.5%, transparent); color: var(--trade-text); }
+.range-list button:active { transform: scale(.96); }
+.range-list button.active { color: var(--trade-accent); }
+.range-list button.active::before { content: ''; position: absolute; left: 6px; right: 6px; bottom: -7px; height: 2px; border-radius: 2px; background: var(--trade-accent); }
+.interval-picker { font: 600 7px/1 var(--trade-mono-font); letter-spacing: .05em; }
+.interval-picker select { font: 650 8px/1 var(--trade-mono-font); }
+.open-order-chip { border-radius: 7px; background: color-mix(in srgb, var(--trade-sell) 5%, transparent); border: 1px solid color-mix(in srgb, var(--trade-sell) 24%, transparent); color: var(--trade-sell); font: 650 8px/1 var(--trade-mono-font); }
+
+.execution-rail { min-width: 0; display: flex; flex-direction: column; background: color-mix(in srgb, var(--trade-panel) 22%, transparent); }
+.execution-head { min-height: 56px; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 14px; border-bottom: 1px solid color-mix(in srgb, var(--trade-border) 64%, transparent); }
+.execution-head > div, .rail-section-head { display: grid; gap: 4px; }
+.execution-head span, .rail-section-head span { color: var(--trade-subtle); font: 600 7px/1 var(--trade-mono-font); letter-spacing: .08em; }
+.execution-head b, .rail-section-head b { color: var(--trade-text); font-size: 10px; font-weight: 650; }
+.execution-head small { color: var(--trade-accent); font-size: 8px; font-weight: 650; }
+.execution-account,
+.execution-position,
+.execution-order { padding: 15px 14px 2px; border-bottom: 0; }
+.execution-account dl,
+.execution-position dl { margin: 11px 0 0; }
+.execution-account dl { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; }
+.execution-account dl > div,
+.execution-position dl > div { min-height: 0; display: grid; gap: 4px; border: 0; }
+.execution-account dl > .account-primary { grid-column: 1 / -1; gap: 5px; padding: 3px 0 4px; }
+.execution-rail dt { color: var(--trade-subtle); font-size: 8px; }
+.execution-rail dd { margin: 0; color: var(--trade-text); font: 600 9px/1 var(--trade-mono-font); text-align: left; }
+.execution-account .account-primary dd { font-size: 17px; letter-spacing: -.025em; }
+.execution-rail .up { color: var(--trade-buy); }
+.execution-rail .down { color: var(--trade-sell); }
+.position-hero { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-top: 10px; padding: 5px 0 3px; border: 0; }
+.position-hero strong { color: var(--trade-text); font: 650 19px/1 var(--trade-mono-font); }
+.position-hero span { color: var(--trade-subtle); font-size: 8px; }
+.rail-empty { margin: 10px 0 0; color: var(--trade-subtle); font-size: 8px; line-height: 1.5; }
+.working-order { width: 100%; min-height: 40px; margin-top: 9px; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; padding: 0 9px; border: 1px solid color-mix(in srgb, var(--trade-border) 68%, transparent); border-radius: 8px; background: color-mix(in srgb, var(--trade-text) 2.5%, transparent); color: var(--trade-muted); text-align: left; cursor: pointer; transition: background var(--motion-fast, 110ms) ease, border-color var(--motion-fast, 110ms) ease, transform var(--motion-fast, 110ms) ease; }
+.working-order:hover { color: var(--trade-text); background: color-mix(in srgb, var(--trade-text) 4%, transparent); border-color: color-mix(in srgb, var(--trade-accent) 30%, var(--trade-border)); }
+.working-order:active { transform: scale(.985); }
+.working-order span { color: var(--trade-subtle); font-size: 7px; font-weight: 600; }
+.working-order em { color: var(--trade-subtle); font: 600 8px/1 var(--trade-mono-font); font-style: normal; }
+.working-order b { color: inherit; font-size: 9px; }
+.execution-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin: auto 12px 10px; padding: 4px; border: 1px solid color-mix(in srgb, var(--trade-border) 72%, transparent); border-radius: 10px; background: color-mix(in srgb, var(--material-glass, var(--trade-panel)) 64%, transparent); }
+.execute { min-height: 42px; display: flex; align-items: center; justify-content: center; gap: 8px; border: 0; border-radius: 7px; background: transparent; cursor: pointer; transition: background var(--motion-fast, 110ms) ease, transform var(--motion-fast, 110ms) ease, box-shadow var(--motion-fast, 110ms) ease; }
+.execute + .execute { border-left: 0; }
+.execute::before { display: none; }
+.execute span { font: 650 7px/1 var(--trade-mono-font); letter-spacing: .06em; opacity: .72; }
+.execute b { font-size: 11px; font-weight: 650; }
+.execute.buy { color: var(--trade-buy); }
+.execute.sell { color: var(--trade-sell); }
+.execute.buy:hover:not(:disabled) { background: color-mix(in srgb, var(--trade-buy) 9%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--trade-buy) 18%, transparent); }
+.execute.sell:hover:not(:disabled) { background: color-mix(in srgb, var(--trade-sell) 9%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--trade-sell) 18%, transparent); }
+.execute:active:not(:disabled) { transform: scale(.98); }
+.execute:disabled { opacity: .34; cursor: not-allowed; }
+.execution-note { margin: 0; padding: 0 14px 13px; border-top: 0; color: var(--trade-subtle); font-size: 7px; line-height: 1.45; }
+
+.modal-layer { place-items: stretch end; padding: 0; background: linear-gradient(90deg, rgba(4,7,10,0) 45%, rgba(4,7,10,.14) 100%); backdrop-filter: blur(2px); }
+.order-modal {
+  width: min(420px, 100%);
+  height: 100%;
+  max-height: none;
+  border: 1px solid var(--material-border, var(--trade-border-strong));
+  border-right: 0;
+  border-radius: 16px 0 0 16px;
+  background: color-mix(in srgb, var(--material-elevated, var(--trade-panel)) 90%, transparent);
+  box-shadow: -24px 0 70px rgba(0,0,0,.2), inset 1px 0 0 rgba(255,255,255,.035);
+  backdrop-filter: blur(var(--material-blur-elevated, 28px)) saturate(1.08);
+  -webkit-backdrop-filter: blur(var(--material-blur-elevated, 28px)) saturate(1.08);
+  animation: order-sheet-in var(--motion-layout, 300ms) var(--motion-ease, cubic-bezier(.22,1,.36,1));
+}
+@keyframes order-sheet-in {
+  from { opacity: 0; transform: translateX(14px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.modal-header { min-height: 58px; padding: 0 14px 0 18px; border-bottom: 1px solid color-mix(in srgb, var(--trade-border) 66%, transparent); }
+.modal-close { width: 30px; height: 30px; border: 0; border-radius: 8px; transition: background var(--motion-fast, 110ms) ease, transform var(--motion-fast, 110ms) ease; }
+.modal-close:hover { background: color-mix(in srgb, var(--trade-text) 5%, transparent); color: var(--trade-accent); }
+.modal-close:active { transform: scale(.94); }
+.modal-title { padding: 16px 18px; border-bottom: 1px solid color-mix(in srgb, var(--trade-border) 66%, transparent); }
+.modal-instrument h2 { font: 650 20px/1 var(--trade-mono-font); }
+.modal-last-price strong { color: var(--trade-text); font: 650 17px/1 var(--trade-mono-font); }
+.side-switch { gap: 4px; margin: 12px 18px 16px; padding: 4px; border: 1px solid var(--material-border, var(--trade-border)); border-radius: 10px; background: color-mix(in srgb, var(--material-glass, var(--trade-panel)) 68%, transparent); }
+.side-switch button { position: relative; height: 36px; border-radius: 7px; transition: color var(--motion-fast, 110ms) ease, background var(--motion-fast, 110ms) ease, transform var(--motion-fast, 110ms) ease; }
+.side-switch button + button { border-left: 0; }
+.side-switch button.active.sell,
+.side-switch button.active.buy { font-weight: 700; }
+.side-switch button.active.buy { color: var(--trade-buy); background: color-mix(in srgb, var(--trade-buy) 9%, transparent); }
+.side-switch button.active.sell { color: var(--trade-sell); background: color-mix(in srgb, var(--trade-sell) 9%, transparent); }
+.side-switch button:hover:not(:disabled) { background: color-mix(in srgb, var(--trade-text) 4.5%, transparent); }
+.side-switch button:active:not(:disabled) { transform: scale(.97); }
+.side-switch button.active::before { display: none; }
+.order-grid { padding: 16px 18px 18px; grid-template-columns: minmax(0, 1fr) 160px; }
+.order-grid select,
+.step-input { min-height: 38px; border: 1px solid var(--material-border, var(--trade-border-strong)); border-radius: 8px; background: color-mix(in srgb, var(--material-glass, var(--trade-panel)) 64%, transparent); }
+.step-buttons { border-left: 1px solid var(--trade-border); }
+.step-buttons button { background: transparent; }
+.order-summary { padding: 14px 18px; background: transparent; }
+.order-message { margin: 10px 18px 0; border-radius: 7px; background: color-mix(in srgb, var(--trade-text) 3%, transparent); border: 1px solid color-mix(in srgb, var(--trade-border) 66%, transparent); }
+.modal-actions { padding: 12px 18px max(12px, env(safe-area-inset-bottom)); background: color-mix(in srgb, var(--material-elevated, var(--trade-panel)) 92%, transparent); }
+.modal-actions button { min-height: 38px; border-radius: 8px; border: 1px solid var(--trade-border-strong); background: transparent; transition: background var(--motion-fast, 110ms) ease, transform var(--motion-fast, 110ms) ease; }
+.modal-actions button:hover:not(:disabled) { background: color-mix(in srgb, var(--trade-text) 5%, transparent); }
+.modal-actions button:active:not(:disabled) { transform: scale(.97); }
+.modal-actions .cancel { background: transparent; color: var(--trade-muted); }
+.modal-actions .confirm.sell,
+.modal-actions .confirm.buy { background: transparent; }
+.modal-actions .confirm.sell { border-color: var(--trade-sell); color: var(--trade-sell); }
+.modal-actions .confirm.buy { border-color: var(--trade-buy); color: var(--trade-buy); }
+
+@media (max-width: 1120px) {
+  .terminal-workspace { grid-template-columns: 1fr; }
+  .chart-deck { border-right: 0; }
+  .chart-stage { height: clamp(250px, calc(100dvh - 518px), 400px); min-height: 250px; }
+  .symbol-block { grid-template-columns: auto minmax(90px, auto) auto; }
+  .symbol-change { display: none; }
+  .execution-rail { display: grid; grid-template-columns: 1.15fr .9fr .9fr 188px; align-items: stretch; border-top: 1px solid color-mix(in srgb, var(--trade-border) 70%, transparent); }
+  .execution-head { display: none; }
+  .rail-section-head { gap: 2px; }
+  .execution-account, .execution-position, .execution-order { min-width: 0; padding: 8px 10px; border-right: 1px solid color-mix(in srgb, var(--trade-border) 64%, transparent); }
+  .execution-account dl { margin-top: 5px; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 8px; }
+  .execution-account dl > .account-primary { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 0; }
+  .execution-account .account-primary dd { font-size: 12px; }
+  .execution-position .position-hero { margin-top: 4px; padding: 0; }
+  .execution-position .position-hero strong { font-size: 15px; }
+  .execution-position dl { margin-top: 5px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+  .working-order { min-height: 32px; margin-top: 5px; }
+  .execution-segmented { grid-column: 4; grid-row: 1; align-self: center; margin: 10px; }
+  .execution-note { display: none; }
+}
+@media (max-width: 760px) {
+  .chart-stage { height: 300px; min-height: 300px; }
+  .execution-rail { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .execution-order { border-right: 0; }
+  .execution-segmented { grid-column: 2; grid-row: 2; }
+}
+@media (max-width: 560px) {
+  .terminal-topbar { align-items: stretch; flex-direction: column; }
+  .symbol-block { min-height: 58px; border-right: 0; border-bottom: 1px solid var(--trade-border); }
+  .terminal-readout { min-height: 34px; }
+  .execution-rail { grid-template-columns: 1fr; }
+  .execution-account, .execution-position, .execution-order { border-right: 0; border-bottom: 1px solid var(--trade-border); }
+  .execution-segmented { grid-column: 1; grid-row: auto; margin: 10px 12px; }
+  .order-modal { width: 100%; height: min(92dvh, 760px); margin-top: auto; border-left: 0; border-top: 1px solid var(--trade-border-strong); border-radius: 14px 14px 0 0; }
+}
+.symbol-block:focus-visible,
+.range-list button:focus-visible,
+.interval-picker select:focus-visible,
+.open-order-chip:focus-visible,
+.working-order:focus-visible,
+.execute:focus-visible,
+.modal-close:focus-visible,
+.side-switch button:focus-visible,
+.order-grid select:focus-visible,
+.step-input:focus-within,
+.modal-actions button:focus-visible { outline: 2px solid color-mix(in srgb, var(--trade-accent) 65%, transparent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  .order-modal { animation: none !important; }
+  .execute,
+  .symbol-block,
+  .working-order,
+  .range-list button,
+  .modal-close,
+  .side-switch button,
+  .modal-actions button { transition: none !important; }
 }
 </style>
