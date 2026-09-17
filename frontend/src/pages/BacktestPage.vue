@@ -90,37 +90,37 @@ watch(() => props.active, async active => {
   <section class="backtest-workspace">
     <div class="section-bar">
       <div>
-        <h1>BACKTEST / STRATEGY LABORATORY</h1>
+        <h1>回测</h1>
         <span>黄金ETF · 双均线实验 · 参数冻结 · 收益 / 风险 / 回撤复现</span>
       </div>
-      <span class="section-status"><i :class="{ ok: !invalid }"></i>{{ invalid ? 'PARAMETERS INVALID' : 'EXPERIMENT READY' }}</span>
+      <span class="section-status"><i :class="{ ok: !invalid }"></i>{{ invalid ? '参数有误' : '可运行' }}</span>
     </div>
 
     <div v-if="props.handoff" class="bt-handoff">
       <div>
-        <span>IMPORTED STRATEGY INTENT</span>
+        <span>导入的策略意图</span>
         <strong>{{ props.handoff.profile?.levelLabel || props.handoff.profile?.level || '—' }}</strong>
       </div>
       <dl>
-        <div><dt>HORIZON</dt><dd>{{ props.handoff.questionnaire?.horizonYears || '—' }}Y</dd></div>
-        <div><dt>MAX DRAWDOWN</dt><dd>{{ props.handoff.questionnaire?.maxDrawdownPct ?? '—' }}%</dd></div>
-        <div><dt>TARGET RETURN</dt><dd>{{ props.handoff.questionnaire?.targetReturnPct ?? '—' }}%</dd></div>
-        <div><dt>GOLD ALLOCATION</dt><dd>{{ handoffGoldAllocation?.pct ?? '—' }}%</dd></div>
+        <div><dt>投资期限</dt><dd>{{ props.handoff.questionnaire?.horizonYears || '—' }} 年</dd></div>
+        <div><dt>最大回撤</dt><dd>{{ props.handoff.questionnaire?.maxDrawdownPct ?? '—' }}%</dd></div>
+        <div><dt>目标收益</dt><dd>{{ props.handoff.questionnaire?.targetReturnPct ?? '—' }}%</dd></div>
+        <div><dt>黄金配置</dt><dd>{{ handoffGoldAllocation?.pct ?? '—' }}%</dd></div>
       </dl>
       <button
         v-if="Number(props.handoff.questionnaire?.capital) >= 1000"
         type="button"
         @click="applyHandoffCapital"
       >
-        APPLY CAPITAL {{ formatNumber(props.handoff.questionnaire.capital, 0) }}
+        应用本金 {{ formatNumber(props.handoff.questionnaire.capital, 0) }}
       </button>
-      <button type="button" class="handoff-dismiss" @click="emit('clear-handoff')">DISMISS</button>
+      <button type="button" class="handoff-dismiss" @click="emit('clear-handoff')">忽略</button>
       <p>策略问卷不会自动改写双均线参数；请明确确认实验参数后再运行回测。</p>
     </div>
 
     <div class="backtest-layout">
       <aside class="panel bt-parameter-panel">
-        <div class="bt-panel-title">EXPERIMENT PARAMETERS / 策略参数</div>
+        <div class="bt-panel-title">策略参数</div>
         <div class="bt-field">
           <label>短期均线</label>
           <input type="number" v-model.number="bt.short_ma" min="1" class="bt-input" />
@@ -152,7 +152,7 @@ watch(() => props.active, async active => {
         </div>
         <div v-if="validation" class="bt-validation">{{ validation }}</div>
         <button class="btn primary bt-run" type="button" @click="runBacktest" :disabled="bt.running || invalid">
-          {{ bt.running ? 'PROCESSING…' : 'RUN EXPERIMENT' }}
+          {{ bt.running ? '计算中…' : '运行回测' }}
         </button>
         <div class="bt-note">回测结果仅基于历史样本，不代表未来收益。</div>
       </aside>
@@ -177,7 +177,7 @@ watch(() => props.active, async active => {
           <div class="panel bt-chart-panel">
             <div class="bt-chart-head">
               <div><b>策略净值曲线</b><span>买入持有 {{ formatPercent(result.buy_hold_return_pct) }}</span></div>
-              <span class="bt-benchmark">策略 vs. Buy & Hold</span>
+              <span class="bt-benchmark">策略 vs. 买入持有</span>
             </div>
             <div ref="equityChartRef" class="chart bt-equity-chart"></div>
           </div>
@@ -219,7 +219,7 @@ watch(() => props.active, async active => {
 
 <style scoped>
 .backtest-workspace { display: flex; flex-direction: column; gap: 12px; margin: 0; }
-.bt-handoff { display: grid; grid-template-columns: 180px minmax(0,1fr) auto; gap: 18px; align-items: center; padding: 11px 13px; border: 1px solid var(--accent); background: rgba(161,132,88,.055); }
+.bt-handoff { display: grid; grid-template-columns: 180px minmax(0,1fr) auto; gap: 18px; align-items: center; padding: 11px 13px; border: 1px solid var(--accent); background: var(--workspace-accent-wash); }
 .bt-handoff > div:first-child { display: grid; gap: 6px; }
 .bt-handoff > div:first-child span { color: var(--subtle); font: 600 8px/1 ui-monospace, monospace; letter-spacing: .1em; }
 .bt-handoff > div:first-child strong { color: var(--text); font-size: 12px; font-weight: 650; }
@@ -227,7 +227,7 @@ watch(() => props.active, async active => {
 .bt-handoff dl > div { padding: 0 11px; border-right: 1px solid var(--line); }
 .bt-handoff dt { color: var(--subtle); font: 600 7px/1 ui-monospace, monospace; letter-spacing: .08em; }
 .bt-handoff dd { margin: 6px 0 0; color: var(--text); font: 650 10px/1 ui-monospace, monospace; }
-.bt-handoff button { min-height: 32px; border: 1px solid #383b33; background: #383b33; color: #f2eee6; padding: 0 10px; cursor: pointer; font: 650 8px/1 ui-monospace, monospace; letter-spacing: .07em; }
+.bt-handoff button { min-height: 32px; border: 1px solid var(--workspace-action-border); background: var(--workspace-action-bg); color: var(--workspace-action-text); padding: 0 10px; cursor: pointer; font: 650 8px/1 ui-monospace, monospace; letter-spacing: .07em; }
 .bt-handoff .handoff-dismiss { border-color: var(--line-strong); background: transparent; color: var(--muted); }
 .bt-handoff p { grid-column: 2 / -1; margin: -5px 0 0; color: var(--subtle); font-size: 9px; line-height: 1.45; }
 .section-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 38px; }
@@ -244,8 +244,8 @@ watch(() => props.active, async active => {
 .bt-field label { color: var(--muted); font-size: 10px; }
 .bt-field > span { color: var(--subtle); font-size: 9px; line-height: 1.5; }
 .bt-input { width: 100%; height: 34px; background: transparent; border: 0; border-bottom: 1px solid var(--line-strong); border-radius: 0; color: var(--text); padding: 0 4px; font-size: 12px; font-variant-numeric: tabular-nums; outline: none; }
-.bt-input:focus { border-color: #6a5b40; }
-.bt-validation { margin-top: 12px; color: #e3b466; background: rgba(227,180,102,.07); border-left: 2px solid #8a6d3e; padding: 8px 9px; font-size: 10px; line-height: 1.5; }
+.bt-input:focus { border-color: var(--workspace-focus); }
+.bt-validation { margin-top: 12px; color: var(--workspace-warning-text); background: var(--workspace-warning-bg); border-left: 2px solid var(--workspace-warning-border); padding: 8px 9px; font-size: 10px; line-height: 1.5; }
 .bt-run { width: 100%; min-height: 36px; margin-top: 12px; }
 .bt-note { margin-top: 9px; color: var(--subtle); font-size: 9px; line-height: 1.5; }
 .bt-main { display: flex; flex-direction: column; gap: 10px; min-width: 0; }

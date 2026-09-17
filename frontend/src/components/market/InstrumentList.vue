@@ -36,13 +36,17 @@ watch(() => props.marketLabel, () => { search.value = '' })
 <template>
   <aside class="instrument-panel">
     <div class="list-head">
-      <div><b>{{ marketLabel }}</b><span>{{ defaultInstruments.length }} 默认 · {{ watchlistInstruments.length }} 自选</span></div>
+      <div class="watch-rail-summary">
+        <span>WATCH</span>
+        <b>{{ marketLabel }}自选</b>
+        <small>{{ visibleCount }} 个标的</small>
+      </div>
     </div>
     <input v-model="search" class="search-input" aria-label="搜索标的名称或代码" placeholder="搜索名称 / 代码" />
     <div class="instrument-groups" role="listbox" aria-label="可选交易标的">
       <section class="instrument-group">
         <div class="group-head">
-          <span>默认标的</span>
+          <span>默认</span>
           <button v-if="hiddenDefaultCount" type="button" class="text-action" @click="emit('restore-defaults')">
             恢复 {{ hiddenDefaultCount }} 个
           </button>
@@ -62,7 +66,7 @@ watch(() => props.marketLabel, () => { search.value = '' })
       </section>
 
       <section class="instrument-group">
-        <div class="group-head"><span>自选标的</span><span class="group-count">{{ watchlistInstruments.length }} 个</span></div>
+        <div class="group-head"><span>自选</span><span class="group-count">{{ watchlistInstruments.length }}</span></div>
         <div v-for="item in filteredWatchlist" :key="`watchlist-${item.symbol}`" class="instrument-row"
              role="option" :aria-selected="selectedSymbol === item.symbol"
              :class="{ active: selectedSymbol === item.symbol }" @click="select(item)">
@@ -82,31 +86,78 @@ watch(() => props.marketLabel, () => { search.value = '' })
 </template>
 
 <style scoped>
-.instrument-panel { padding: 11px; min-width: 0; background: var(--workspace-panel-wash, rgba(239,235,227,.58)); border: 0; border-right: 1px solid var(--line); border-radius: 0; }
-.list-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 9px; }
-.list-head > div { display: flex; align-items: baseline; gap: 7px; }
-.list-head b { color: var(--text); font-size: 12px; }
-.list-head span { color: var(--muted); font-size: 9px; }
-.search-input { width: 100%; height: 31px; background: transparent; border: 0; border-bottom: 1px solid var(--line-strong); border-radius: 0; color: var(--text); padding: 0 4px; font-size: 10px; outline: none; }
-.search-input:focus { border-color: var(--accent-strong); }
-.instrument-groups { display: flex; flex-direction: column; gap: 12px; max-height: 526px; overflow: auto; margin-top: 8px; }
-.instrument-group { display: flex; flex-direction: column; gap: 3px; }
-.group-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 8px 3px; color: var(--subtle); font-size: 9px; letter-spacing: .04em; }
+.instrument-panel {
+  padding: 0 0 8px;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  border-right: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
+  border-radius: 0;
+}
+.list-head { min-height: 52px; display: flex; align-items: center; margin: 0; padding: 0 10px; }
+.watch-rail-summary { min-width: 0; display: grid; grid-template-columns: auto 1fr; align-items: baseline; gap: 4px 7px; }
+.list-head span { color: var(--subtle); }
+.watch-rail-summary span { color: var(--subtle); font: 600 7px/1 ui-monospace, monospace; letter-spacing: .1em; }
+.watch-rail-summary b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-size: 11px; font-weight: 650; letter-spacing: -.01em; }
+.watch-rail-summary small { grid-column: 2; color: var(--subtle); font-size: 8px; line-height: 1; }
+.search-input {
+  width: calc(100% - 16px);
+  height: 32px;
+  margin: 0 8px 5px;
+  background: color-mix(in srgb, var(--workspace-control-bg, var(--surface)) 58%, transparent);
+  border: 1px solid color-mix(in srgb, var(--line) 76%, transparent);
+  border-radius: 8px;
+  color: var(--text);
+  padding: 0 9px;
+  font-size: 9px;
+  outline: none;
+  transition: border-color var(--motion-fast, 110ms) ease, background var(--motion-fast, 110ms) ease;
+}
+.search-input:hover { background: color-mix(in srgb, var(--workspace-control-bg, var(--surface)) 78%, transparent); }
+.search-input:focus { border-color: var(--workspace-focus, var(--accent)); background: var(--workspace-control-bg, var(--surface)); }
+.instrument-groups { display: flex; flex-direction: column; gap: 8px; max-height: 606px; overflow: auto; margin-top: 4px; padding: 0 4px; }
+.instrument-group { display: flex; flex-direction: column; gap: 1px; }
+.group-head { min-height: 26px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 8px; color: var(--subtle); font-size: 8px; font-weight: 600; }
 .group-count { color: var(--subtle); }
 .text-action { padding: 0; border: 0; background: transparent; color: var(--accent-strong); font-size: 9px; cursor: pointer; }
 .text-action:hover { color: var(--text); }
-.instrument-row { display: flex; align-items: center; gap: 4px; width: 100%; border: 1px solid transparent; border-bottom-color: var(--workspace-row-divider, rgba(201,194,182,.72)); background: transparent; color: var(--text); border-radius: 0; padding: 3px 4px 3px 8px; cursor: pointer; text-align: left; }
-.instrument-row:hover { background: var(--workspace-hover-bg, rgba(209,201,188,.28)); }
-.instrument-row.active { border-color: var(--accent); background: var(--workspace-accent-wash, rgba(161,132,88,.08)); }
+.instrument-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: calc(100% - 4px);
+  min-height: 42px;
+  margin: 0 2px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  border-radius: 8px;
+  padding: 2px 5px 2px 9px;
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--motion-fast, 110ms) ease, transform var(--motion-fast, 110ms) ease;
+}
+.instrument-row::before { content: ''; position: absolute; left: 0; top: 9px; bottom: 9px; width: 2px; border-radius: 2px; background: transparent; }
+.instrument-row:hover { background: color-mix(in srgb, var(--text) 3.5%, transparent); }
+.instrument-row:active { transform: scale(.992); }
+.instrument-row.active { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.instrument-row.active::before { background: var(--accent); }
 .instrument-main { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex: 1; min-width: 0; border: 0; background: transparent; color: var(--text); padding: 5px 0; cursor: pointer; text-align: left; }
 .instrument-main > span { display: flex; flex-direction: column; min-width: 0; gap: 3px; }
-.instrument-row b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; font-weight: 600; }
-.instrument-row small { color: var(--subtle); font-size: 9px; font-variant-numeric: tabular-nums; }
-.instrument-row i { width: 4px; height: 4px; border-radius: 50%; background: #555a5f; flex: 0 0 auto; }
+.instrument-row b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; font-weight: 610; }
+.instrument-row small { color: var(--subtle); font: 500 8px/1.2 ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+.instrument-row i { width: 4px; height: 4px; border-radius: 50%; background: var(--line-strong); flex: 0 0 auto; }
 .instrument-row.active i { background: var(--accent); }
-.instrument-action { border: 0; background: transparent; color: var(--subtle); padding: 4px 2px; cursor: pointer; font-size: 9px; white-space: nowrap; }
+.instrument-action { opacity: 0; border: 0; background: transparent; color: var(--subtle); padding: 4px 2px; cursor: pointer; font-size: 8px; white-space: nowrap; }
+.instrument-row:hover .instrument-action, .instrument-row:focus-within .instrument-action { opacity: 1; }
 .instrument-action:hover { color: var(--accent-strong); }
 .instrument-action.remove:hover { color: var(--bad); }
 .empty-list { color: var(--subtle); font-size: 10px; line-height: 1.6; padding: 16px 8px; text-align: center; }
-@media (max-width: 700px) { .instrument-panel { max-height: 235px; } .instrument-groups { max-height: 170px; } }
+.instrument-main:focus-visible,
+.instrument-action:focus-visible,
+.text-action:focus-visible,
+.search-input:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 70%, transparent); outline-offset: 1px; }
+@media (max-width: 700px) { .instrument-panel { max-height: 235px; border-right: 0; border-bottom: 1px solid var(--line); } .instrument-groups { max-height: 170px; } .instrument-action { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .instrument-row, .search-input { transition: none !important; } }
 </style>

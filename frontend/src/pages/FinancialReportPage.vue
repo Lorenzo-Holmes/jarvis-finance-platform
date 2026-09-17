@@ -136,29 +136,29 @@ onBeforeUnmount(() => importController?.abort())
   <section class="fr-workspace">
     <div class="section-bar">
       <div>
-        <h1>COMPANY FILE / FINANCIAL FILING</h1>
+        <h1>财报解析</h1>
         <span>原始披露文本 → 财务结构 → 盈利质量 → 风险与异常变化</span>
       </div>
-      <span class="section-status"><i :class="{ ok: !validation }"></i>{{ validation ? 'SOURCE REQUIRED' : 'SOURCE READY' }}</span>
+      <span class="section-status"><i :class="{ ok: !validation }"></i>{{ validation ? '请提供财报' : '可解析' }}</span>
     </div>
 
     <div v-if="props.researchContext" class="context-target">
-      <span>COMPANY CONTEXT</span>
+      <span>公司上下文</span>
       <strong>{{ props.researchContext.symbol || props.researchContext.name }}</strong>
       <small>{{ props.researchContext.name || props.researchContext.market || '—' }}</small>
-      <em>仅作为 Company File 标识；仍需提供真实财报原文，不自动生成财务数字。</em>
+      <em>仅作为公司标识；仍需提供真实财报原文，不自动生成财务数字。</em>
     </div>
 
     <div class="filing-index" aria-label="财报解析流程">
-      <span class="active"><b>01</b>SOURCE DOCUMENT</span>
-      <span :class="{ active: analyzing }"><b>02</b>PROCESSING</span>
-      <span :class="{ active: !!result }"><b>03</b>ANALYSIS DOSSIER</span>
-      <span :class="{ active: !!error }"><b>04</b>RISK / ERROR</span>
+      <span class="active"><b>01</b>原始材料</span>
+      <span :class="{ active: analyzing }"><b>02</b>解析中</span>
+      <span :class="{ active: !!result }"><b>03</b>分析结果</span>
+      <span :class="{ active: !!error }"><b>04</b>异常</span>
     </div>
 
     <div class="fr-layout">
       <aside class="panel fr-input-panel">
-        <div class="fr-panel-title"><span>SOURCE DOCUMENT</span><strong>财报原文</strong></div>
+        <div class="fr-panel-title"><strong>财报原文</strong></div>
 
         <input
           ref="fileInput"
@@ -183,7 +183,7 @@ onBeforeUnmount(() => importController?.abort())
         <div v-if="importError" class="fr-import-error" role="alert">{{ importError }}</div>
 
         <div v-if="pendingImport" class="fr-import-review" aria-live="polite">
-          <b>EXTRACTED SOURCE READY</b>
+          <b>文件内容已提取</b>
           <span>{{ pendingImport.fileName }} · {{ pendingImport.text.length.toLocaleString() }} 字符</span>
           <ul v-if="pendingImport.warnings.length">
             <li v-for="warning in pendingImport.warnings" :key="warning">{{ warning }}</li>
@@ -202,7 +202,7 @@ onBeforeUnmount(() => importController?.abort())
 
         <div v-if="validation" class="fr-validation">{{ validation }}</div>
         <button class="btn primary fr-run" type="button" :disabled="analyzing || !!validation" @click="analyze">
-          {{ analyzing ? 'PROCESSING…' : 'ANALYZE FILING' }}
+          {{ analyzing ? '解析中…' : '开始解析' }}
         </button>
         <div class="fr-actions">
           <button type="button" class="text-action" @click="clearAll">清空</button>
@@ -214,8 +214,8 @@ onBeforeUnmount(() => importController?.abort())
         <template v-if="result">
           <div class="panel fr-result-panel">
             <div class="fr-result-head">
-              <div><b>ANALYSIS DOSSIER{{ companyContextLabel ? ` / ${companyContextLabel}` : '' }}</b><span>基于输入文本的财务解读，仅供研究参考，请以原始财报为准</span></div>
-              <span class="result-state">AI / COMPLETE</span>
+              <div><b>分析结果{{ companyContextLabel ? ` · ${companyContextLabel}` : '' }}</b><span>基于输入文本的财务解读，仅供研究参考，请以原始财报为准</span></div>
+              <span class="result-state">已完成</span>
             </div>
             <MarkdownContent class="fr-output" :content="result" />
           </div>
@@ -226,8 +226,8 @@ onBeforeUnmount(() => importController?.abort())
         <DataState v-else-if="error" state="error" title="财报解析失败" :message="error" retryable @retry="analyze" />
 
         <div v-else class="panel fr-empty">
-          <div class="fr-empty-mark">FILE</div>
-          <b>WAITING FOR SOURCE DOCUMENT</b>
+          <div class="fr-empty-mark">财报</div>
+          <b>等待财报原文</b>
           <span>在左侧粘贴财报文本后运行解析，即可查看营收、利润、现金流与风险点的结构化解读。</span>
         </div>
       </div>
@@ -237,7 +237,7 @@ onBeforeUnmount(() => importController?.abort())
 
 <style scoped>
 .fr-workspace { display: flex; flex-direction: column; gap: 12px; margin: 0; }
-.context-target { min-height: 38px; display: flex; align-items: center; gap: 12px; padding: 0 12px; border: 1px solid var(--line); background: rgba(161,132,88,.045); }
+.context-target { min-height: 38px; display: flex; align-items: center; gap: 12px; padding: 0 12px; border: 1px solid var(--line); background: var(--workspace-accent-wash); }
 .context-target span { color: var(--subtle); font: 600 7px/1 ui-monospace, monospace; letter-spacing: .1em; }
 .context-target strong { color: var(--text); font: 650 10px/1 ui-monospace, monospace; }
 .context-target small { color: var(--muted); font-size: 9px; }
@@ -250,8 +250,8 @@ onBeforeUnmount(() => importController?.abort())
 .section-status i.ok { background: var(--ok); }
 .filing-index { min-height: 37px; display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
 .filing-index span { display: flex; align-items: center; gap: 10px; padding: 0 12px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); color: var(--subtle); font: 600 8px/1 ui-monospace, monospace; letter-spacing: .08em; }
-.filing-index b { color: #aaa398; font-weight: 600; }
-.filing-index span.active { background: rgba(161,132,88,.08); color: #4e4d47; }
+.filing-index b { color: var(--subtle); font-weight: 600; }
+.filing-index span.active { background: var(--workspace-accent-wash); color: var(--text); }
 .filing-index span.active b { color: var(--accent-strong); }
 .fr-layout { display: grid; grid-template-columns: 360px minmax(0, 1fr); gap: 0; align-items: stretch; border: 1px solid var(--line); }
 .fr-input-panel { position: sticky; top: 10px; align-self: start; border: 0; border-right: 1px solid var(--line); background: var(--workspace-panel-wash, var(--panel)); border-radius: 0; }
@@ -277,8 +277,8 @@ onBeforeUnmount(() => importController?.abort())
 .fr-input-panel textarea::placeholder { color: var(--muted); opacity: 1; }
 .fr-input-panel textarea:focus { border-color: var(--accent); }
 .fr-quota { margin-top: 10px; color: var(--subtle); font-size: 9px; font-variant-numeric: tabular-nums; }
-.fr-validation { margin-top: 10px; color: #8e6b3e; background: rgba(161,122,66,.06); border-left: 2px solid #9a7744; padding: 8px 9px; font-size: 10px; line-height: 1.5; }
-.fr-run { width: 100%; min-height: 38px; margin-top: 12px; border-radius: 0 !important; background: #353830 !important; color: #f2eee6 !important; border-color: #353830 !important; }
+.fr-validation { margin-top: 10px; color: var(--workspace-warning-text); background: var(--workspace-warning-bg); border-left: 2px solid var(--workspace-warning-border); padding: 8px 9px; font-size: 10px; line-height: 1.5; }
+.fr-run { width: 100%; min-height: 38px; margin-top: 12px; border-radius: 0 !important; background: var(--workspace-action-bg) !important; color: var(--workspace-action-text) !important; border-color: var(--workspace-action-border) !important; }
 .fr-run:disabled { opacity: .4; }
 .fr-actions { display: flex; justify-content: flex-end; margin-top: 8px; }
 .text-action { border: 0; background: transparent; color: var(--subtle); font-size: 9px; cursor: pointer; }
