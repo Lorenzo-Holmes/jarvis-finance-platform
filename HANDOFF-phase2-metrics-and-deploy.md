@@ -218,3 +218,16 @@ chat 面**放到最后**：它的 `deterministic_context` 同时依赖 quote 与
   审阅一律以 `git diff main...分支` 为准，不要以描述为准；已在 Gitee 描述末尾追加审阅补充
 - **部署提醒**：本次含 `V9`/`V10` 迁移，发布时须确认迁移执行路径（`migration.jar` / Flyway），
   不要只替换 `app.jar`；线上后端在本次合并前仍是旧的
+- **CI 抓到我自己的测试 bug（值得记）**：合并后 CI 立刻在 `Java Backend Build & Test` 上红了 ——
+  新测试拿 `LocalDateTime.now()`（CI runner 是 **UTC**）去比按任务时区（Asia/Shanghai）表示的
+  计划时刻，差值正好 28,800,000ms = 8 小时。生产代码没有问题（同一测试里"计划时刻是整秒"
+  那条断言是通过的），错的是测试假设了「JVM 默认时区＝任务时区」，而开发机在 +08:00
+  所以本地全绿。已在 `d6ec968` 改为在任务时区里比较（并用 `-DargLine=-Duser.timezone=UTC`
+  做了反向对照确认参数真的生效）。**教训：时间相关断言一律不许依赖 JVM 默认时区**
+- 时区基准（本次核对，未改动）：生产服务器是 CST，`/etc/jarvis/java.env` 里没有 `TZ` 与
+  `user.timezone` 覆盖，服务层本期也只允许 `Asia/Shanghai`，所以 `scheduled_at`（任务时区）
+  与 `started_at` / `created_at`（JVM 时区）在生产不会混在同一行；将来若开放多时区，
+  这一对字段的时间基准需要重新决定
+- 本次 CI 结论：`1d16dc2` / `ee4d917` 上 `Java Backend Build & Test` 红（上面那条测试），
+  `d6ec968` 起全绿；`PostgreSQL Flyway & Prod Startup` 在 `ee4d917` 上已 success ——
+  即 `V9`/`V10` 在**真实 PostgreSQL** 上可执行、且生产 `ddl-auto=validate` 能正常启动
