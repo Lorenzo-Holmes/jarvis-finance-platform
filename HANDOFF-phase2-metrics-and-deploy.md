@@ -194,3 +194,27 @@ chat 面**放到最后**：它的 `deterministic_context` 同时依赖 quote 与
 - **仍未做视觉签字**：该 PR 无截图也无 per-PR 预览；且归档到工作空间的交接是动画驱动，
   本会话标签页内 `__jarvisArchiveDebug` 读到 `transitionState=EXTRACTING` 与
   `handoffProgress=0.000`，进不去工作空间。要看成品需在真实浏览器登录后自查
+
+## 8. 用户定时任务（Gitee PR #11）合并记录
+
+- `main = 1d16dc2`（merge commit，parents `06f4afb` + `ccb8cff`，来源分支
+  `feature/scheduled-task-schema`，Gitee 作者 `peng-jiahhan`）
+- 内容：`V9__scheduled_task.sql` / `V10__scheduled_task_run.sql` 两张表 + 实体与仓储 +
+  独立线程池的调度内核（`ScheduledTaskRegistry` / `UserTaskSchedulerProvider`）+
+  执行器 SPI 与 3 个执行器（`MARKET_SCAN` / `BACKTEST` / `RISK_CHECK`）+
+  `ScheduledTaskController` / `ScheduledTaskService` 与 `TASK_MANAGE` 权限
+- 审阅时改了一处（`ccb8cff`）：幂等键由 `LocalDateTime.now()` 改为 **cron 的计划时刻**。
+  文档承诺的 `<taskId>:<计划时刻>` 只有当键真的取自计划时刻才成立，否则触发被线程池推迟
+  （池只有 3 个线程，分钟级回测占满是常态）时键会漂到别的秒上，唯一约束就拦不住同一计划
+  时刻的第二处触发。新增 `ScheduledTaskRegistryTest`，并做了**反向对照**（改回 `now()` 时
+  该测试失败，改回计划时刻后通过）
+- 分支测试：**459 全过**（0 失败 0 错误；5 个跳过＝既有 PostgreSQL 集成用例，需 `RUN_PG_IT`）
+- 两处值得记住的既有设计（不是本次改的）：调度池刻意**不注册成 bean**，否则
+  `TaskSchedulingAutoConfiguration` 的 `@ConditionalOnMissingBean(TaskScheduler.class)` 会让
+  它不再自建，8 个静态 `@Scheduled` 静默跑到用户任务池上、把隔离做成合并；执行器只读，
+  `RISK_CHECK` 不触发强平（用户任务若能触发强平就能影响他人账户）
+- **教训（与 PR #15 同类）**：PR 描述只覆盖了第一个提交，仍写着「不含调度内核 / 执行器 /
+  CRUD / 权限 key」，与分支实际内容矛盾（按描述审会以为它只是建表、甚至以为没有对外接口）。
+  审阅一律以 `git diff main...分支` 为准，不要以描述为准；已在 Gitee 描述末尾追加审阅补充
+- **部署提醒**：本次含 `V9`/`V10` 迁移，发布时须确认迁移执行路径（`migration.jar` / Flyway），
+  不要只替换 `app.jar`；线上后端在本次合并前仍是旧的
