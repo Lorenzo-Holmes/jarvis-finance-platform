@@ -10,6 +10,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import jakarta.persistence.Version;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -31,9 +32,13 @@ import java.time.LocalDateTime;
  *
  * <p>{@code paramsJson} 只放执行器需要的参数（标的、阈值、周期等），
  * 由服务层用 ObjectMapper 读写；对外始终是结构化 DTO，不让 JSON 字符串穿透到控制器。</p>
+ *
+ * <p>⚠️ {@code uk_scheduled_task_user_name} 同样在实体上声明而非只写在迁移脚本里 ——
+ * 原因见 {@link ScheduledTaskRun} 的类注释：本地开发与测试都按实体建表。</p>
  */
 @Entity
-@Table(name = "scheduled_task")
+@Table(name = "scheduled_task", uniqueConstraints = @UniqueConstraint(
+        name = "uk_scheduled_task_user_name", columnNames = {"user_id", "name"}))
 @Data
 @Builder
 @NoArgsConstructor

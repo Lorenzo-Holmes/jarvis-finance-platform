@@ -9,6 +9,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -20,16 +21,21 @@ import java.time.LocalDateTime;
  * 一次执行的留痕。
  *
  * <p>{@code idempotencyKey} 上的唯一约束是整套防重复执行机制的支点：到点触发时
- * **先插这一行再执行**，插得进去才算抢到；冲突就说明这个计划时刻已被处理过，
- * 记一行 {@link TaskRunStatus#SKIPPED} 返回。所以本表既是审计记录，
- * 也是并发控制的手段 —— 这是刻意让"历史"和"锁"落在同一张表上，
+ * <strong>先插这一行再执行</strong>，插得进去才算抢到；冲突就说明这个计划时刻已被处理过。
+ * 所以本表既是审计记录，也是并发控制的手段 —— 这是刻意让"历史"和"锁"落在同一张表上，
  * 免得两处状态各说各话。</p>
  *
- * <p>本实体**没有 {@code @Version}**：run 记录一旦落定就不再被并发编辑，
+ * <p>⚠️ <strong>该唯一约束必须在实体上声明</strong>，不能只写在 Flyway 脚本里：
+ * 本地开发（{@code ddl-auto=update}）与 {@code @DataJpaTest} 都是按实体建表的，
+ * 只在 SQL 里写会让<strong>本地的约束凭空消失</strong> —— 于是防重在本机静默失效，
+ * 而生产却有约束，两边行为不一致却看不出来。（2026-09-17 实测踩到。）</p>
+ *
+ * <p>本实体<strong>没有 {@code @Version}</strong>：run 记录一旦落定就不再被并发编辑，
  * 乐观锁在这里没有意义，加上只会多一次无谓的版本号自增。</p>
  */
 @Entity
-@Table(name = "scheduled_task_run")
+@Table(name = "scheduled_task_run", uniqueConstraints = @UniqueConstraint(
+        name = "uk_task_run_idempotency", columnNames = "idempotency_key"))
 @Data
 @Builder
 @NoArgsConstructor
