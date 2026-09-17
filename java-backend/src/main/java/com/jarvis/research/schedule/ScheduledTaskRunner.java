@@ -13,6 +13,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -72,6 +73,23 @@ public class ScheduledTaskRunner {
         // 与其在运行时随机挑一个跑，不如启动即失败。
         this.executors = executors.stream()
                 .collect(Collectors.toMap(ScheduledTaskExecutor::type, Function.identity()));
+    }
+
+    /**
+     * 该类型当前是否有执行器认领。
+     *
+     * <p>存在的理由不是"内部检查"，而是让创建接口能<strong>在任务落库之前</strong>拒掉
+     * 还没有执行器的类型。否则用户可以建出一个 {@code BACKTEST} 任务：它每次都失败、
+     * 连续 5 次后被自动暂停，而用户完全不知道为什么。执行器一旦注册，
+     * 这里自动返回 {@code true}，不需要改任何调用方代码。</p>
+     */
+    public boolean supports(ScheduledTaskType type) {
+        return type != null && executors.containsKey(type);
+    }
+
+    /** 当前已就绪的任务类型，供前端把未开放的类型置灰。 */
+    public Set<ScheduledTaskType> supportedTypes() {
+        return Set.copyOf(executors.keySet());
     }
 
     /**
