@@ -63,7 +63,8 @@ def _entry(title="标题", link="https://example.com/a", summary="摘要", publi
 # ---- 资讯源登记与校验 ----
 
 def test_add_source_applies_defaults_and_trims():
-    store = RSSStore()
+    # seed_defaults=False：这条只验证登记与规整，不该被预置资讯源干扰
+    store = RSSStore(seed_defaults=False)
     stored = store.add_source({"id": "  gold-news  ", "url": "  https://example.com/rss  "})
 
     assert stored["id"] == "gold-news"
@@ -98,7 +99,7 @@ def test_add_source_rejects_invalid_payload(payload, reason):
 
 
 def test_add_source_same_id_overwrites():
-    store = RSSStore()
+    store = RSSStore(seed_defaults=False)
     store.add_source({"id": "s1", "url": "https://example.com/old"})
     store.add_source({"id": "s1", "url": "https://example.com/new"})
 
@@ -296,6 +297,7 @@ def test_rss_endpoints_are_registered_and_token_protected():
         "/internal/rss/source",
         "/internal/rss/fetch/{source_id}",
         "/internal/rss/articles",
+        "/internal/rss/digest",
     }
 
     for path, route in rss_paths.items():

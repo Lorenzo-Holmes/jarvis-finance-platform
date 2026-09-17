@@ -316,4 +316,7 @@ export const api = {
   // ===== 京东积存金：Java 定时采集 + Java 数据库 =====
   jdPrices: () => get(API_BASE, '/api/market/jd/prices'),
   jdKline: (market, interval, limit) => get(API_BASE, '/api/market/jd/kline', { market, interval, limit }),
+
+  // 每日要闻：Java 代理 Python 的 RSS digest，抓取间隔由 Python 侧限制（默认 300s）。
+  newsDaily: (limit = 12, force = false) => get(API_BASE, '/api/news/daily', { limit, refresh: true, force }),
 }

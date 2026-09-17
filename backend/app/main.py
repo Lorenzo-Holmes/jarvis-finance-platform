@@ -52,6 +52,16 @@ def list_rss_articles(source_id: str | None = None):
     return rss_store.list_articles(source_id)
 
 
+@app.post("/internal/rss/digest", dependencies=[Depends(require_internal_service)])
+def rss_digest(refresh: bool = True, force: bool = False):
+    """刷新并返回合并后的最新资讯（每日要闻的唯一入口）。
+
+    抓取与去重留在 Python 侧，Java 主后端只做薄代理与降级展示。
+    单源失败逐源返回 error，不会让整个响应失败；`force=true` 绕过最小抓取间隔。
+    """
+    return rss_store.digest(refresh=refresh, force=force)
+
+
 @app.get("/api/health", dependencies=[Depends(require_internal_service)])
 def health():
     """Liveness：仅表示 Python 进程和 FastAPI 可响应。"""

@@ -11,6 +11,7 @@
   - RSSSourceNotFound → 404
 """
 from datetime import datetime
+from email.utils import parsedate_to_datetime
 from hashlib import sha256
 from typing import Dict, List, Optional
 from urllib.parse import urlparse
@@ -19,6 +20,37 @@ import feedparser
 
 #: 允许的资讯源协议。仅 http(s)，避免 file:// 等被当作抓取目标。
 _ALLOWED_SCHEMES = ("http", "https")
+
+#: 预置财经资讯源。让"每日要闻"开箱可用，而不必先手工登记源。
+#:
+#: 抓取成败取决于**服务器的出网能力**：这些域名在受限网络下可能全部超时。
+#: 因此 digest 逐源返回 error，绝不把单源失败升级为整体错误——前端按
+#: ok_sources / error 降级展示。需要增删源时仍走 /internal/rss/source。
+DEFAULT_SOURCES: List[Dict] = [
+    {
+        "id": "yahoo_finance",
+        "name": "Yahoo Finance",
+        "url": "https://finance.yahoo.com/news/rssindex",
+    },
+    {
+        "id": "cnbc_finance",
+        "name": "CNBC Finance",
+        "url": (
+            "https://search.cnbc.com/rs/search/combinedcms/view.xml"
+            "?partnerId=wrss01&id=100003114"
+        ),
+    },
+    {
+        "id": "marketwatch_top",
+        "name": "MarketWatch",
+        "url": "https://feeds.content.dowjones.io/public/rss/mw_topstories",
+    },
+    {
+        "id": "investing_cn",
+        "name": "英为财情",
+        "url": "https://cn.investing.com/rss/news.rss",
+    },
+]
 
 
 class RSSValidationError(ValueError):
@@ -36,6 +68,43 @@ def _clean_text(value: object) -> str:
     return str(value).strip()
 
 
+def _published_timestamp(value: object) -> Optional[float]:
+    """把 RSS 的时间文本解析成时间戳；解析不出来返回 None（绝不抛异常）。
+
+    RSS 常见 RFC822（`Wed, 17 Sep 2026 08:30:00 +0800`），本模块自己写入的
+    created_at 是 ISO8601，所以两条路径都要试。feedparser 对畸形日期可能让
+    parsedate_to_datetime 返回 None，此时 .timestamp() 会 AttributeError，
+    一并按"解析失败"处理。
+    """
+    text = _clean_text(value)
+    if not text:
+        return None
+    for parser in (parsedate_to_datetime, datetime.fromisoformat):
+        try:
+            parsed = parser(text)
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if parsed is None:
+            continue
+        try:
+            return parsed.timestamp()
+        except (AttributeError, OverflowError, OSError):
+            continue
+    return None
+
+
+def _article_sort_key(article: Dict) -> tuple:
+    """资讯排序键：优先发布时间，解析不出来时退回入库时间。
+
+    两类时间不能混进同一个字段比较——把"解析失败"当成很新或很旧都是错的。
+    这里用元组分开比较：能解析发布时间的按发布时间排，缺发布时间的整体排在其后
+    （这类条目在真实 feed 里占比很低，且用入库时间在同类内部仍然有序）。
+    """
+    published = _published_timestamp(article.get("published"))
+    created = _published_timestamp(article.get("created_at"))
+    return (published or 0.0, created or 0.0)
+
+
 class RSSStore:
     """内存版资讯源仓库。
 
@@ -45,9 +114,27 @@ class RSSStore:
     两者都应由 Java 主后端接入后接管，本模块不自行发明淘汰策略。
     """
 
-    def __init__(self):
+    #: 同一资讯源在 digest 中的最小抓取间隔（秒）。
+    #: 前端每次打开行情页都会问一次要闻，不设间隔就会把外部 feed 打爆。
+    DIGEST_MIN_INTERVAL_SECONDS = 300
+
+    def __init__(self, seed_defaults: bool = True):
         self.sources: Dict[str, Dict] = {}
         self.articles: Dict[str, Dict] = {}
+        self._last_crawled: Dict[str, datetime] = {}
+        if seed_defaults:
+            self._seed_default_sources()
+
+    def _seed_default_sources(self) -> None:
+        """补齐预置资讯源；**不覆盖**已登记的同 id 源（外部登记优先）。"""
+        for source in DEFAULT_SOURCES:
+            if source["id"] in self.sources:
+                continue
+            try:
+                self.add_source(dict(source))
+            except RSSValidationError:
+                # 预置数据自身不合法时跳过即可，不该让进程起不来。
+                continue
 
     # ---- 资讯源 ----
 
@@ -178,6 +265,63 @@ class RSSStore:
             return articles
         wanted = _clean_text(source_id)
         return [a for a in articles if a["source_id"] == wanted]
+
+    # ---- 每日要闻 ----
+
+    def digest(self, refresh: bool = True, force: bool = False) -> Dict:
+        """刷新（受间隔限制）并返回合并后的最新资讯。
+
+        这是"每日要闻"的唯一入口：抓取归本模块，Java 主后端只做薄代理与降级。
+        返回：
+
+            {"generated_at", "refreshed", "ok_sources", "total_sources",
+             "sources": [{source_id, name, ok, crawled, fetched, added, error}],
+             "articles": [...]}
+
+        单源失败不会让整个 digest 失败：error 逐源给出，articles 仍是已抓到的部分。
+        """
+        now = datetime.now()
+        statuses: List[Dict] = []
+        for source in self.list_sources():
+            source_id = source["id"]
+            name = source.get("name") or source_id
+            last = self._last_crawled.get(source_id)
+            due = bool(refresh) and (
+                force
+                or last is None
+                or (now - last).total_seconds() >= self.DIGEST_MIN_INTERVAL_SECONDS
+            )
+            if not due:
+                statuses.append({
+                    "source_id": source_id, "name": name, "ok": True, "crawled": False,
+                    "fetched": 0, "added": 0, "error": None,
+                })
+                continue
+            try:
+                result = self.crawl(source_id)
+            except (RSSSourceNotFound, RSSValidationError) as exc:
+                statuses.append({
+                    "source_id": source_id, "name": name, "ok": False, "crawled": False,
+                    "fetched": 0, "added": 0, "error": str(exc),
+                })
+                continue
+            self._last_crawled[source_id] = now
+            statuses.append({
+                "source_id": source_id, "name": name, "ok": bool(result["ok"]), "crawled": True,
+                "fetched": result["fetched"], "added": len(result["added"]),
+                "error": result["error"],
+            })
+
+        articles = self.list_articles()
+        articles.sort(key=_article_sort_key, reverse=True)
+        return {
+            "generated_at": now.isoformat(),
+            "refreshed": sum(1 for item in statuses if item["crawled"]),
+            "ok_sources": sum(1 for item in statuses if item["ok"]),
+            "total_sources": len(statuses),
+            "sources": statuses,
+            "articles": articles,
+        }
 
 
 rss_store = RSSStore()

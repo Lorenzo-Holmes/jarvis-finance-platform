@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { api } from '../api/client'
 import QuoteStrip from '../components/market/QuoteStrip.vue'
+import MultiMarketBoard from '../components/market/MultiMarketBoard.vue'
 import DataState from '../components/common/DataState.vue'
 import { useMarketChart } from '../composables/useMarketChart'
 import { usePolling } from '../composables/usePolling'
@@ -386,6 +387,9 @@ watch([marketFocus, () => jdKlineCfg.market], () => {
         </div>
       </aside>
     </div>
+
+    <!-- 黄金之外的维度：A 股 / 美股 / 加密 看板 +每日要闻（各自独立降级） -->
+    <MultiMarketBoard :active="active" />
   </section>
 </template>
 
