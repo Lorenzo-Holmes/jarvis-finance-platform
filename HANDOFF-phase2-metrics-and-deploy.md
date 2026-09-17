@@ -231,3 +231,38 @@ chat 面**放到最后**：它的 `deterministic_context` 同时依赖 quote 与
 - 本次 CI 结论：`1d16dc2` / `ee4d917` 上 `Java Backend Build & Test` 红（上面那条测试），
   `d6ec968` 起全绿；`PostgreSQL Flyway & Prod Startup` 在 `ee4d917` 上已 success ——
   即 `V9`/`V10` 在**真实 PostgreSQL** 上可执行、且生产 `ddl-auto=validate` 能正常启动
+
+## 9. GitHub PR #16 合并记录（工作区环境化交互精修）
+
+- `main = f58912b`（merge commit，parents `f4a2cb0` + `cd3dafc`，来源 fork 分支
+  `Lorenzo-Holmes/feat/ambient-financial-workspace`）。这次是用 **GitHub API** 合并的
+  （返回 `merged: true`，merged_by `panda-lsy`），随后把合并结果同步推到 Gitee ——
+  两平台 main 都是 `f58912b`
+- 内容：9 文件 +936/-40，纯前端：工作区外壳、`AiCenter`（研究台独立滚动与锚定输入区）、
+  `QuoteStrip`（选择镜）、`ChainPage`（把 HUD 式扫描动作换成克制的材质扩散）、`MarketPage`、
+  `StrategyPage`，外加 `doc/pr-assets/ambient-financial-workspace/` 下 3 个演示素材
+- **路径更正（重要）**：工作区外壳的活文件是
+  `frontend/src/analysis-os/components/ArchiveWorkspaceShell.vue`
+  （`App.vue:10` 直接 import 它）。本文档第 7 节曾写成 `frontend/src/components/...`，那个路径不存在
+- 审阅核对：5 个 CI job 全 success；本地 `npm run test:p0` = **113/113**、`npm run build` ✓（6.64s）；
+  组件契约未变（外壳同一组 props 与 `emit('navigate-module')`；`QuoteStrip` 仍 `defineEmits(['select'])`，
+  选中态仍是 `marketFocus==='jd' && jdMarket===key`）；`.pos`/`.neg` 涨跌配色未被改动；
+  未触碰 `AnalysisOsPage.vue` 与 `analysis-os/motion/`
+- **本轮的视觉签字（第一次真正做到）**：PR 自带 before/after 截图，两张都实际看过 —— before 有
+  一层 HUD 水印（JARVIS / FINANCIAL RESEARCH / MARKET 等大字与图形）压在图表上，after 干净；
+  选中态由青色下划线改为金色胶囊，与金色品牌身份一致；结构、导航、行情页头、图表区两图一致
+- 线上核验（新产物哈希 `index-DBYTN6a7.js` / `index-BSU4abrP.css`，旧的是 `index-0xVdquyl.js`）：
+  新标记 `has-context` 在 JS 里 1 条、`context-accent` 在 **CSS** 里 **16 条**（与源码计数 16 完全一致）；
+  连续性标记 `global-rail`=1、`entity-bar`=1、`workspace-tab`=3、`搜索证券、数据或命令`=1；
+  对照组 `module-index-bar`=0 —— PR #15 的导航与 PR #16 的改动同时在线上
+- 两个新坑：
+  - **`node --test` 的输出不是 TAP**：这个 Node 版本打印 `ℹ tests 113` / `ℹ pass 113`，按
+    `^# (tests|pass|fail)` 过滤会得到**空输出**，看着像"没跑"。按 `ℹ` 过滤，或直接看尾部
+  - **CSS 变量不进 JS bundle**：`context-accent` 在 JS 产物里恒为 0，只能去 `.css` 产物里数；
+    用"某个标记在 JS 里是 0"来判断"没上线"会误判
+- **GitHub 列表端点的 `merged` 字段不可信**：`list_pull_requests` 对已合并的 #14/#15/#16 一律回
+  `merged: false`（而 `merged_at` 正常）。判断是否真的合并了要用**单 PR 读取**（返回 `merged: true`）
+  或看 main 上是否含该 merge commit
+- 待办（非阻塞）：仓库里第一个 2MB 级视频素材已入库（`doc/` 本来就有 .doc/.docx/PNG，属既有惯例）；
+  若要控体积，后续可把演示素材改为 GitHub 托管附件。PR 描述里的图片链接指向 fork 的 raw 地址，
+  fork 分支删除后会失效
