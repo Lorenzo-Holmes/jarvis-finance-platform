@@ -10,6 +10,7 @@ const chart = fs.readFileSync(new URL('../src/composables/useMarketChart.js', im
 test('simulated trading uses the chart-first terminal layout', () => {
   assert.match(simView, /TradingTerminal/)
   assert.match(terminal, /terminal-chart/)
+  assert.match(terminal, /execution-rail/)
   assert.doesNotMatch(terminal, /chart-toolbar/)
   assert.match(terminal, /委托类型/)
   assert.match(terminal, /止损市价单/)
@@ -63,12 +64,15 @@ test('stop-line click handling uses ECharts markLine data events and validates s
   assert.match(terminal, /买入止损价需高于当前价/)
 })
 
-test('reference terminal keeps chart as the primary canvas and the order ticket as a centered overlay', () => {
-  assert.match(terminal, /height: clamp\(480px, calc\(100dvh - 286px\), 760px\)/)
-  assert.match(terminal, /width: min\(480px, 100%\)/)
-  assert.match(terminal, /backdrop-filter: blur\(5px\)/)
+test('reference terminal keeps chart primary, adds an execution rail, and uses a side order sheet', () => {
+  assert.match(terminal, /grid-template-columns: minmax\(0, 1fr\) clamp\(196px, 14vw, 216px\)/)
+  assert.match(terminal, /height: clamp\(360px, calc\(100dvh - 420px\), 620px\)/)
+  assert.match(terminal, /@media \(max-width: 1120px\)[\s\S]*?\.terminal-workspace \{ grid-template-columns: 1fr; \}/)
+  assert.match(terminal, /execution-segmented/)
+  assert.match(terminal, /place-items: stretch end/)
+  assert.match(terminal, /width: min\(420px, 100%\)/)
+  assert.match(terminal, /border-right: 0/)
   assert.match(terminal, /aria-labelledby="order-modal-title"/)
-  assert.match(terminal, /max-height: 90dvh/)
   assert.match(terminal, /right: 150px/)
   assert.match(terminal, /right: 4px/)
 })
