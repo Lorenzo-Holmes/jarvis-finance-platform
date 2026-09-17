@@ -5,17 +5,20 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.TaskScheduler;
+import org.springframework.scheduling.Trigger;
 import org.springframework.scheduling.support.CronExpression;
 import org.springframework.scheduling.support.CronTrigger;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionalEventListener;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * 调度注册表：把数据库里的任务定义变成真正会触发的调度。
@@ -106,10 +109,32 @@ public class ScheduledTaskRegistry {
         // 先摘掉可能存在的旧调度，避免改周期后新旧两份同时触发。
         cancel(task.getId());
 
-        CronTrigger trigger = new CronTrigger(task.getCronExpr(), zone);
+        CronTrigger cronTrigger = new CronTrigger(task.getCronExpr(), zone);
+
+        // ⚠️ 传给内核的必须是**计划时刻**，不是 LocalDateTime.now()。
+        // 幂等键是 <taskId>:<计划时刻 的 epochSecond>，「同一个计划时刻只跑一次」
+        // 这句承诺只有在键取自计划时刻时才成立：取 now() 的话，触发一旦被推迟
+        // （回测占满 3 个线程是常态，慢几秒很常见），键就漂到另一个秒上，
+        // 于是「两处各自算出同一个键、唯一约束只放行一个」这个机制直接失效。
+        // Trigger.nextExecution 给出的正是本次要触发的那个时刻，在这里记下来、
+        // 等 Runnable 真正执行时取用。取用与重算在同一线程内先后发生（Spring 的
+        // ReschedulingRunnable 是「跑完本次再算下次」），所以不存在竞态。
+        AtomicReference<LocalDateTime> plannedInstant = new AtomicReference<>();
+        Trigger plannedTrigger = context -> {
+            Instant next = cronTrigger.nextExecution(context);
+            if (next != null) {
+                plannedInstant.set(LocalDateTime.ofInstant(next, zone));
+            }
+            return next;
+        };
+
         ScheduledFuture<?> future = scheduler.schedule(
-                () -> runner.trigger(task, TaskTriggerType.SCHEDULED, LocalDateTime.now()),
-                trigger);
+                () -> {
+                    LocalDateTime planned = plannedInstant.get();
+                    runner.trigger(task, TaskTriggerType.SCHEDULED,
+                            planned != null ? planned : LocalDateTime.now());
+                },
+                plannedTrigger);
         registered.put(task.getId(), future);
 
         updateNextRunAt(task, expression, zone);
