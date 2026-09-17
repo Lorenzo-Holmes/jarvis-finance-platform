@@ -20,6 +20,7 @@ const error = ref('')
 const selectedGraphKey = ref('focus')
 const nodeFileOpen = ref(false)
 const inputPanelOpen = ref(typeof window === 'undefined' || window.innerWidth > 1180)
+const hoveredGraphKey = ref('')
 const analysisPhase = ref('idle')
 const nodeStates = ref({})
 const activeEdgeKeys = ref([])
@@ -42,12 +43,12 @@ const graphNodes = computed(() => [
   { key: 'risk', no: '06', label: '风险与替代', zh: '独立验证', x: 58, y: 82, note: '政策、替代、供需冲击与其他风险验证入口。' },
 ])
 const graphEdges = Object.freeze([
-  { key: 'focus-upstream', target: 'upstream', x1: 48, y1: 48, x2: 18, y2: 27 },
-  { key: 'focus-enablers', target: 'enablers', x1: 48, y1: 50, x2: 18, y2: 72 },
-  { key: 'focus-processing', target: 'processing', x1: 51, y1: 46, x2: 71, y2: 26 },
-  { key: 'focus-downstream', target: 'downstream', x1: 51, y1: 50, x2: 82, y2: 61 },
-  { key: 'focus-risk', target: 'risk', x1: 50, y1: 52, x2: 58, y2: 79 },
-  { key: 'processing-downstream', target: 'downstream', x1: 74, y1: 28, x2: 82, y2: 58 },
+  { key: 'focus-upstream', source: 'focus', target: 'upstream', x1: 48, y1: 48, x2: 18, y2: 27 },
+  { key: 'focus-enablers', source: 'focus', target: 'enablers', x1: 48, y1: 50, x2: 18, y2: 72 },
+  { key: 'focus-processing', source: 'focus', target: 'processing', x1: 51, y1: 46, x2: 71, y2: 26 },
+  { key: 'focus-downstream', source: 'focus', target: 'downstream', x1: 51, y1: 50, x2: 82, y2: 61 },
+  { key: 'focus-risk', source: 'focus', target: 'risk', x1: 50, y1: 52, x2: 58, y2: 79 },
+  { key: 'processing-downstream', source: 'processing', target: 'downstream', x1: 74, y1: 28, x2: 82, y2: 58 },
 ])
 const propagationWaves = Object.freeze([
   ['upstream', 'enablers', 'processing'],
@@ -67,6 +68,23 @@ const AMBIENT_POINTS = Object.freeze({
   validate: { x: '52%', y: '50%' },
 })
 const selectedGraphNode = computed(() => graphNodes.value.find(item => item.key === selectedGraphKey.value) || graphNodes.value[2])
+const hoverRelatedEdgeKeys = computed(() => {
+  if (!hoveredGraphKey.value) return []
+  return graphEdges
+    .filter(edge => edge.source === hoveredGraphKey.value || edge.target === hoveredGraphKey.value)
+    .map(edge => edge.key)
+})
+const hoverRelatedNodeKeys = computed(() => {
+  if (!hoveredGraphKey.value) return new Set()
+  const keys = new Set([hoveredGraphKey.value])
+  graphEdges.forEach(edge => {
+    if (edge.source === hoveredGraphKey.value || edge.target === hoveredGraphKey.value) {
+      keys.add(edge.source)
+      keys.add(edge.target)
+    }
+  })
+  return keys
+})
 const ambientPosition = computed(() => AMBIENT_POINTS[ambientFocus.value] || AMBIENT_POINTS.center)
 const analysisStatus = computed(() => {
   if (analysisPhase.value === 'locking') return { label: '建立分析上下文', detail: '正在锁定研究对象与产业结构范围' }
@@ -333,7 +351,15 @@ onBeforeUnmount(() => {
             </div>
             <div v-if="analyzing" class="graph-ambient-field" aria-hidden="true"></div>
             <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-              <g v-for="edge in graphEdges" :key="edge.key" class="graph-edge">
+              <g
+                v-for="edge in graphEdges"
+                :key="edge.key"
+                class="graph-edge"
+                :class="{
+                  'hover-linked': !analyzing && hoverRelatedEdgeKeys.includes(edge.key),
+                  'hover-muted': !analyzing && hoveredGraphKey && !hoverRelatedEdgeKeys.includes(edge.key),
+                }"
+              >
                 <path class="edge-base" :d="edgePath(edge)" fill="none" />
                 <path
                   class="edge-scan"
@@ -354,8 +380,20 @@ onBeforeUnmount(() => {
               :key="item.key"
               type="button"
               class="graph-node"
-              :class="[{ active: selectedGraphKey === item.key, focus: item.key === 'focus' }, nodeAnalysisClass(item.key)]"
+              :class="[
+                {
+                  active: selectedGraphKey === item.key,
+                  focus: item.key === 'focus',
+                  'hover-linked': !analyzing && hoveredGraphKey && hoverRelatedNodeKeys.has(item.key),
+                  'hover-muted': !analyzing && hoveredGraphKey && !hoverRelatedNodeKeys.has(item.key),
+                },
+                nodeAnalysisClass(item.key),
+              ]"
               :style="{ left: `${item.x}%`, top: `${item.y}%` }"
+              @mouseenter="hoveredGraphKey = item.key"
+              @mouseleave="hoveredGraphKey = ''"
+              @focus="hoveredGraphKey = item.key"
+              @blur="hoveredGraphKey = ''"
               @click="selectGraphNode(item.key)"
             >
               <i v-if="item.key === 'focus'" class="node-calibration" aria-hidden="true"></i>
@@ -716,9 +754,9 @@ onBeforeUnmount(() => {
   .ch-layout.input-collapsed .ch-input-panel { padding: 14px !important; border-color: var(--material-border, var(--line)) !important; opacity: 0; transform: translateX(calc(-100% - 20px)); }
   .input-panel-close { display: grid; }
   .ch-panel-title { padding-right: 32px; }
-  .ch-main { min-height: 580px; }
-  .industry-graph { min-height: 580px; padding-left: 16px; padding-right: 16px; }
-  .graph-stage { min-height: 470px; }
+  .ch-main { min-height: 540px; }
+  .industry-graph { min-height: 540px; padding-left: 16px; padding-right: 16px; }
+  .graph-stage { min-height: 430px; }
   .graph-node { width: min(156px, 27%); }
   .node-file { width: min(290px, calc(100% - 28px)); }
 }
@@ -758,5 +796,185 @@ onBeforeUnmount(() => {
   .graph-node.computing::after { animation: none !important; }
   .graph-node.computing { transform: translate(-50%,-50%); transition: none; }
   .graph-node.glass-dormant { opacity: .68; transform: translate(-50%,-50%); }
+}
+
+/* V5 — visual-only refinement: calmer canvas, readable research typography, relationship focus. */
+.graph-stage::before {
+  opacity: .30;
+  background-size: 72px 72px;
+}
+.graph-stage.analyzing::before { opacity: .42; }
+.graph-edge .edge-base {
+  opacity: .72;
+  transition: opacity .18s ease, stroke .18s ease, stroke-width .18s ease;
+}
+.graph-edge.hover-linked .edge-base {
+  opacity: 1;
+  stroke: color-mix(in srgb, var(--accent) 52%, var(--workspace-graph-edge));
+  stroke-width: .34;
+}
+.graph-edge.hover-muted .edge-base { opacity: .20; }
+.graph-edge .edge-scan.active { filter: none; }
+.analysis-status-overlay {
+  min-height: 42px;
+  padding: 8px 11px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--material-glass, var(--workspace-node-bg)) 88%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.035), 0 12px 28px rgba(0,0,0,.10);
+}
+.analysis-status-overlay b { font-size: 10.5px; }
+.analysis-status-overlay small { font-size: 9.5px; }
+.graph-node {
+  width: min(168px, 23%);
+  min-height: 78px;
+  border-color: rgba(255,255,255,.072);
+}
+.graph-node::after {
+  opacity: .46;
+  background: linear-gradient(132deg, rgba(255,255,255,.075), transparent 28% 76%, rgba(197,161,107,.028));
+}
+.graph-node strong { font-size: 13.5px; }
+.graph-node small { font-size: 11px; }
+.graph-node.hover-linked:not(.active):not(.computing) {
+  border-color: color-mix(in srgb, var(--accent) 24%, rgba(255,255,255,.08));
+}
+.graph-node.hover-muted {
+  opacity: .55;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.018), 0 6px 18px rgba(0,0,0,.07);
+}
+.node-calibration { display: none; }
+.node-compute-state { font-size: 9px; }
+.chain-analysis-plan-head b { font-size: 11px; }
+.chain-analysis-plan-head small { font-size: 9.5px; line-height: 1.4; }
+.chain-analysis-plan li { min-height: 42px; }
+.chain-analysis-plan li b { font-size: 10.5px; }
+.chain-analysis-plan li small { font-size: 9px; }
+.chain-analysis-plan li em { font-size: 9px; }
+.node-file-head span { font-size: 9.5px; }
+.node-file > p { font-size: 11.5px; }
+.node-file-meta span,
+.node-file-meta b { font-size: 10.5px; }
+.ch-result-head span,
+.ch-empty span { font-size: 10.5px; }
+.ch-empty-mark {
+  width: auto;
+  height: 32px;
+  padding: 0 11px;
+  border: 1px solid var(--material-border, var(--line));
+  border-radius: 999px;
+  background: rgba(255,255,255,.02);
+  letter-spacing: .04em;
+}
+@media (max-width: 1180px) {
+  .graph-node { width: min(160px, 27%); }
+  .ch-workspace:has(.context-target) .ch-main,
+  .ch-workspace:has(.context-target) .industry-graph { min-height: 486px; }
+  .ch-workspace:has(.context-target) .graph-stage { min-height: 376px; }
+}
+@media (max-width: 760px) {
+  .graph-node { width: 30%; min-height: 72px; }
+  .graph-node strong { font-size: 12px; }
+  .graph-node small { font-size: 9.5px; }
+}
+
+/* V6 — give the graph a spatial field so glass reads as material, not boxed flowchart UI. */
+.graph-stage {
+  border-radius: 12px;
+  background:
+    radial-gradient(ellipse at 49% 48%, color-mix(in srgb, var(--accent) 4%, transparent) 0, transparent 31%),
+    radial-gradient(ellipse at 19% 52%, color-mix(in srgb, var(--text) 2.4%, transparent) 0, transparent 24%),
+    radial-gradient(ellipse at 79% 47%, color-mix(in srgb, var(--text) 2%, transparent) 0, transparent 25%);
+}
+.graph-stage::before { inset: 10% 7%; }
+.graph-stage svg { inset: 8% 6%; width: 88%; height: 84%; }
+.graph-node {
+  background:
+    linear-gradient(145deg, rgba(255,255,255,.052), transparent 34%),
+    linear-gradient(180deg, rgba(255,255,255,.012), transparent 52%),
+    color-mix(in srgb, var(--workspace-node-bg, rgba(17,24,27,.94)) 55%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.042), 0 14px 34px rgba(0,0,0,.13);
+}
+.graph-node:hover:not(.glass-dormant),
+.graph-node:focus-visible {
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.058), 0 20px 44px rgba(0,0,0,.17);
+}
+.graph-node.active:not(.focus):not(.computing) {
+  border-color: color-mix(in srgb, var(--text) 13%, rgba(255,255,255,.07));
+  background:
+    linear-gradient(145deg, rgba(255,255,255,.067), transparent 36%),
+    color-mix(in srgb, var(--workspace-node-bg, rgba(17,24,27,.94)) 68%, transparent);
+}
+.graph-node.active:not(.focus)::before {
+  top: 17px;
+  bottom: 17px;
+  width: 2px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 72%, transparent);
+}
+.node-file {
+  border-color: color-mix(in srgb, var(--material-border, var(--line)) 86%, transparent);
+  box-shadow: -18px 0 52px rgba(0,0,0,.14), inset 0 1px 0 rgba(255,255,255,.038);
+}
+.node-file.open { transform: translateX(0) scale(1); }
+@media (prefers-reduced-motion: reduce) {
+  .graph-node,
+  .graph-edge .edge-base { transition: none !important; }
+}
+
+/* V7 — Material Propagation: relationships illuminate; no travelling HUD packets. */
+.graph-edge .edge-scan.active {
+  stroke: color-mix(in srgb, var(--accent-strong) 84%, var(--text));
+  stroke-width: .54;
+  stroke-dasharray: none;
+  stroke-dashoffset: 0;
+  filter: none;
+  animation: chain-relation-bloom .82s cubic-bezier(.22,1,.36,1) both;
+}
+.graph-edge .edge-scan.validating {
+  stroke: color-mix(in srgb, var(--accent) 42%, transparent);
+  stroke-width: .34;
+  stroke-dasharray: none;
+  stroke-dashoffset: 0;
+  animation: chain-relation-breathe 2.4s ease-in-out infinite;
+}
+.graph-ambient-field::after {
+  opacity: .08;
+  animation: none;
+  transform: scale(1);
+  border-color: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.graph-node.computing {
+  animation: chain-material-lift .38s cubic-bezier(.22,1,.36,1) both;
+}
+.graph-node.processed {
+  transition-duration: .34s;
+}
+.ch-main:has(.graph-node:hover) .industry-graph > header,
+.ch-main:has(.graph-node:focus-visible) .industry-graph > header,
+.ch-main:has(.graph-node:hover) .industry-graph > footer,
+.ch-main:has(.graph-node:focus-visible) .industry-graph > footer {
+  opacity: .68;
+}
+.industry-graph > header,
+.industry-graph > footer {
+  transition: opacity .18s ease;
+}
+@keyframes chain-relation-bloom {
+  0% { opacity: 0; stroke-width: .18; }
+  58% { opacity: .94; stroke-width: .62; }
+  100% { opacity: .72; stroke-width: .48; }
+}
+@keyframes chain-relation-breathe {
+  0%,100% { opacity: .24; }
+  50% { opacity: .58; }
+}
+@keyframes chain-material-lift {
+  from { opacity: .58; transform: translate(-50%,-50%) translateY(7px) scale(.988); }
+  to { opacity: 1; transform: translate(-50%,-50%) translateY(-5px) scale(1.018); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .graph-edge .edge-scan.active,
+  .graph-edge .edge-scan.validating,
+  .graph-node.computing { animation: none !important; }
 }
 </style>

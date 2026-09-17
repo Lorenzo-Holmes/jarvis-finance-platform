@@ -481,4 +481,36 @@ function sendToBacktest() {
   .sg-blueprint { min-height: 0; }
   .sg-blueprint-footer { align-items: flex-start; flex-direction: column; padding-top: 12px; padding-bottom: 12px; }
 }
+
+/* V5 — keep the strategy view dense, but move secondary copy out of terminal-size typography. */
+.section-status b { font-size: 9.5px; }
+.section-status em { font-size: 10.5px; }
+.sg-panel-title span { font-size: 9px; }
+.sg-panel-title small { font-size: 10px; line-height: 1.45; }
+.sg-field::before { font-size: 8.5px; }
+.sg-input-panel .text-action { font-size: 10px; }
+.sg-note { font-size: 10px; }
+.sg-banner span { font-size: 10px; }
+.sg-card-head span { font-size: 10px; }
+.sg-metric span { font-size: 10px; }
+.sg-metric small { font-size: 9.5px; }
+.sg-report-head span { font-size: 10px; }
+.sg-blueprint-head span { font-size: 9px; }
+.sg-blueprint-section header span { font-size: 9px; }
+.risk-axis-marker span { font-size: 9px; }
+.risk-axis-meta { font-size: 9px; }
+.pending-bars em { font-size: 9px; }
+.sg-blueprint-footer em { font-size: 9.5px; }
+.sg-card,
+.sg-banner,
+.sg-blueprint-section {
+  transition: border-color .18s ease, background .18s ease, box-shadow .18s ease, transform .12s ease;
+}
+.sg-card:hover,
+.sg-banner:hover {
+  border-color: color-mix(in srgb, var(--text) 11%, var(--material-border, var(--line))) !important;
+  background: rgba(255,255,255,.022) !important;
+}
+.sg-card:active,
+.sg-blueprint-section:active { transform: scale(.997); }
 </style>

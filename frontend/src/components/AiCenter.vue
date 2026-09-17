@@ -847,4 +847,220 @@ onBeforeUnmount(() => {
   .document-sources > div { grid-template-columns: 1fr; }
   .source-peek { width: calc(100% - 12px); }
 }
+
+/* V5 — increase research readability without changing information density or behavior. */
+.engine-status { font-size: 10.5px; }
+.desk-switch button { font-size: 10.5px; }
+.dock-head span,
+.context-inspector header span,
+.dock-head small { font-size: 9.5px; }
+.evidence-row b { font-size: 11.5px; }
+.evidence-row small { font-size: 10px; }
+.evidence-detail-head b { font-size: 11px; }
+.text-action { font-size: 10px; }
+.quote-snapshot > span { font-size: 10px; }
+.quote-snapshot small { font-size: 9.5px; }
+.input,
+.evidence-detail textarea { font-size: 11px; }
+.tool-output { font-size: 10.5px; line-height: 1.72; }
+.tool-empty { font-size: 10px; }
+.document-masthead span,
+.document-masthead em { font-size: 10px; }
+.document-masthead small { font-size: 9.5px; }
+.research-objective > span,
+.research-checklist > span,
+.document-sources > span { font-size: 10px; }
+.research-checklist b { font-size: 9.5px; }
+.research-checklist p { font-size: 11px; }
+.document-sources b { font-size: 10px; }
+.document-sources small,
+.document-sources em { font-size: 9px; }
+.prompt-templates > span,
+.prompt-templates button { font-size: 10px; }
+.conversation-label span { font-size: 11px; }
+.conversation-label small { font-size: 9.5px; }
+.message-meta { font-size: 9.5px; }
+.message-content { font-size: 12.5px; }
+.composer-shell > textarea { font-size: 12px; }
+.composer-tools button:not(.send-btn) { font-size: 9.5px; }
+.send-btn { min-height: 31px; font-size: 10px; }
+.research-disclaimer { font-size: 9.5px; }
+.inspector-target span,
+.inspector-links > span { font-size: 9.5px; }
+.inspector-target small { font-size: 9px; }
+.inspector-stats span,
+.inspector-stats b,
+.inspector-links button,
+.inspector-empty span,
+.inspector-empty button { font-size: 10px; }
+.inspector-empty b { font-size: 11px; }
+.inspector-restore { font-size: 9.5px; }
+.source-peek > header span { font-size: 9px; }
+.source-peek > header b { font-size: 11.5px; }
+.source-peek-meta { font-size: 9.5px; }
+.source-peek-body { font-size: 10.5px; }
+.source-peek > footer button { font-size: 10px; }
+.document-sources button,
+.prompt-templates button,
+.composer-tools button:not(.send-btn),
+.inspector-links button,
+.source-peek > footer button {
+  transition: color .16s ease, background .16s ease, border-color .16s ease, transform .10s ease;
+}
+.document-sources button:active,
+.prompt-templates button:active,
+.inspector-links button:active,
+.source-peek > footer button:active { transform: scale(.985); }
+
+/* V6 — stronger document hierarchy, quieter utility surfaces. */
+.research-workspace {
+  height: calc(100dvh - 156px);
+  min-height: 540px;
+}
+.research-canvas {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--surface) 24%, transparent), transparent 24%);
+}
+.research-document {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding-right: 8px;
+}
+.document-masthead {
+  padding-top: 8px;
+  padding-bottom: 20px;
+}
+.document-masthead h3 { font-size: 27px; }
+.evidence-dock,
+.context-inspector {
+  border-color: color-mix(in srgb, var(--material-border, var(--line)) 84%, transparent);
+  background: color-mix(in srgb, var(--material-glass, transparent) 58%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.018);
+}
+.evidence-row:hover,
+.evidence-row.active { background: color-mix(in srgb, var(--workspace-hover-bg) 76%, transparent); }
+.composer-shell {
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--material-glass, transparent) 82%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.03), 0 12px 34px rgba(0,0,0,.07);
+}
+.composer-shell:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--line-strong));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.035), 0 0 0 3px color-mix(in srgb, var(--accent) 7%, transparent), 0 14px 38px rgba(0,0,0,.08);
+}
+.message-row {
+  transition: background .16s ease, transform .10s ease;
+}
+.message-row.user {
+  background: color-mix(in srgb, var(--workspace-accent-wash) 54%, transparent);
+}
+.message-row:hover { background: color-mix(in srgb, var(--workspace-hover-bg) 46%, transparent); }
+.message-row.user:hover { background: color-mix(in srgb, var(--workspace-accent-wash) 68%, transparent); }
+.prompt-templates { padding-top: 6px; padding-bottom: 6px; }
+.conversation-label { padding-top: 8px; padding-bottom: 5px; }
+.chat-window {
+  flex: 0 0 104px;
+  min-height: 88px;
+  max-height: 104px;
+}
+.composer-shell { flex: 0 0 auto; min-height: 104px; margin-top: 6px; }
+.research-disclaimer { margin-top: 3px; }
+@media (max-width: 1180px) {
+  .research-workspace {
+    height: calc(100dvh - 146px);
+    gap: 8px;
+  }
+  .research-head { min-height: 46px; padding-bottom: 8px; }
+  .desk-switch { padding: 2px; }
+  .desk-switch button { min-height: 28px; padding-left: 10px; padding-right: 10px; }
+  .research-document { min-height: 140px; }
+  .prompt-templates { padding-top: 4px; padding-bottom: 4px; }
+  .prompt-templates button { padding-top: 5px; padding-bottom: 5px; }
+  .conversation-label { padding-top: 6px; padding-bottom: 4px; }
+  .chat-window { flex-basis: 88px; min-height: 76px; max-height: 88px; }
+  .composer-shell { min-height: 96px; margin-top: 4px; }
+  .composer-shell > textarea { min-height: 54px; padding-top: 9px; }
+  .research-disclaimer { margin-top: 1px; }
+}
+@media (max-width: 720px) {
+  .research-workspace { height: auto; min-height: 0; }
+  .research-canvas { display: flex; flex-direction: column; overflow: visible; }
+  .research-document { flex: 0 0 auto; overflow: visible; padding-right: 0; }
+  .chat-window { flex: 0 0 auto; min-height: 300px; max-height: 520px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .message-row,
+  .composer-shell { transition: none !important; }
+}
+
+/* V7 — Research Desk: AI behaves like an annotation layer, not a chat product. */
+.research-layout,
+.research-document,
+.evidence-dock,
+.context-inspector,
+.prompt-templates,
+.conversation-label {
+  transition: opacity .20s ease, transform .20s cubic-bezier(.22,1,.36,1), border-color .20s ease;
+}
+.chat-window {
+  border-top: 1px solid color-mix(in srgb, var(--line) 44%, transparent);
+  padding-top: 4px;
+}
+.message-row {
+  padding: 10px 6px;
+  border-radius: 0;
+  background: transparent;
+}
+.message-row.user,
+.message-row.user:hover { background: transparent; }
+.message-row.user .message-content {
+  justify-self: start;
+  max-width: min(760px, 92%);
+  padding: 8px 11px;
+  border: 1px solid color-mix(in srgb, var(--material-border, var(--line)) 76%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--workspace-accent-wash) 46%, transparent);
+}
+.message-row.assistant .message-content {
+  padding-left: 13px;
+  border-left: 1px solid color-mix(in srgb, var(--accent) 54%, var(--line));
+}
+.message-row.assistant .message-meta span { color: var(--accent-strong); }
+.research-layout:has(.composer-shell:focus-within) .evidence-dock,
+.research-layout:has(.composer-shell:focus-within) .context-inspector {
+  opacity: .62;
+  transform: scale(.995);
+}
+.research-layout:has(.composer-shell:focus-within) .research-document,
+.research-layout:has(.composer-shell:focus-within) .prompt-templates,
+.research-layout:has(.composer-shell:focus-within) .conversation-label {
+  opacity: .78;
+}
+.research-layout:has(.composer-shell:focus-within) .composer-shell {
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--line-strong));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.04), 0 0 0 3px color-mix(in srgb, var(--accent) 6%, transparent), 0 18px 44px rgba(0,0,0,.09);
+}
+.research-layout:has(.research-document:hover) .evidence-dock,
+.research-layout:has(.research-document:hover) .context-inspector { opacity: .78; }
+@media (max-width: 720px) {
+  .research-layout:has(.composer-shell:focus-within) .evidence-dock,
+  .research-layout:has(.composer-shell:focus-within) .context-inspector,
+  .research-layout:has(.composer-shell:focus-within) .research-document,
+  .research-layout:has(.composer-shell:focus-within) .prompt-templates,
+  .research-layout:has(.composer-shell:focus-within) .conversation-label { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .research-layout,
+  .research-document,
+  .evidence-dock,
+  .context-inspector,
+  .prompt-templates,
+  .conversation-label { transition: none !important; }
+}
 </style>

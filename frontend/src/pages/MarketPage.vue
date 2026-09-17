@@ -709,4 +709,88 @@ watch([marketFocus, () => jdKlineCfg.market], () => {
 @media (max-width: 700px) { .floating-chart-toolbar { position: relative; top: auto; right: auto; width: fit-content; margin: 10px 0 0 10px; } }
 @media (max-width: 620px) { .section-bar { align-items: flex-start; flex-direction: column; } .market-rail { grid-template-columns: 1fr; } .quote-detail, .rail-data-list { border-right: 0; border-bottom: 1px solid var(--line); } }
 @media (prefers-reduced-motion: reduce) { .market-primary-layout, .market-rail, .toolbar-popover > summary, .toolbar-popover > summary i, .inspector-toggle, .market-inspector .inspector-detail { transition: none !important; } .toolbar-popover-menu { animation: none !important; } }
+
+/* V6 — calmer market surface and more deliberate floating controls. */
+.section-bar {
+  min-height: 82px;
+  padding-bottom: 14px;
+}
+.market-hero-price strong { font-size: 40px; }
+.market-chart-panel {
+  border: 1px solid color-mix(in srgb, var(--material-border, var(--line)) 78%, transparent);
+  background: color-mix(in srgb, var(--surface) 34%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.022), 0 18px 46px rgba(0,0,0,.055);
+}
+.chart-shell {
+  min-height: 580px;
+  background: transparent;
+  box-shadow: none;
+}
+.market-main-chart { height: clamp(580px, calc(100dvh - 268px), 790px); }
+.floating-chart-toolbar {
+  top: 12px;
+  right: 12px;
+  min-height: 34px;
+  padding: 3px;
+  border-color: color-mix(in srgb, var(--material-border, var(--line)) 82%, transparent);
+  background: color-mix(in srgb, var(--material-glass) 76%, transparent);
+  box-shadow: 0 8px 26px rgba(0,0,0,.09), inset 0 1px 0 rgba(255,255,255,.025);
+  opacity: .92;
+  transition: opacity .16s ease, background .16s ease, border-color .16s ease, box-shadow .16s ease;
+}
+.floating-chart-toolbar:hover,
+.floating-chart-toolbar:focus-within {
+  opacity: 1;
+  background: color-mix(in srgb, var(--material-glass) 90%, transparent);
+  border-color: color-mix(in srgb, var(--text) 12%, var(--material-border, var(--line)));
+  box-shadow: 0 12px 34px rgba(0,0,0,.12), inset 0 1px 0 rgba(255,255,255,.035);
+}
+.toolbar-popover > summary,
+.toolbar-source-select,
+.toolbar-more { height: 28px; }
+.toolbar-popover > summary { min-width: 66px; }
+.chart-footnote { opacity: .72; }
+.market-rail:not(.inspector-collapsed) {
+  box-shadow: -14px 0 34px rgba(0,0,0,.05);
+}
+.market-inspector .inspector-detail { transition-duration: 180ms, 260ms; }
+@media (max-width: 1100px) {
+  .chart-shell { min-height: 480px; }
+  .market-main-chart { height: 480px; }
+}
+@media (max-width: 900px) {
+  .chart-shell { min-height: 430px; }
+  .market-main-chart { height: 430px; }
+  .market-chart-panel { border-radius: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .floating-chart-toolbar { transition: none !important; }
+}
+
+/* V7 — Attention Depth: the active market canvas comes forward without glow. */
+.section-bar,
+.quote-strip,
+.market-inspector,
+.market-chart-panel {
+  transition: opacity .20s ease, border-color .20s ease, box-shadow .20s ease, transform .20s cubic-bezier(.22,1,.36,1);
+}
+.market-workspace:has(.chart-shell:hover) .section-bar,
+.market-workspace:has(.chart-shell:hover) .quote-strip {
+  opacity: .76;
+}
+.market-workspace:has(.chart-shell:hover) .market-inspector.inspector-collapsed {
+  opacity: .62;
+}
+.market-workspace:has(.chart-shell:hover) .market-chart-panel {
+  border-color: color-mix(in srgb, var(--text) 11%, var(--material-border, var(--line)));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.028), 0 22px 54px rgba(0,0,0,.065);
+}
+.market-workspace:has(.floating-chart-toolbar:hover) .chart-footnote,
+.market-workspace:has(.floating-chart-toolbar:focus-within) .chart-footnote { opacity: .42; }
+@media (prefers-reduced-motion: reduce) {
+  .section-bar,
+  .quote-strip,
+  .market-inspector,
+  .market-chart-panel { transition: none !important; }
+}
 </style>
