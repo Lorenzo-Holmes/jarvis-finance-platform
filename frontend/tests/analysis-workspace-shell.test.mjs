@@ -168,7 +168,7 @@ test('representative workspace pages use the archive information language', () =
   assert.match(read('pages/MarketPage.vue'), /MARKET \/ LIVE FEED/)
   assert.match(read('components/CrossMarketView.vue'), /CROSS MARKET \/ OBSERVATORY/)
   assert.match(read('pages/BacktestPage.vue'), /BACKTEST \/ STRATEGY LABORATORY/)
-  assert.match(read('components/SimTradeView.vue'), /EXECUTION \/ SIM TRADING/)
+  assert.match(read('components/SimTradeView.vue'), /操作终端/)
   assert.match(read('components/AiCenter.vue'), /RESEARCH INTELLIGENCE \/ ANALYSIS DESK/)
   assert.match(read('pages/SentimentPage.vue'), /BULL \/ BEAR DOSSIER/)
   assert.match(read('pages/FinancialReportPage.vue'), /COMPANY FILE \/ FINANCIAL FILING/)
