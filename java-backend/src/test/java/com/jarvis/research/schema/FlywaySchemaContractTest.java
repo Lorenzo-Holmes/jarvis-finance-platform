@@ -96,7 +96,10 @@ class FlywaySchemaContractTest {
      *
      * <p>写死是有意的：它同时挡住"新加了实体却忘了写迁移"（表不存在 → 上面那条
      * validate 也会失败）和"迁移里手滑删/改名了一张表"（这里会失败）。
-     * 14 张业务表 + Flyway 自己的历史表。</p>
+     * 17 张业务表 + Flyway 自己的历史表。
+     *
+     * <p>⚠️ 新增迁移时必须同步这份清单 —— 这是本测试刻意的维护成本：
+     * 它逼着每次加表都显式确认一次"我确实要加这张表"。</p>
      */
     @Test
     void theMigratedSchemaContainsExactlyTheExpectedTables() throws Exception {
@@ -116,6 +119,8 @@ class FlywaySchemaContractTest {
                 "sim_trade",
                 "sim_order",
                 "research_task",
+                "scheduled_task",
+                "scheduled_task_run",
                 "flyway_schema_history"));
 
         assertEquals(expected, tableNames(), "迁移产出的表集合");
@@ -149,6 +154,36 @@ class FlywaySchemaContractTest {
                         "prompt_tokens", "completion_tokens", "created_at", "started_at",
                         "finished_at", "version")),
                 "research_task 的列与 ResearchTask 实体不符，现有: " + columns);
+    }
+
+    /**
+     * 定时任务两张表的列必须与 {@code ScheduledTask} / {@code ScheduledTaskRun} 一一对上。
+     *
+     * <p>这两张表是"用户创建即生效、暂停即停止"的落点，实体与迁移错一列在生产
+     * {@code ddl-auto=validate} 下就是启动失败 —— 而本地开发默认不开 Flyway，
+     * 这类错配在本机跑业务时不会暴露。所以这里显式钉一遍。</p>
+     */
+    @Test
+    void theScheduledTaskTablesHaveEveryColumnTheEntitiesMap() throws Exception {
+        Set<String> taskColumns = columnNames("scheduled_task");
+
+        assertTrue(taskColumns.containsAll(List.of(
+                        "id", "user_id", "name", "task_type", "cron_expr", "timezone",
+                        "params_json", "status", "next_run_at", "last_run_at", "last_run_status",
+                        "consecutive_failures", "last_error", "created_at", "updated_at", "version")),
+                "scheduled_task 的列与 ScheduledTask 实体不符，现有: " + taskColumns);
+
+        Set<String> runColumns = columnNames("scheduled_task_run");
+
+        assertTrue(runColumns.containsAll(List.of(
+                        "id", "task_id", "trigger_type", "scheduled_at", "started_at", "finished_at",
+                        "status", "duration_ms", "result_summary", "artifacts_json",
+                        "error_type", "error_message", "idempotency_key", "created_at")),
+                "scheduled_task_run 的列与 ScheduledTaskRun 实体不符，现有: " + runColumns);
+
+        assertFalse(runColumns.contains("version"),
+                "scheduled_task_run 有意不带乐观锁，实体也没有 @Version；"
+                        + "若这里多出 version，说明表与实体已经不一致");
     }
 
     // ==================== 夹具 ====================
