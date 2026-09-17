@@ -1,7 +1,14 @@
 <script setup>
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { api } from '../../api/client'
-import { groupModulesByCategory } from '../data/modules'
+import {
+  buildModuleNavGroups,
+  groupIsCurrent as groupContainsModule,
+  keepOrRefollow,
+  modulesInGroup,
+  openGroupForModule,
+  toggleGroupKey,
+} from '../data/moduleNav'
 
 const props = defineProps({
   module: { type: Object, required: true },
@@ -21,6 +28,35 @@ const displayName = ref('')
 const moduleTitleRef = ref(null)
 let returnTimer = 0
 let switchTimer = 0
+
+// 一级分组导航：一次只展开一组，默认展开当前模块所在的那一组。
+// 状态计算全在 data/moduleNav.js（纯函数，可被 tests/module-nav.test.mjs 直接测到），
+// 这里只做绑定。只影响导航呈现，模块数据与归档版面（lane/row）都不动。
+const moduleGroups = computed(() => buildModuleNavGroups(props.modules))
+const openGroup = ref('')
+const isAdmin = computed(() => props.user?.role === 'ADMIN')
+const openModules = computed(() => modulesInGroup(moduleGroups.value, openGroup.value))
+const openGroupLabel = computed(() => {
+  const group = moduleGroups.value.find(item => item.key === openGroup.value)
+  return group ? `${group.labelZh}分组模块` : '模块'
+})
+
+function groupIsCurrent(group) {
+  return groupContainsModule(group, props.module.key)
+}
+
+function toggleGroup(key) {
+  openGroup.value = toggleGroupKey(openGroup.value, key)
+}
+
+watch(() => props.module.key, key => {
+  openGroup.value = openGroupForModule(moduleGroups.value, key)
+}, { immediate: true })
+
+// 模块列表变化时（例如登录态切换导致分组增减），保证展开的组仍然存在
+watch(moduleGroups, groups => {
+  openGroup.value = keepOrRefollow(groups, openGroup.value, props.module.key)
+})
 
 watch(() => props.user?.displayName, value => {
   displayName.value = value || ''
@@ -60,6 +96,13 @@ function onKeydown(event) {
     || target instanceof HTMLSelectElement
     || target?.isContentEditable) return
   if (document.querySelector('[role="dialog"][aria-modal="true"]')) return
+  // 一级分组展开着的时候，Esc 先收起菜单：展开的分组是浮层语义，
+  // 不该同时把用户送回归档版面（那是另一个动作，需要再按一次）。
+  if (openGroup.value) {
+    event.preventDefault()
+    openGroup.value = ''
+    return
+  }
   event.preventDefault()
   requestReturn()
 }
@@ -138,10 +181,10 @@ onBeforeUnmount(() => {
           v-if="props.user?.role === 'ADMIN'"
           type="button"
           class="legacy-admin-button"
-          title="返回旧版管理后台"
+          title="进入管理后台（与菜单栏 ADMIN 入口相同）"
           @click="emit('legacy-admin')"
         >
-          旧版后台
+          管理后台
         </button>
         <div v-if="props.user" class="account-strip">
           <template v-if="editingProfile">
@@ -158,30 +201,58 @@ onBeforeUnmount(() => {
     </header>
 
     <!--
-      二级导航：一级是按功能分的组（市场/研究/情报/策略/执行/系统），二级是模块。
-      原来 13 项挤成一行、只显示序号 + 英文名，既小又难扫。
+      二级导航：一级是按功能分的组（市场/研究/情报/策略/执行/系统），**点击才展开**；
+      二级是该组的模块。默认展开当前模块所在组，且一次只展开一组。
       分组只改呈现：模块数据、归档版面、键盘循环（按扁平 13 项）都不动。
+      管理员另有一级入口「ADMIN / 管理」，直接进入管理后台——它不属于任何归档模块，
+      所以刻意不塞进 JARVIS_MODULES，避免污染归档版面与模块计数。
     -->
     <nav v-if="props.modules.length" class="workspace-module-index" aria-label="工作区模块索引">
-      <div v-for="group in groupModulesByCategory(props.modules)" :key="group.key" class="module-group">
-        <span class="module-group-label">
-          <b>{{ group.labelEn }}</b>
+      <div class="module-index-bar" role="tablist" aria-label="功能分组">
+        <button
+          v-for="group in moduleGroups"
+          :key="group.key"
+          type="button"
+          role="tab"
+          class="module-group-button"
+          :class="{ active: group.key === openGroup, current: groupIsCurrent(group) }"
+          :aria-expanded="group.key === openGroup"
+          :aria-selected="group.key === openGroup"
+          @click="toggleGroup(group.key)"
+        >
+          <strong>{{ group.labelEn }}</strong>
           <em>{{ group.labelZh }}</em>
-        </span>
-        <div class="module-group-items">
-          <button
-            v-for="item in group.modules"
-            :key="item.key"
-            type="button"
-            :class="{ active: item.key === props.module.key }"
-            :aria-current="item.key === props.module.key ? 'page' : undefined"
-            @click="requestModule(item)"
-          >
-            <span>{{ String(item.no).padStart(2, '0') }}</span>
-            <strong>{{ item.labelEn }}</strong>
-            <em>{{ item.labelZh }}</em>
-          </button>
-        </div>
+          <span class="module-group-count">{{ group.modules.length }}</span>
+        </button>
+        <button
+          v-if="isAdmin"
+          type="button"
+          class="module-group-button module-group-button--admin"
+          title="进入管理后台"
+          @click="emit('legacy-admin')"
+        >
+          <strong>ADMIN</strong>
+          <em>管理</em>
+        </button>
+      </div>
+
+      <div v-if="openModules.length" class="module-index-panel" role="tablist" :aria-label="openGroupLabel">
+        <button
+          v-for="item in openModules"
+          :key="item.key"
+          type="button"
+          role="tab"
+          class="module-chip"
+          :class="{ active: item.key === props.module.key }"
+          :aria-selected="item.key === props.module.key"
+          :aria-current="item.key === props.module.key ? 'page' : undefined"
+          :title="item.summary"
+          @click="requestModule(item)"
+        >
+          <span class="module-chip-no">{{ String(item.no).padStart(2, '0') }}</span>
+          <strong>{{ item.labelEn }}</strong>
+          <em>{{ item.labelZh }}</em>
+        </button>
       </div>
     </nav>
 
@@ -286,26 +357,55 @@ onBeforeUnmount(() => {
 .return-button:hover, .legacy-admin-button:hover, .account-strip button:hover { color: #20221d; background: rgba(209,201,188,.28); }
 .account-strip { display: flex; align-items: center; gap: 4px; }
 .account-strip input { width: 110px; height: 31px; border: 0; border-bottom: 1px solid #8c877d; outline: 0; background: transparent; color: #20221d; font-size: 11px; }
-/* 二级导航：一级是按功能分的组，二级是模块本身。
-   原来 13 项挤成一行且只显示 7px 的序号 + 8px 的英文名，几乎读不出来。
+/* 二级导航：一级是功能分组（点开才展开），二级是该组模块。
+   旧版把 13 项挤成一行、字号只有 7–10px，既小又难扫；现在一级 13px、二级 12px，
+   且一次只展开一组，默认展开当前模块所在组。
    选择器刻意带上 .workspace-shell 提高一级特异性：文件后面的媒体查询里有同名的
-   height/padding 覆盖，按顺序会盖掉下面这条 base 规则，而特异性更高的这条能稳定生效，
-   所以不必再去改那几处媒体查询。 */
-.module-group { display: flex; flex: 0 0 auto; flex-direction: column; justify-content: center; gap: 4px; padding: 7px 14px 8px 0; margin-right: 14px; border-right: 1px solid rgba(186,179,167,.58); }
-.module-group:first-child { margin-left: 2px; }
-.module-group:last-child { margin-right: 0; border-right: 0; }
-.module-group-label { display: flex; align-items: baseline; gap: 6px; color: #7c6746; }
-.module-group-label b { font: 650 9px/1 ui-monospace, monospace; letter-spacing: .1em; }
-.module-group-label em { font-style: normal; font-size: 9px; color: #928c82; }
-.module-group-items { display: flex; align-items: stretch; }
-.workspace-shell .workspace-module-index { height: auto; min-height: 43px; padding: 0 24px; }
-.workspace-shell .workspace-module-index .module-group-items button { min-width: 0; padding: 4px 12px 5px; border-left: 0; border-right: 0; }
-.workspace-shell .workspace-module-index .module-group-items button span { font: 600 8px/1 ui-monospace, monospace; }
-.workspace-shell .workspace-module-index .module-group-items button strong { margin-top: 4px; font: 650 10px/1 ui-monospace, monospace; letter-spacing: .06em; }
-.workspace-shell .workspace-module-index .module-group-items button em { display: block; margin-top: 3px; font-style: normal; font-size: 10px; color: #7b766c; }
-.workspace-shell.is-night .module-group-label b { color: var(--accent); }
-.workspace-shell.is-night .module-group-label em,
-.workspace-shell.is-night .workspace-module-index .module-group-items button em { color: var(--muted); }
+   height/padding 覆盖，按顺序会盖掉 base 规则，而特异性更高的这条能稳定生效。 */
+.workspace-shell .workspace-module-index { height: auto; min-height: 44px; padding: 0; flex-direction: column; align-items: stretch; overflow: visible; }
+.module-index-bar { display: flex; align-items: stretch; padding: 0 24px; overflow-x: auto; scrollbar-width: none; }
+.module-index-bar::-webkit-scrollbar { display: none; }
+.module-group-button {
+  position: relative; flex: 0 0 auto; display: flex; align-items: baseline; gap: 8px;
+  padding: 13px 17px 12px; border: 0; background: transparent; color: #6d685f;
+  font: inherit; cursor: pointer;
+}
+.module-group-button strong { font: 650 13px/1 ui-monospace, monospace; letter-spacing: .08em; }
+.module-group-button em { font-style: normal; font-size: 13px; color: #857f75; }
+.module-group-button .module-group-count {
+  font: 600 10px/1 ui-monospace, monospace; color: #a49d92;
+  border: 1px solid rgba(140, 133, 123, .45); border-radius: 999px; padding: 2px 6px;
+}
+.module-group-button:hover { color: #20221d; background: rgba(209, 201, 188, .22); }
+.module-group-button.active { color: #20221d; background: rgba(209, 201, 188, .3); }
+.module-group-button.active::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: #7c6746; }
+.module-group-button.current::before { content: ''; position: absolute; left: 14px; right: 14px; top: 6px; height: 2px; background: #7c6746; opacity: .45; }
+.module-group-button--admin { margin-left: auto; color: #7c6746; }
+.module-group-button--admin strong { letter-spacing: .12em; }
+.module-index-panel {
+  display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 24px 14px;
+  border-top: 1px solid rgba(186, 179, 167, .58); background: rgba(209, 201, 188, .14);
+}
+.module-chip {
+  display: flex; align-items: baseline; gap: 8px; padding: 9px 14px;
+  border: 1px solid rgba(186, 179, 167, .72); background: #f1ede5; color: #55524b; cursor: pointer;
+}
+.module-chip .module-chip-no { font: 600 10px/1 ui-monospace, monospace; color: #a49d92; }
+.module-chip strong { font: 650 12px/1 ui-monospace, monospace; letter-spacing: .06em; }
+.module-chip em { font-style: normal; font-size: 12px; color: #7b766c; }
+.module-chip:hover { border-color: #a89e8d; color: #20221d; }
+.module-chip.active { border-color: #7c6746; background: #e6dfd2; color: #20221d; }
+.module-chip.active em { color: #5c574e; }
+.workspace-shell.is-night .module-group-button { color: var(--muted); }
+.workspace-shell.is-night .module-group-button em,
+.workspace-shell.is-night .module-chip em { color: var(--muted); }
+.workspace-shell.is-night .module-group-button.active,
+.workspace-shell.is-night .module-group-button:hover { color: var(--text); background: rgba(255, 255, 255, .05); }
+.workspace-shell.is-night .module-group-button.active::after,
+.workspace-shell.is-night .module-group-button.current::before { background: var(--accent); }
+.workspace-shell.is-night .module-index-panel { background: rgba(255, 255, 255, .03); border-color: var(--line); }
+.workspace-shell.is-night .module-chip { background: var(--surface); border-color: var(--line-strong); color: var(--muted); }
+.workspace-shell.is-night .module-chip.active { background: rgba(255, 255, 255, .07); border-color: var(--accent); color: var(--text); }
 
 .workspace-module-index {
   height: 43px; padding: 0 24px; display: flex; align-items: stretch; overflow-x: auto;

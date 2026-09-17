@@ -28,7 +28,16 @@ test('business modules use the archive workspace shell instead of the legacy tab
   assert.match(shell, /workspace-module-index/)
   assert.match(shell, /navigate-module/)
   assert.match(shell, /legacy-admin/)
-  assert.match(shell, /旧版后台/)
+  // 管理入口既在顶部动作区（管理后台），也在菜单栏一级（ADMIN）——
+  // 后者是这次补回来的：管理员页曾经在新版顶部菜单里彻底找不到入口
+  assert.match(shell, /管理后台/)
+  assert.match(shell, /module-group-button--admin/)
+  // 二级导航：一级分组点击展开，默认展开当前模块所在组
+  assert.match(shell, /module-index-bar/)
+  assert.match(shell, /module-index-panel/)
+  assert.match(shell, /@click="toggleGroup\(group.key\)"/)
+  assert.match(shell, /:aria-expanded="group.key === openGroup"/)
+  assert.match(shell, /data\/moduleNav/)
   assert.match(shell, /workspace-shell\.preparing/)
   assert.match(shell, /position: fixed; inset: 0; z-index: 100/)
   assert.match(shell, /opacity: 0;\s*pointer-events: none/)
