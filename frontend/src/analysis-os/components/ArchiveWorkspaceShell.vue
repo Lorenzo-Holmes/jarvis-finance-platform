@@ -24,6 +24,8 @@ const moduleTitleRef = ref(null)
 const accountMenuRef = ref(null)
 const entityMoreRef = ref(null)
 const splitMenuRef = ref(null)
+const entityViewsRef = ref(null)
+const entityLensStyle = ref({ opacity: '0' })
 const commandOpen = ref(false)
 const commandQuery = ref('')
 const commandActiveIndex = ref(0)
@@ -32,6 +34,7 @@ const navigationIndex = ref(0)
 const historyTravel = ref(false)
 let returnTimer = 0
 let switchTimer = 0
+let entityLensRaf = 0
 
 const moduleGroups = computed(() => buildModuleNavGroups(props.modules))
 const workspaceTabModules = computed(() => props.workspaceTabs
@@ -105,7 +108,36 @@ function requestModule(next) {
   switching.value = true
   const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
   if (switchTimer) window.clearTimeout(switchTimer)
-  switchTimer = window.setTimeout(() => emit('navigate-module', next.routeKey), reduced ? 20 : 180)
+  switchTimer = window.setTimeout(() => {
+    const navigate = () => emit('navigate-module', next.routeKey)
+    if (!reduced && typeof document.startViewTransition === 'function') {
+      document.startViewTransition(async () => {
+        navigate()
+        await nextTick()
+      })
+      return
+    }
+    navigate()
+  }, reduced ? 20 : 180)
+}
+
+function syncEntitySelectionLens() {
+  if (entityLensRaf) window.cancelAnimationFrame(entityLensRaf)
+  entityLensRaf = window.requestAnimationFrame(() => {
+    entityLensRaf = 0
+    const nav = entityViewsRef.value
+    if (!nav) return
+    const target = nav.querySelector(':scope > button[aria-current="page"], :scope > .entity-more.active > summary')
+    if (!target) {
+      entityLensStyle.value = { opacity: '0' }
+      return
+    }
+    entityLensStyle.value = {
+      opacity: '1',
+      width: `${target.offsetWidth}px`,
+      transform: `translate3d(${target.offsetLeft}px, 0, 0)`,
+    }
+  })
 }
 
 function navigateHistory(delta) {
@@ -222,6 +254,7 @@ watch(() => props.module.key, () => {
   requestAnimationFrame(() => {
     switching.value = false
     focusModuleTitle()
+    syncEntitySelectionLens()
     if (entityMoreRef.value) entityMoreRef.value.open = false
     if (splitMenuRef.value) splitMenuRef.value.open = false
   })
@@ -239,21 +272,26 @@ watch(() => props.active, active => {
   }
   requestAnimationFrame(() => {
     focusModuleTitle()
+    syncEntitySelectionLens()
   })
 }, { flush: 'post' })
 
 onMounted(() => {
   window.addEventListener('keydown', onKeydown)
+  window.addEventListener('resize', syncEntitySelectionLens)
   document.addEventListener('pointerdown', closeMenusFromOutside)
   if (props.active) requestAnimationFrame(() => {
     focusModuleTitle()
+    syncEntitySelectionLens()
   })
 })
 
 onBeforeUnmount(() => {
   if (returnTimer) window.clearTimeout(returnTimer)
   if (switchTimer) window.clearTimeout(switchTimer)
+  if (entityLensRaf) window.cancelAnimationFrame(entityLensRaf)
   window.removeEventListener('keydown', onKeydown)
+  window.removeEventListener('resize', syncEntitySelectionLens)
   document.removeEventListener('pointerdown', closeMenusFromOutside)
 })
 </script>
@@ -261,12 +299,15 @@ onBeforeUnmount(() => {
 <template>
   <section
     class="workspace-shell"
-    :class="{
-      returning,
-      switching,
-      preparing: !props.active || !props.revealed,
-      'is-night': props.nightMode,
-    }"
+    :class="[
+      {
+        returning,
+        switching,
+        preparing: !props.active || !props.revealed,
+        'is-night': props.nightMode,
+      },
+      `ambient-${props.module.key}`,
+    ]"
     :aria-hidden="!props.active"
   >
     <aside class="global-rail" aria-label="全局导航">
@@ -342,14 +383,16 @@ onBeforeUnmount(() => {
           <button type="button" aria-label="前进" :disabled="!canGoForward" @click="navigateHistory(1)">→</button>
         </div>
 
-        <div class="entity-switcher entity-context-display" aria-label="当前研究对象">
+        <div class="entity-switcher entity-context-display" :class="{ 'has-context': props.context }" aria-label="当前研究对象">
+          <i class="context-presence" aria-hidden="true"></i>
           <span>
             <strong>{{ contextTitle }}</strong>
             <small>{{ contextSubtitle }}</small>
           </span>
         </div>
 
-        <nav class="entity-views" aria-label="当前研究对象视图">
+        <nav ref="entityViewsRef" class="entity-views" aria-label="当前研究对象视图">
+          <i class="entity-selection-lens" aria-hidden="true" :style="entityLensStyle"></i>
           <button
             v-for="item in entityViews"
             :key="item.key"
@@ -1820,5 +1863,242 @@ onBeforeUnmount(() => {
   .global-search-field,
   .rail-shortcuts button,
   .rail-search { transition: none !important; }
+}
+
+/* V5 — visual polish only: reduce route-switch flashing and standardize interaction feedback. */
+.workspace-shell {
+  font-family: Inter, "MiSans", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+.workspace-shell.switching .workspace-body {
+  opacity: .46;
+  transform: translateY(2px);
+}
+@keyframes workspace-surface-in {
+  from { opacity: .78; transform: translateY(3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.workspace-header,
+.entity-bar,
+.global-rail {
+  transition: background .18s ease, border-color .18s ease;
+}
+.global-search-field:focus-visible,
+.entity-history button:focus-visible,
+.entity-views > button:focus-visible,
+.entity-more > summary:focus-visible,
+.split-control > summary:focus-visible,
+.rail-shortcuts button:focus-visible,
+.rail-search:focus-visible {
+  outline: 0;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 13%, transparent);
+}
+.entity-views > button,
+.entity-more > summary,
+.split-control > summary { font-size: 11.5px; }
+.workspace-body { padding: 20px 24px 28px; }
+.workspace-body :deep(.section-bar > div:first-child > span),
+.workspace-body :deep(.research-head > div:first-child > span) {
+  font-size: 11px;
+  line-height: 1.45;
+}
+.workspace-body :deep(.btn) {
+  min-height: 34px;
+  transition: color .16s ease, background .16s ease, border-color .16s ease, box-shadow .16s ease, transform .10s ease !important;
+}
+.workspace-body :deep(.btn:active:not(:disabled)) { transform: scale(.98); }
+.workspace-body :deep(.btn:focus-visible),
+.workspace-body :deep(.select:focus-visible),
+.workspace-body :deep(input:focus-visible),
+.workspace-body :deep(textarea:focus-visible) {
+  outline: 0;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 11%, transparent);
+}
+.workspace-body :deep(.table tbody tr) {
+  transition: background .14s ease;
+}
+@media (max-width: 1180px) {
+  .workspace-body { padding: 16px 16px 22px; }
+}
+@media (max-width: 820px) {
+  .workspace-body { padding: 12px 10px 18px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .workspace-shell.switching .workspace-body { opacity: 1; transform: none; }
+  .workspace-body :deep(.btn),
+  .workspace-header,
+  .entity-bar,
+  .global-rail { transition: none !important; }
+}
+
+/* V6 — selected-state surface language and tighter application chrome. */
+.global-search-field {
+  transition: border-color .16s ease, background .16s ease, box-shadow .16s ease, transform .10s ease;
+}
+.global-search-field:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--material-border));
+  background: color-mix(in srgb, var(--material-glass) 86%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 9%, transparent), inset 0 1px 0 rgba(255,255,255,.028);
+}
+.account-menu > summary {
+  min-height: 34px;
+  border-radius: 9px;
+  font-size: 10.5px;
+  transition: color .16s ease, background .16s ease, transform .10s ease;
+}
+.account-menu > summary:active { transform: scale(.97); }
+.account-menu[open] > summary {
+  background: color-mix(in srgb, var(--workspace-hover-bg) 78%, transparent);
+}
+.entity-views > button.active,
+.entity-more.active > summary,
+.split-control.active > summary {
+  color: var(--text);
+  background: color-mix(in srgb, var(--workspace-hover-bg) 82%, transparent);
+}
+.entity-views > button.active::after,
+.entity-more.active > summary::after,
+.split-control.active > summary::after { display: none; }
+.entity-views > button:hover:not(.active),
+.entity-more > summary:hover,
+.split-control > summary:hover {
+  background: color-mix(in srgb, var(--workspace-hover-bg) 60%, transparent);
+}
+.entity-context-display {
+  position: relative;
+}
+.entity-context-display::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 13px;
+  bottom: 13px;
+  width: 1px;
+  background: color-mix(in srgb, var(--line) 72%, transparent);
+}
+.command-results > button strong { font-size: 11.5px; }
+.command-results > button small { font-size: 9.5px; }
+.command-results > button em { font-size: 8.5px; }
+@media (max-width: 820px) {
+  .entity-context-display::after { display: none; }
+  .account-menu > summary { font-size: 10px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .global-search-field,
+  .account-menu > summary { transition: none !important; }
+}
+
+/* V7 — Ambient Financial Workspace: persistent context + liquid selection. */
+.workspace-shell {
+  --module-aura: rgba(108, 125, 138, .028);
+  --context-accent: color-mix(in srgb, var(--accent) 68%, var(--text));
+}
+.workspace-shell.ambient-market { --module-aura: rgba(82, 126, 158, .045); --context-accent: #7894a7; }
+.workspace-shell.ambient-financial { --module-aura: rgba(118, 132, 119, .040); --context-accent: #819083; }
+.workspace-shell.ambient-ai-research { --module-aura: rgba(162, 126, 81, .045); --context-accent: #a18462; }
+.workspace-shell.ambient-industry-chain { --module-aura: rgba(148, 118, 78, .052); --context-accent: #a17f57; }
+.workspace-shell.ambient-risk { --module-aura: rgba(151, 90, 82, .045); --context-accent: #9d716a; }
+.workspace-shell.ambient-strategy { --module-aura: rgba(103, 122, 108, .042); --context-accent: #768778; }
+.workspace-shell.ambient-sim-trade { --module-aura: rgba(79, 113, 137, .046); --context-accent: #6d8799; }
+.workspace-body {
+  background:
+    radial-gradient(ellipse 58% 44% at 56% -8%, var(--module-aura), transparent 72%),
+    var(--bg);
+}
+.entity-context-display {
+  min-height: 38px;
+  margin: 6px 4px;
+  padding: 0 13px 0 12px;
+  gap: 9px;
+  border: 1px solid color-mix(in srgb, var(--material-border, var(--line)) 74%, transparent);
+  border-radius: 12px;
+  background:
+    linear-gradient(130deg, color-mix(in srgb, var(--context-accent) 4%, transparent), transparent 44%),
+    color-mix(in srgb, var(--material-glass, transparent) 42%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.022);
+  view-transition-name: jarvis-context-capsule;
+  transition: border-color .22s ease, background .22s ease, box-shadow .22s ease, transform .22s cubic-bezier(.22,1,.36,1), opacity .18s ease;
+}
+.entity-context-display::after { display: none; }
+.entity-context-display.has-context {
+  border-color: color-mix(in srgb, var(--context-accent) 22%, var(--material-border, var(--line)));
+}
+.context-presence {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--context-accent) 72%, var(--line-strong));
+  background: transparent;
+  box-shadow: 0 0 0 0 transparent;
+  transition: background .22s ease, border-color .22s ease, box-shadow .22s ease;
+}
+.entity-context-display.has-context .context-presence {
+  border-color: var(--context-accent);
+  background: var(--context-accent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--context-accent) 7%, transparent);
+}
+.workspace-shell.switching .entity-context-display {
+  opacity: .74;
+  transform: translateY(-1px) scale(.985);
+}
+.entity-views {
+  position: relative;
+  isolation: isolate;
+}
+.entity-selection-lens {
+  position: absolute;
+  z-index: 0;
+  top: 7px;
+  left: 0;
+  height: calc(100% - 14px);
+  border: 1px solid color-mix(in srgb, var(--material-border, var(--line)) 76%, transparent);
+  border-radius: 10px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.025), transparent),
+    color-mix(in srgb, var(--workspace-hover-bg) 74%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.025);
+  pointer-events: none;
+  transition:
+    transform .34s cubic-bezier(.22,1,.36,1),
+    width .34s cubic-bezier(.22,1,.36,1),
+    opacity .16s ease,
+    background .22s ease;
+}
+.entity-views > button,
+.entity-more,
+.split-control { position: relative; z-index: 1; }
+.entity-views > button.active,
+.entity-more.active > summary {
+  background: transparent;
+}
+.split-control.active > summary {
+  color: var(--accent-strong);
+  background: color-mix(in srgb, var(--workspace-accent-wash) 48%, transparent);
+}
+.entity-context-display:hover {
+  border-color: color-mix(in srgb, var(--context-accent) 26%, var(--material-border, var(--line)));
+  background:
+    linear-gradient(130deg, color-mix(in srgb, var(--context-accent) 5.5%, transparent), transparent 48%),
+    color-mix(in srgb, var(--material-glass, transparent) 52%, transparent);
+}
+:global(::view-transition-old(root)),
+:global(::view-transition-new(root)) { animation: none; mix-blend-mode: normal; }
+:global(::view-transition-group(jarvis-context-capsule)) {
+  animation-duration: 320ms;
+  animation-timing-function: cubic-bezier(.22,1,.36,1);
+}
+:global(::view-transition-old(jarvis-context-capsule)) { animation: context-capsule-out 180ms ease both; }
+:global(::view-transition-new(jarvis-context-capsule)) { animation: context-capsule-in 300ms cubic-bezier(.22,1,.36,1) both; }
+@keyframes context-capsule-out { to { opacity: .35; transform: scale(.985); } }
+@keyframes context-capsule-in { from { opacity: .42; transform: scale(.985); } to { opacity: 1; transform: scale(1); } }
+@media (max-width: 820px) {
+  .entity-context-display { margin-left: 2px; margin-right: 2px; padding-left: 9px; padding-right: 9px; }
+  .context-presence { display: none; }
+  .entity-selection-lens { top: 6px; height: calc(100% - 12px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .entity-selection-lens,
+  .entity-context-display,
+  .context-presence { transition: none !important; }
 }
 </style>
