@@ -155,3 +155,42 @@ chat 面**放到最后**：它的 `deterministic_context` 同时依赖 quote 与
 1.  三个面迁完（含三层测试）
 2. 删除 Python 侧本地自算
 3. 部署：预检 → 构建 → 上传 → promote → 健康检查 → 确认回退点
+
+## 7. 前端导航体系交接（PR #15 合并后）
+
+- `main = 6bb82cf`（merge commit，parents `217badd` + `153862f`）：Gitee 与 GitHub 均已推送，
+  GitHub main 经 REST 核实为 `6bb82cf`；该提交上 CI 与 Deploy Frontend to GitHub Pages 均 success
+- 导航**已换体系**，不要再按旧结构找入口：
+  - 左侧固定 `global-rail`（分组图标导航，仍复用 `analysis-os/data/moduleNav.js` 的
+    `buildModuleNavGroups`）+ 命令搜索（`/` 快捷键，占位文案「搜索证券、数据或命令」）
+  - `entity-bar`（研究对象 + `navigateHistory` 后退/前进）与 `entity-views`
+  - 已打开工作区标签条 `workspace-tab`（select / close / add），状态在
+    `composables/useWorkspaceTabs.js`（sessionStorage 按用户身份分键
+    `jarvis-workspace-session:`；恢复时按角色允许列表过滤，`管理` 不写入恢复集）
+  - 分屏：`open-split` / `close-split`
+  - **已删除**：顶部平铺标签页、二级下拉菜单（`module-index-bar` / `module-index-panel` /
+    `module-group-button--admin`），测试用 `doesNotMatch(shell, /module-index-bar/)` 钉住删除
+- **行情页页头以 #15 为准**（本次明确的取舍）：`217badd` 引入的 `section-kicker`、
+  「行情终端」标题、`market-focus-tabs` 已在该页移除，改为「身份 + 32px 大字报价」页头。
+  市场切换功能**没有丢**，改为 `QuoteStrip` 的 `@select="handleQuoteSelect"` →
+  `setMarketFocus(...)`，周期与数量按钮为 `setFocusedInterval` / `setFocusedLimit`。
+  `217badd` 只在该页失效，其他页面与其测试不受影响
+- 全站英文信息语言页头（`CROSS MARKET / OBSERVATORY` 一类）改为中文 `<h1>`，
+  测试基线同步改写为 stable product headings 那一条
+- 管理员入口仍在（账户下拉菜单，按 `role === 'ADMIN'` 显示，`App.vue` 继续传 `:user`），
+  文案为「旧版后台」，**不再占一级导航**；「管理员页找不到入口」不会复发
+- 未被动到：`AnalysisOsPage.vue` 与 `analysis-os/motion/`（开启动画菜单），以及
+  `MultiMarketBoard` / `utils/marketBoard.js`（多市场看板 + 每日要闻）
+- 复核口径（作者自述不可直接引用）：PR 描述称 focused 57/57、P0 94/95 且唯一失败是缺
+  `@babel/parser`——**该失败未复现且不成立**，分支与测试中不存在 babel 依赖；
+  在完整 node_modules 下实测 **113/113 通过 + `vite build` 通过 8.79s**（main 为 110）
+- 线上核验方法（可复现，注意编码坑）：`curl.exe -sS --ssl-no-revoke` 取
+  `https://f.shengxia.me/` 的 `index.html` → 取其中 `assets/index-*.js` →
+  **必须用 `Get-Content -Raw -Encoding UTF8` 读**（PS 5.1 默认按 ANSI 读会把中文弄乱，
+  我第一次因此拿到全 0 的假结果）→ 计数。本次：`global-rail`=1、`entity-bar`=1、
+  `entity-views`=1、`workspace-tab`=3、`command-search-row`=1、
+  `搜索证券、数据或命令`=1、`旧版后台`=2、`jarvis-workspace-session:`=1，
+  对照组 `module-index-bar`=0
+- **仍未做视觉签字**：该 PR 无截图也无 per-PR 预览；且归档到工作空间的交接是动画驱动，
+  本会话标签页内 `__jarvisArchiveDebug` 读到 `transitionState=EXTRACTING` 与
+  `handoffProgress=0.000`，进不去工作空间。要看成品需在真实浏览器登录后自查
