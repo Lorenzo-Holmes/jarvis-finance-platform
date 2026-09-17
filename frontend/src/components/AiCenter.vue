@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, onMounted, nextTick, watch } from 'vue'
+import { computed, ref, onBeforeUnmount, onMounted, nextTick, watch } from 'vue'
 import { api } from '../api/client'
 import DataState from './common/DataState.vue'
 import MarkdownContent from './common/MarkdownContent.vue'
@@ -8,6 +8,7 @@ import ResearchTasksPanel from './ResearchTasksPanel.vue'
 const props = defineProps({
   researchContext: { type: Object, default: null },
 })
+const emit = defineEmits(['navigate-module'])
 
 // 研究台有两个视图：对话（无状态、即时）与研究任务（有状态、落库可回看）。
 // 任务归档是冻结的 13 个模块之一（本组件就是「研究助手」模块），
@@ -22,6 +23,9 @@ const aiStatus = ref(null)
 const statusLoading = ref(true)
 const statusError = ref('')
 const chatBox = ref(null)
+const activeEvidence = ref('market')
+const inspectorCollapsed = ref(true)
+const sourcePeek = ref(null)
 let currentChatAbort = null
 
 // ---- 智能报价 ----
@@ -43,6 +47,37 @@ const chainResult = ref('')
 const chainError = ref('')
 
 const contextTarget = computed(() => props.researchContext?.name || props.researchContext?.symbol || '')
+const contextSymbol = computed(() => props.researchContext?.symbol || '')
+const evidenceCount = computed(() => [
+  Boolean(quoteData.value || quoteResult.value),
+  Boolean(reportText.value.trim() || reportResult.value),
+  Boolean(chainNode.value.trim() || chainResult.value),
+].filter(Boolean).length)
+const researchDate = computed(() => new Intl.DateTimeFormat('zh-CN', {
+  year: 'numeric', month: 'short', day: 'numeric',
+}).format(new Date()))
+const researchObjective = computed(() => contextTarget.value
+  ? `围绕 ${contextTarget.value} 建立可验证的研究判断，并持续检查支持证据、反方证据与风险条件。`
+  : '选择研究对象后，在同一工作区内组织假设、证据、反证与风险条件。')
+const sourceCatalog = computed(() => ([
+  {
+    key: 'market', label: '行情', routeKey: '行情', ready: Boolean(quoteData.value || quoteResult.value),
+    meta: quoteData.value ? `${contextSymbol.value || '当前标的'} · ${quoteData.value.price}` : '实时市场快照',
+    content: quoteResult.value || (quoteData.value
+      ? `当前价格 ${quoteData.value.price}，变动 ${quoteData.value.change}（${quoteData.value.change_pct}%），昨收 ${quoteData.value.prev_close}。`
+      : '尚未生成行情摘要。可从左侧“行情”证据刷新当前市场快照。'),
+  },
+  {
+    key: 'filing', label: '财报', routeKey: '财报解析', ready: Boolean(reportText.value.trim() || reportResult.value),
+    meta: reportText.value.trim() ? `${reportText.value.length} 字符材料` : '原始披露材料',
+    content: reportResult.value || reportText.value.trim() || '尚未加入财报材料。可粘贴财报原文或从财务视图继续。',
+  },
+  {
+    key: 'chain', label: '产业链', routeKey: '产业链图谱', ready: Boolean(chainNode.value.trim() || chainResult.value),
+    meta: chainNode.value || '产业链研究',
+    content: chainResult.value || (chainNode.value ? `当前产业链研究主题：${chainNode.value}。尚未生成分析结果。` : '尚未加入产业链证据。'),
+  },
+]))
 const sugg = computed(() => {
   const target = contextTarget.value
   if (!target) return [
@@ -139,6 +174,42 @@ async function sendChat() {
 
 function useSuggestion(s) { input.value = s }
 
+function appendReference(label) {
+  const token = `@${label}`
+  input.value = input.value.trim() ? `${input.value.trim()} ${token} ` : `${token} `
+}
+
+function onComposerKeydown(event) {
+  if (event.key !== 'Enter' || event.shiftKey) return
+  event.preventDefault()
+  sendChat()
+}
+
+function openWorkspace(routeKey) {
+  emit('navigate-module', routeKey)
+}
+
+function openSourcePeek(key) {
+  sourcePeek.value = sourceCatalog.value.find(source => source.key === key) || null
+}
+
+function closeSourcePeek() {
+  sourcePeek.value = null
+}
+
+function onResearchKeydown(event) {
+  if (event.key !== 'Escape' || !sourcePeek.value) return
+  event.preventDefault()
+  closeSourcePeek()
+}
+
+function openPeekWorkspace() {
+  if (!sourcePeek.value?.routeKey) return
+  const routeKey = sourcePeek.value.routeKey
+  closeSourcePeek()
+  openWorkspace(routeKey)
+}
+
 function useResearchContext() {
   if (!contextTarget.value) return
   input.value = `围绕 ${contextTarget.value}，按 THESIS / EVIDENCE / COUNTER EVIDENCE / RISK / CONCLUSION 结构进行研究。`
@@ -196,170 +267,584 @@ async function runChain() {
 }
 
 onMounted(() => {
+  window.addEventListener('keydown', onResearchKeydown)
   loadStatus()
-  messages.value.push({ role: 'assistant', content: '欢迎使用贾维斯投研助手。你可以直接询问行情结构、策略风险、财报数据或产业链逻辑。' })
+  messages.value.push({
+    role: 'assistant',
+    content: contextTarget.value
+      ? `已建立 ${contextTarget.value} 的研究工作区。可以从左侧加入证据，或直接提出需要验证的研究问题。`
+      : '研究工作区已就绪。可以从左侧加入行情、财报或产业链证据，再开始建立研究论证。',
+  })
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onResearchKeydown)
 })
 </script>
 
 <template>
-  <div class="ai">
-    <div class="research-head">
+  <div class="ai research-workspace">
+    <header class="research-head">
       <div>
-        <h2>RESEARCH INTELLIGENCE / ANALYSIS DESK</h2>
-        <span>问题 → 证据 → 反证 → 风险 → 结论；行情、财报与产业链能力保持联动</span>
+        <h2>{{ contextTarget || '研究助手' }}</h2>
+        <span>{{ contextSymbol ? `${contextSymbol} · ` : '' }}{{ evidenceCount }} 个证据源 · 连续研究记录</span>
       </div>
-      <div class="engine-status" :title="statusError || '研究引擎状态'">
-        <i :class="aiStatus?.available ? 'ok' : 'bad'"></i>
-        <span>{{ aiStatus?.provider || 'Research Engine' }} · {{ statusLoading ? '检查中' : (aiStatus?.display_name || aiStatus?.model || '未连接') }}</span>
-        <b>{{ statusLoading ? 'CHECKING' : (aiStatus?.available ? 'ONLINE' : 'OFFLINE') }}</b>
+      <div class="research-head-actions">
+        <button v-if="props.researchContext" type="button" class="context-action" @click="useResearchContext">引用当前对象</button>
+        <span class="engine-status" :title="statusError || '研究引擎状态'">
+          <i :class="aiStatus?.available ? 'ok' : 'bad'"></i>
+          {{ statusLoading ? '检查研究服务' : (aiStatus?.available ? '研究服务可用' : '研究服务暂不可用') }}
+        </span>
       </div>
-    </div>
+    </header>
 
     <div class="desk-switch" role="tablist" aria-label="研究台视图">
-      <button type="button" role="tab" :aria-selected="deskView === 'chat'" :class="{ on: deskView === 'chat' }"
-        data-testid="research-desk-switch-chat" @click="deskView = 'chat'">研究对话</button>
-      <button type="button" role="tab" :aria-selected="deskView === 'tasks'" :class="{ on: deskView === 'tasks' }"
-        data-testid="research-desk-switch-tasks" @click="deskView = 'tasks'">研究任务</button>
-    </div>
-
-    <div v-if="props.researchContext" class="context-target">
-      <span>GLOBAL RESEARCH CONTEXT</span>
-      <strong>{{ props.researchContext.symbol || props.researchContext.name }}</strong>
-      <small>{{ props.researchContext.name || props.researchContext.market || '—' }}</small>
-      <button type="button" @click="useResearchContext">USE IN RESEARCH TASK</button>
+      <button
+        type="button"
+        role="tab"
+        :aria-selected="deskView === 'chat'"
+        :class="{ on: deskView === 'chat' }"
+        data-testid="research-desk-switch-chat"
+        @click="deskView = 'chat'"
+      >研究对话</button>
+      <button
+        type="button"
+        role="tab"
+        :aria-selected="deskView === 'tasks'"
+        :class="{ on: deskView === 'tasks' }"
+        data-testid="research-desk-switch-tasks"
+        @click="deskView = 'tasks'"
+      >研究任务</button>
     </div>
 
     <div v-if="deskView === 'tasks'" class="desk-tasks">
       <ResearchTasksPanel />
     </div>
 
-    <div v-else class="research-layout">
-      <aside class="toolbox">
-        <section class="tool-section">
-          <div class="tool-head"><div><b>01 / MARKET EVIDENCE</b><span>黄金ETF行情快照</span></div><button type="button" class="text-action" @click="runQuote" :disabled="quoteLoading">{{ quoteLoading ? '分析中' : '生成' }}</button></div>
-          <div v-if="quoteData" class="quote-snapshot">
-            <b>{{ quoteData.price }}</b>
-            <span :class="quoteData.change >= 0 ? 'pos' : 'neg'">{{ quoteData.change }} · {{ quoteData.change_pct }}%</span>
-            <small>昨收 {{ quoteData.prev_close }}</small>
-          </div>
-          <DataState v-if="quoteLoading" state="loading" title="正在生成行情摘要" compact />
-          <DataState v-else-if="quoteError" state="error" title="行情研究失败" :message="quoteError" compact retryable @retry="runQuote" />
-          <MarkdownContent v-else-if="quoteResult" class="tool-output" :content="quoteResult" />
-          <div v-else class="tool-empty">获取当前黄金ETF行情并生成研究摘要。</div>
-        </section>
+    <div v-else class="research-layout" :class="{ 'inspector-collapsed': inspectorCollapsed }">
+      <aside class="evidence-dock" aria-label="研究证据">
+        <div class="dock-head">
+          <div><b>证据</b></div>
+          <small>{{ evidenceCount }}/3</small>
+        </div>
 
-        <section class="tool-section">
-          <div class="tool-head"><div><b>02 / FILING EVIDENCE</b><span>财报文本研究</span></div><button type="button" class="text-action" @click="runReport" :disabled="reportLoading || !reportText.trim()">{{ reportLoading ? '解析中' : '解析' }}</button></div>
-          <textarea v-model="reportText" aria-label="财报文本" placeholder="粘贴财报内容或关键数据…" rows="5"></textarea>
-          <DataState v-if="reportLoading" state="loading" title="正在解析财报" compact />
-          <DataState v-else-if="reportError" state="error" title="财报解析失败" :message="reportError" compact retryable @retry="runReport" />
-          <MarkdownContent v-else-if="reportResult" class="tool-output" :content="reportResult" />
-        </section>
+        <button type="button" class="evidence-row" :class="{ active: activeEvidence === 'market' }" @click="activeEvidence = 'market'">
+          <i :class="{ ready: quoteData || quoteResult }"></i>
+          <span><b>行情</b><small>{{ quoteData ? `${quoteData.price} · ${quoteData.change_pct}%` : '获取实时行情与摘要' }}</small></span>
+          <em>→</em>
+        </button>
+        <button type="button" class="evidence-row" :class="{ active: activeEvidence === 'filing' }" @click="activeEvidence = 'filing'">
+          <i :class="{ ready: reportText.trim() || reportResult }"></i>
+          <span><b>财报</b><small>{{ reportText.trim() ? `${reportText.length} 字符已加入` : '粘贴财报或关键数据' }}</small></span>
+          <em>→</em>
+        </button>
+        <button type="button" class="evidence-row" :class="{ active: activeEvidence === 'chain' }" @click="activeEvidence = 'chain'">
+          <i :class="{ ready: chainNode.trim() || chainResult }"></i>
+          <span><b>产业链</b><small>{{ chainNode || '添加产业链研究主题' }}</small></span>
+          <em>→</em>
+        </button>
 
-        <section class="tool-section">
-          <div class="tool-head"><div><b>03 / CHAIN EVIDENCE</b><span>主题与产业链分析</span></div><button type="button" class="text-action" @click="runChain" :disabled="chainLoading || !chainNode.trim()">{{ chainLoading ? '分析中' : '分析' }}</button></div>
-          <input v-model="chainNode" class="input" aria-label="产业链主题" placeholder="黄金 / 铜 / 芯片…" />
-          <DataState v-if="chainLoading" state="loading" title="正在分析产业链" compact />
-          <DataState v-else-if="chainError" state="error" title="产业链分析失败" :message="chainError" compact retryable @retry="runChain" />
-          <MarkdownContent v-else-if="chainResult" class="tool-output" :content="chainResult" />
+        <section class="evidence-detail">
+          <template v-if="activeEvidence === 'market'">
+            <div class="evidence-detail-head"><b>行情证据</b><button type="button" class="text-action" @click="runQuote" :disabled="quoteLoading">{{ quoteLoading ? '分析中' : '刷新摘要' }}</button></div>
+            <div v-if="quoteData" class="quote-snapshot">
+              <b>{{ quoteData.price }}</b>
+              <span :class="quoteData.change >= 0 ? 'pos' : 'neg'">{{ quoteData.change }} · {{ quoteData.change_pct }}%</span>
+              <small>昨收 {{ quoteData.prev_close }}</small>
+            </div>
+            <DataState v-if="quoteLoading" state="loading" title="正在生成行情摘要" compact />
+            <DataState v-else-if="quoteError" state="error" title="行情研究失败" :message="quoteError" compact retryable @retry="runQuote" />
+            <MarkdownContent v-else-if="quoteResult" class="tool-output" :content="quoteResult" />
+            <p v-else class="tool-empty">将当前市场快照加入研究记录，适合验证价格结构和短期风险。</p>
+          </template>
+
+          <template v-else-if="activeEvidence === 'filing'">
+            <div class="evidence-detail-head"><b>财报证据</b><button type="button" class="text-action" @click="runReport" :disabled="reportLoading || !reportText.trim()">{{ reportLoading ? '解析中' : '解析' }}</button></div>
+            <textarea v-model="reportText" aria-label="财报文本" placeholder="粘贴财报内容、业绩摘要或关键数据…" rows="7"></textarea>
+            <DataState v-if="reportLoading" state="loading" title="正在解析财报" compact />
+            <DataState v-else-if="reportError" state="error" title="财报解析失败" :message="reportError" compact retryable @retry="runReport" />
+            <MarkdownContent v-else-if="reportResult" class="tool-output" :content="reportResult" />
+          </template>
+
+          <template v-else>
+            <div class="evidence-detail-head"><b>产业链证据</b><button type="button" class="text-action" @click="runChain" :disabled="chainLoading || !chainNode.trim()">{{ chainLoading ? '分析中' : '分析' }}</button></div>
+            <input v-model="chainNode" class="input" aria-label="产业链主题" placeholder="黄金 / 白酒 / 芯片…" />
+            <DataState v-if="chainLoading" state="loading" title="正在分析产业链" compact />
+            <DataState v-else-if="chainError" state="error" title="产业链分析失败" :message="chainError" compact retryable @retry="runChain" />
+            <MarkdownContent v-else-if="chainResult" class="tool-output" :content="chainResult" />
+            <p v-else class="tool-empty">补充产业位置、关键上下游与供需逻辑，用于验证基本面假设。</p>
+          </template>
         </section>
       </aside>
 
-      <main class="panel conversation-panel">
-        <div class="conversation-head">
-          <div><b>RESEARCH NOTES</b><span>结合市场、策略或材料连续建立研究论证</span></div>
-          <span class="context-note">20 MESSAGE CONTEXT</span>
-        </div>
+      <main class="research-canvas">
+        <article class="research-document">
+          <header class="document-masthead">
+            <div>
+              <h3>{{ contextTarget || '新建研究' }}</h3>
+              <small>{{ contextSymbol || '未选择证券' }} · {{ researchDate }}</small>
+            </div>
+            <em>{{ messages.length }} 条研究记录</em>
+          </header>
+
+          <section class="research-objective">
+            <span>研究目标</span>
+            <p>{{ researchObjective }}</p>
+          </section>
+
+          <section class="research-checklist">
+            <span>验证清单</span>
+            <ol>
+              <li><b>01</b><p>验证价格与市场行为是否支持当前研究假设。</p></li>
+              <li><b>02</b><p>核对披露材料与财务证据，区分事实、解释与待验证项。</p></li>
+              <li><b>03</b><p>主动寻找产业链、风险与反方证据，记录可能的失效条件。</p></li>
+            </ol>
+          </section>
+
+          <section class="document-sources">
+            <span>研究证据</span>
+            <div>
+              <button
+                v-for="source in sourceCatalog"
+                :key="source.key"
+                type="button"
+                :class="{ ready: source.ready }"
+                @click="openSourcePeek(source.key)"
+              >
+                <i></i>
+                <span><b>{{ source.label }}</b><small>{{ source.meta }}</small></span>
+                <em>查看</em>
+              </button>
+            </div>
+          </section>
+        </article>
 
         <div class="prompt-templates">
-          <span>QUESTION TEMPLATES</span>
+          <span>建议起点</span>
           <button v-for="s in sugg" :key="s" type="button" @click="useSuggestion(s)">{{ s }}</button>
         </div>
 
+        <div class="conversation-label"><span>JARVIS 注释</span><small>基于当前研究上下文持续追加</small></div>
         <div class="chat-window" ref="chatBox" role="log" aria-live="polite" aria-relevant="additions text" aria-label="研究会话记录">
           <div v-for="(m, i) in messages" :key="i" class="message-row" :class="m.role">
-            <div class="message-meta"><span>{{ m.role === 'user' ? 'RESEARCH QUESTION' : 'JARVIS NOTE' }}</span><i></i></div>
+            <div class="message-meta"><span>{{ m.role === 'user' ? '问题' : 'JARVIS' }}</span><i></i></div>
             <MarkdownContent v-if="m.role === 'assistant'" class="message-content" :content="m.content" />
             <div v-else class="message-content">{{ m.content }}</div>
           </div>
         </div>
 
-        <div class="composer">
-          <input v-model="input" @keyup.enter="sendChat" aria-label="研究问题" placeholder="输入研究问题，例如：比较黄金ETF与伦敦金近期走势" :disabled="sending" />
-          <button type="button" class="send-btn" @click="sending ? stopChat() : sendChat()" :class="{ stop: sending }" :aria-label="sending ? '停止生成' : '提交研究问题'">{{ sending ? 'STOP' : 'RUN RESEARCH' }}</button>
+        <div class="composer-shell">
+          <textarea
+            v-model="input"
+            rows="2"
+            aria-label="研究问题"
+            placeholder="向 JARVIS 提问，或使用 @行情 / @财报 / @产业链 引用证据…"
+            :disabled="sending"
+            @keydown="onComposerKeydown"
+          ></textarea>
+          <div class="composer-tools">
+            <div>
+              <button type="button" @click="appendReference('行情')">@ 行情</button>
+              <button type="button" @click="appendReference('财报')">@ 财报</button>
+              <button type="button" @click="appendReference('产业链')">@ 产业链</button>
+            </div>
+            <button type="button" class="send-btn" @click="sending ? stopChat() : sendChat()" :class="{ stop: sending }" :aria-label="sending ? '停止生成' : '提交研究问题'">
+              {{ sending ? '停止' : '发送' }}
+            </button>
+          </div>
         </div>
-        <div class="research-disclaimer">生成内容用于研究辅助，请结合原始数据和风险约束独立判断。</div>
+        <div class="research-disclaimer">Enter 发送，Shift + Enter 换行。生成内容用于研究辅助，请结合原始数据独立判断。</div>
       </main>
+
+      <aside class="context-inspector" aria-label="研究上下文">
+        <header>
+          <div><b>上下文</b></div>
+          <button type="button" aria-label="折叠上下文" @click="inspectorCollapsed = true">×</button>
+        </header>
+        <template v-if="props.researchContext">
+          <section class="inspector-target">
+            <span>当前研究对象</span>
+            <strong>{{ props.researchContext.name || props.researchContext.symbol }}</strong>
+            <small>{{ props.researchContext.symbol }} · {{ props.researchContext.market || '研究上下文' }}</small>
+          </section>
+          <section class="inspector-stats">
+            <div><span>证据源</span><b>{{ evidenceCount }}</b></div>
+            <div><span>研究记录</span><b>{{ messages.length }}</b></div>
+            <div><span>来源模块</span><b>{{ props.researchContext.sourceModule || '—' }}</b></div>
+          </section>
+          <section class="inspector-links">
+            <span>相关工作区</span>
+            <button type="button" @click="openWorkspace('行情')">行情 <i>→</i></button>
+            <button type="button" @click="openWorkspace('财报解析')">财报解析 <i>→</i></button>
+            <button type="button" @click="openWorkspace('产业链图谱')">产业链 <i>→</i></button>
+            <button type="button" @click="openWorkspace('风险预警')">风险 <i>→</i></button>
+          </section>
+        </template>
+        <div v-else class="inspector-empty">
+          <b>尚未选择研究对象</b>
+          <span>从行情页选择标的后，会在不同研究页面间自动复用。</span>
+          <button type="button" @click="openWorkspace('行情')">前往行情</button>
+        </div>
+      </aside>
+
+      <button v-if="inspectorCollapsed" type="button" class="inspector-restore" @click="inspectorCollapsed = false">上下文</button>
+
+      <aside v-if="sourcePeek" class="source-peek" aria-label="证据快速查看">
+        <header>
+          <div><span>证据</span><b>{{ sourcePeek.label }}</b></div>
+          <button type="button" aria-label="关闭证据预览" @click="closeSourcePeek">×</button>
+        </header>
+        <div class="source-peek-meta">
+          <span>{{ sourcePeek.meta }}</span>
+          <i :class="{ ready: sourcePeek.ready }"></i>
+        </div>
+        <div class="source-peek-body">
+          <MarkdownContent v-if="sourcePeek.ready && sourcePeek.content" :content="sourcePeek.content" />
+          <p v-else>{{ sourcePeek.content }}</p>
+        </div>
+        <footer>
+          <button type="button" @click="openPeekWorkspace">打开完整{{ sourcePeek.label }}视图 <span>→</span></button>
+        </footer>
+      </aside>
     </div>
   </div>
 </template>
 
 <style scoped>
-.ai { display: flex; flex-direction: column; gap: 12px; }
-.context-target { min-height: 38px; display: flex; align-items: center; gap: 12px; padding: 0 12px; border: 1px solid var(--line); background: rgba(161,132,88,.045); }
-.desk-switch { display: flex; gap: 0; border: 1px solid var(--line); }
-.desk-switch button { min-height: 30px; padding: 0 16px; border: 0; border-right: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; font: 650 8px/1 ui-monospace, monospace; letter-spacing: .08em; }
-.desk-switch button:last-child { border-right: 0; }
-.desk-switch button.on { background: rgba(161,132,88,.09); color: var(--text); }
-.context-target span { color: var(--subtle); font: 600 7px/1 ui-monospace, monospace; letter-spacing: .1em; }
-.context-target strong { color: var(--text); font: 650 10px/1 ui-monospace, monospace; }
-.context-target small { color: var(--muted); font-size: 9px; }
-.context-target button { margin-left: auto; min-height: 28px; border: 1px solid var(--line-strong); background: transparent; color: var(--text); cursor: pointer; font: 650 7px/1 ui-monospace, monospace; letter-spacing: .07em; }
-.research-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 14px; min-height: 50px; padding: 0 2px 10px; border-bottom: 1px solid var(--line); }
-.research-head h2 { margin: 0; color: var(--text); font: 650 13px/1 ui-monospace, monospace; letter-spacing: .1em; }
-.research-head > div:first-child > span { display: block; margin-top: 7px; color: var(--subtle); font-size: 10px; }
-.engine-status { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 9px; }
+.research-workspace { display: flex; flex-direction: column; gap: 12px; height: calc(100dvh - 140px); min-height: 560px; overflow: hidden; }
+.research-head {
+  min-height: 52px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 0 2px 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 48%, transparent);
+}
+.research-head h2 { margin: 0; color: var(--text); font-size: 21px; line-height: 1; font-weight: 650; letter-spacing: -.022em; }
+.research-head > div:first-child > span { display: block; margin-top: 7px; color: var(--subtle); font-size: 11px; }
+.research-head-actions { display: flex; align-items: center; gap: 10px; }
+.context-action { min-height: 31px; border: 1px solid var(--material-border, var(--line)); border-radius: 8px; background: rgba(255,255,255,.018); color: var(--muted); padding: 0 10px; cursor: pointer; font-size: 10px; transition: color .16s ease, background .16s ease, transform .1s ease; }
+.context-action:hover { color: var(--text); background: var(--workspace-hover-bg); }
+.context-action:active { transform: scale(.97); }
+.engine-status { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 9px; }
+.desk-switch {
+  align-self: flex-start;
+  display: inline-flex;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--material-border, var(--line));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--material-glass, transparent) 62%, transparent);
+}
+.desk-switch button {
+  min-height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: 600 9px/1 Inter, "MiSans", "PingFang SC", sans-serif;
+  transition: color var(--motion-fast, 110ms) ease, background var(--motion-fast, 110ms) ease, transform var(--motion-fast, 110ms) ease;
+}
+.desk-switch button:hover { color: var(--text); background: var(--workspace-hover-bg); }
+.desk-switch button:active { transform: scale(.97); }
+.desk-switch button.on { color: var(--text); background: color-mix(in srgb, var(--workspace-accent-wash) 68%, transparent); }
+.desk-tasks { min-height: 0; flex: 1; overflow: auto; }
 .engine-status i { width: 6px; height: 6px; border-radius: 50%; background: var(--bad); }
 .engine-status i.ok { background: var(--ok); }
-.engine-status b { color: var(--subtle); border: 1px solid var(--line-strong); border-radius: 0; padding: 2px 5px; font-size: 8px; letter-spacing: .06em; }
-.research-layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 0; align-items: stretch; min-width: 0; border: 1px solid var(--line); }
-.toolbox { display: flex; flex-direction: column; gap: 0; min-width: 0; border-right: 1px solid var(--line); }
-.tool-section, .panel { background: rgba(239,235,227,.52); border: 0; border-bottom: 1px solid var(--line); border-radius: 0; }
-.tool-section { padding: 13px; }
-.tool-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 9px; }
-.tool-head > div { display: flex; flex-direction: column; gap: 3px; }
-.tool-head b { color: var(--text); font: 650 9px/1 ui-monospace, monospace; letter-spacing: .06em; }
-.tool-head span { color: var(--subtle); font-size: 8px; }
-.text-action { border: 0; background: transparent; color: var(--accent-strong); padding: 1px 0; font-size: 9px; cursor: pointer; }
+
+.research-layout {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr) 208px;
+  gap: 12px;
+  border: 0;
+  border-radius: 0;
+  overflow: hidden;
+  background: transparent;
+  box-shadow: none;
+}
+.research-layout.inspector-collapsed { grid-template-columns: 200px minmax(0, 1fr); }
+.research-layout.inspector-collapsed .context-inspector { display: none; }
+
+.evidence-dock {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--material-border, var(--line));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--material-glass, transparent) 68%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.022);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+.dock-head,
+.context-inspector > header {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 13px;
+  border-bottom: 1px solid var(--line);
+}
+.dock-head > div,
+.context-inspector > header > div { display: flex; align-items: baseline; gap: 6px; }
+.dock-head b,
+.context-inspector header b { color: var(--text); font-size: 12px; font-weight: 650; }
+.dock-head span,
+.context-inspector header span,
+.dock-head small { color: var(--subtle); font-size: 8px; }
+.context-inspector header button { border: 0; background: transparent; color: var(--subtle); cursor: pointer; font-size: 15px; }
+
+.evidence-row {
+  width: calc(100% - 12px);
+  min-height: 61px;
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  margin: 2px 6px;
+  padding: 8px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  text-align: left;
+  cursor: pointer;
+  transition: color var(--motion-standard, 190ms) ease, background var(--motion-standard, 190ms) ease, transform var(--motion-fast, 110ms) ease;
+}
+.evidence-row:hover,
+.evidence-row.active { color: var(--text); background: rgba(255,255,255,.035); }
+.evidence-row:active { transform: scale(.99); }
+.evidence-row > i { width: 6px; height: 6px; border: 1px solid var(--line-strong); border-radius: 50%; }
+.evidence-row > i.ready { border-color: var(--ok); background: var(--ok); }
+.evidence-row > span { min-width: 0; display: grid; gap: 5px; }
+.evidence-row b { color: inherit; font-size: 11px; font-weight: 620; }
+.evidence-row small { color: var(--subtle); font-size: 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.evidence-row em { color: var(--subtle); font-size: 11px; font-style: normal; }
+.evidence-detail { flex: 1; min-height: 0; padding: 13px; overflow: auto; border-top: 1px solid color-mix(in srgb, var(--line) 58%, transparent); }
+.evidence-detail-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.evidence-detail-head b { color: var(--text); font-size: 10px; font-weight: 650; }
+.text-action { border: 0; background: transparent; color: var(--accent-strong); padding: 2px 0; font-size: 9px; cursor: pointer; }
 .text-action:disabled { opacity: .42; cursor: not-allowed; }
-.quote-snapshot { display: grid; grid-template-columns: 1fr auto; gap: 3px 8px; align-items: baseline; margin-top: 10px; padding: 9px 0; background: transparent; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); border-radius: 0; }
-.quote-snapshot > b { color: var(--accent-strong); font-size: 19px; line-height: 1; font-weight: 680; font-variant-numeric: tabular-nums; }
+.quote-snapshot { display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; align-items: baseline; margin-top: 12px; padding: 11px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.quote-snapshot > b { color: var(--text); font-size: 20px; line-height: 1; font-weight: 680; font-variant-numeric: tabular-nums; }
 .quote-snapshot > span { font-size: 9px; font-variant-numeric: tabular-nums; }
 .quote-snapshot small { grid-column: 1 / -1; color: var(--subtle); font-size: 8px; }
-.input, textarea { width: 100%; background: transparent; border: 0; border-bottom: 1px solid var(--line-strong); color: var(--text); border-radius: 0; outline: none; font-size: 10px; }
-.input { height: 32px; padding: 0 4px; margin-top: 9px; }
-textarea { padding: 8px 4px; margin-top: 9px; resize: vertical; line-height: 1.5; }
-.input:focus, textarea:focus { border-color: #695b40; }
-.tool-section :deep(.data-state) { margin-top: 9px; }
-.tool-output { margin-top: 9px; max-height: 170px; overflow: auto; border-left: 2px solid var(--accent); background: var(--surface); padding: 8px 9px; color: var(--text); font-size: 9px; line-height: 1.6; }
-.tool-empty { margin-top: 9px; color: var(--subtle); font-size: 9px; line-height: 1.55; }
-.conversation-panel { display: flex; flex-direction: column; min-width: 0; padding: 13px; background: rgba(245,242,235,.35) !important; }
-.conversation-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
-.conversation-head > div { display: flex; align-items: baseline; gap: 8px; }
-.conversation-head b { color: var(--text); font-size: 12px; font-weight: 680; }
-.conversation-head span { color: var(--subtle); font-size: 9px; }
-.context-note { color: var(--muted) !important; }
-.prompt-templates { display: flex; align-items: center; gap: 6px; padding: 9px 0; overflow-x: auto; }
+.input,
+.evidence-detail textarea { width: 100%; background: var(--workspace-control-bg); border: 1px solid var(--line); color: var(--text); outline: none; font-size: 10px; }
+.input { height: 34px; padding: 0 8px; margin-top: 10px; }
+.evidence-detail textarea { margin-top: 10px; padding: 9px; resize: vertical; line-height: 1.55; }
+.input:focus,
+.evidence-detail textarea:focus { border-color: var(--workspace-focus); }
+.evidence-detail :deep(.data-state) { margin-top: 10px; }
+.tool-output { margin-top: 10px; max-height: 260px; overflow: auto; background: var(--surface); padding: 9px 10px; color: var(--text); font-size: 9px; line-height: 1.65; }
+.tool-empty { margin: 12px 0 0; color: var(--subtle); font-size: 9px; line-height: 1.6; }
+
+.research-canvas {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 6px 18px 12px;
+  background: transparent;
+  overflow: hidden;
+}
+.research-document { flex: 0 0 auto; padding: 3px 4px 4px; }
+.document-masthead { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 4px 4px 18px; }
+.document-masthead > div { min-width: 0; }
+.document-masthead span { color: var(--subtle); font-size: 9px; letter-spacing: .04em; }
+.document-masthead h3 { margin: 7px 0 6px; color: var(--text); font-size: 25px; line-height: 1.05; font-weight: 640; letter-spacing: -.028em; }
+.document-masthead small { color: var(--muted); font: 500 9px/1 ui-monospace, monospace; }
+.document-masthead em { flex: 0 0 auto; color: var(--subtle); font-size: 9px; font-style: normal; }
+.research-objective { padding: 8px 4px 16px; }
+.research-objective > span,
+.research-checklist > span,
+.document-sources > span { color: var(--subtle); font-size: 9px; letter-spacing: .03em; }
+.research-objective p { margin: 7px 0 0; max-width: 820px; color: var(--text); font-size: 12px; line-height: 1.72; }
+.research-checklist { padding: 8px 4px 16px; }
+.research-checklist ol { list-style: none; display: grid; gap: 0; margin: 7px 0 0; padding: 0; }
+.research-checklist li { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 8px; padding: 6px 0; }
+.research-checklist b { color: var(--accent-strong); font: 600 8px/1.7 ui-monospace, monospace; }
+.research-checklist p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.65; }
+.document-sources { padding: 13px 4px 5px; }
+.document-sources > div { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; margin-top: 8px; }
+.document-sources button {
+  min-width: 0;
+  min-height: 55px;
+  display: grid;
+  grid-template-columns: 7px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 9px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: rgba(255,255,255,.022);
+  color: var(--muted);
+  text-align: left;
+  cursor: pointer;
+}
+.document-sources button:hover { color: var(--text); border-color: var(--material-border, var(--line)); background: rgba(255,255,255,.04); }
+.document-sources button > i { width: 6px; height: 6px; border: 1px solid var(--line-strong); border-radius: 50%; }
+.document-sources button.ready > i { border-color: var(--ok); background: var(--ok); }
+.document-sources button > span { min-width: 0; display: grid; gap: 4px; }
+.document-sources b { color: inherit; font-size: 9px; }
+.document-sources small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--subtle); font-size: 7px; }
+.document-sources em { color: var(--subtle); font-size: 7px; font-style: normal; white-space: nowrap; }
+.prompt-templates { display: flex; align-items: center; gap: 6px; padding: 10px 0; overflow-x: auto; scrollbar-width: none; }
+.prompt-templates::-webkit-scrollbar { display: none; }
 .prompt-templates > span { color: var(--subtle); font-size: 8px; white-space: nowrap; margin-right: 2px; }
-.prompt-templates button { flex: 0 0 auto; border: 1px solid var(--line-strong); background: transparent; color: var(--muted); border-radius: 0; padding: 5px 7px; font-size: 9px; cursor: pointer; }
-.prompt-templates button:hover { border-color: #5b503b; color: var(--text); background: rgba(201,166,95,.04); }
-.chat-window { flex: 1; min-height: 470px; max-height: 620px; overflow: auto; background: transparent; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); border-radius: 0; }
-.message-row { display: grid; grid-template-columns: 122px minmax(0, 1fr); gap: 12px; padding: 13px 5px; border-bottom: 1px solid var(--line); }
+.prompt-templates button { flex: 0 0 auto; border: 1px solid transparent; border-radius: 8px; background: rgba(255,255,255,.025); color: var(--muted); padding: 6px 8px; font-size: 9px; cursor: pointer; }
+.prompt-templates button:hover { color: var(--text); background: rgba(255,255,255,.045); }
+.conversation-label { display: flex; align-items: baseline; gap: 8px; padding: 13px 2px 8px; }
+.conversation-label span { color: var(--text); font-size: 10px; font-weight: 630; }
+.conversation-label small { color: var(--subtle); font-size: 8px; }
+.chat-window { flex: 1; min-height: 130px; max-height: none; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.message-row { display: grid; grid-template-columns: 82px minmax(0, 1fr); gap: 15px; margin: 2px 0; padding: 14px 10px; border-radius: 8px; }
 .message-row:last-child { border-bottom: 0; }
-.message-row.user { background: rgba(209,201,188,.13); }
-.message-row.assistant { background: transparent; }
-.message-meta { display: flex; align-items: flex-start; gap: 6px; color: var(--subtle); font-size: 8px; letter-spacing: .045em; }
-.message-meta i { width: 4px; height: 4px; margin-top: 4px; border-radius: 50%; background: #555a60; }
+.message-row.user { background: color-mix(in srgb, var(--workspace-accent-wash) 42%, transparent); }
+.message-meta { display: flex; align-items: flex-start; gap: 6px; color: var(--subtle); font-size: 8px; }
+.message-meta i { width: 4px; height: 4px; margin-top: 4px; border-radius: 50%; background: var(--workspace-neutral-dot); }
 .message-row.assistant .message-meta i { background: var(--accent); }
-.message-content { color: var(--text); font-size: 11px; line-height: 1.75; overflow-wrap: anywhere; }
-.composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; margin-top: 9px; }
-.composer input { width: 100%; height: 38px; background: transparent; border: 0; border-bottom: 1px solid var(--line-strong); border-radius: 0; color: var(--text); padding: 0 5px; font-size: 10px; outline: none; }
-.composer input:focus { border-color: #695b40; }
-.send-btn { min-width: 104px; border: 1px solid #383b33; border-radius: 0; background: #383b33; color: #f2eee6; padding: 0 12px; font: 700 8px/1 ui-monospace, monospace; letter-spacing: .06em; cursor: pointer; }
+.message-content { color: var(--text); font-size: 12px; line-height: 1.72; overflow-wrap: anywhere; }
+
+.composer-shell {
+  flex: 0 0 auto;
+  margin-top: 12px;
+  border: 1px solid var(--material-border, var(--line-strong));
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--material-glass, transparent);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.025), var(--material-shadow, none);
+  backdrop-filter: blur(var(--material-blur, 18px));
+  -webkit-backdrop-filter: blur(var(--material-blur, 18px));
+  transition: border-color var(--motion-standard, 190ms) ease, box-shadow var(--motion-standard, 190ms) ease;
+}
+.composer-shell:focus-within { border-color: color-mix(in srgb, var(--accent) 56%, var(--line-strong)); }
+.composer-shell > textarea { width: 100%; min-height: 62px; resize: none; border: 0; outline: 0; background: transparent; color: var(--text); padding: 11px 12px 6px; font-size: 11px; line-height: 1.55; }
+.composer-tools { min-height: 35px; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 4px 6px 6px 9px; }
+.composer-tools > div { display: flex; align-items: center; gap: 3px; }
+.composer-tools button:not(.send-btn) { border: 0; background: transparent; color: var(--subtle); padding: 5px 6px; cursor: pointer; font-size: 8px; }
+.composer-tools button:not(.send-btn) { border-radius: 7px; transition: color var(--motion-fast, 110ms) ease, background var(--motion-fast, 110ms) ease, transform var(--motion-fast, 110ms) ease; }
+.composer-tools button:not(.send-btn):hover { color: var(--text); background: rgba(255,255,255,.045); }
+.composer-tools button:not(.send-btn):active { transform: scale(.96); }
+.send-btn { min-width: 74px; min-height: 29px; border: 1px solid var(--workspace-action-border); border-radius: 8px; background: transparent; color: var(--workspace-action-text); padding: 0 10px; cursor: pointer; font-size: 9px; font-weight: 650; transition: background var(--motion-fast, 110ms) ease, transform var(--motion-fast, 110ms) ease; }
+.send-btn:hover:not(:disabled) { background: rgba(255,255,255,.045); }
+.send-btn:active:not(:disabled) { transform: scale(.97); }
 .send-btn.stop { border-color: #684043; background: rgba(239,83,80,.08); color: #e47d79; }
 .research-disclaimer { margin-top: 6px; color: var(--subtle); font-size: 8px; line-height: 1.5; }
-.pos { color: #27c46b; } .neg { color: #ef5350; }
-@media (max-width: 980px) { .research-layout { grid-template-columns: 270px minmax(0, 1fr); } .chat-window { min-height: 430px; } }
-@media (max-width: 760px) { .research-layout { grid-template-columns: 1fr; } .toolbox { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); } .tool-section:first-child { grid-column: 1 / -1; } .message-row { grid-template-columns: 1fr; gap: 5px; } }
-@media (max-width: 520px) { .research-head { align-items: flex-start; flex-direction: column; } .toolbox { grid-template-columns: 1fr; } .tool-section:first-child { grid-column: auto; } .chat-window { min-height: 390px; } .composer { grid-template-columns: 1fr; } .send-btn { min-height: 36px; } }
+
+.context-inspector {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: auto;
+  border: 1px solid var(--material-border, var(--line));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--material-glass, transparent) 68%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.022);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+.inspector-target { display: grid; gap: 6px; padding: 14px; border-bottom: 1px solid var(--line); }
+.inspector-target span,
+.inspector-links > span { color: var(--subtle); font-size: 8px; }
+.inspector-target strong { color: var(--text); font-size: 12px; font-weight: 650; }
+.inspector-target small { color: var(--muted); font: 500 8px/1.4 ui-monospace, monospace; }
+.inspector-stats { padding: 6px 14px; border-bottom: 1px solid var(--line); }
+.inspector-stats > div { min-height: 31px; display: flex; align-items: center; justify-content: space-between; gap: 10px; border-bottom: 1px solid var(--line); }
+.inspector-stats > div:last-child { border-bottom: 0; }
+.inspector-stats span { color: var(--muted); font-size: 9px; }
+.inspector-stats b { color: var(--text); font-size: 9px; font-weight: 580; }
+.inspector-links { display: grid; gap: 0; padding: 13px 14px; }
+.inspector-links > span { margin-bottom: 6px; }
+.inspector-links button { min-height: 33px; display: flex; align-items: center; justify-content: space-between; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: var(--muted); padding: 0; cursor: pointer; font-size: 9px; text-align: left; }
+.inspector-links button:hover { color: var(--text); }
+.inspector-links i { color: var(--subtle); font-style: normal; }
+.inspector-empty { display: grid; gap: 8px; padding: 16px 14px; }
+.inspector-empty b { color: var(--text); font-size: 10px; }
+.inspector-empty span { color: var(--subtle); font-size: 9px; line-height: 1.5; }
+.inspector-empty button { justify-self: start; border: 0; background: transparent; color: var(--accent-strong); padding: 0; cursor: pointer; font-size: 9px; }
+.inspector-restore { position: absolute; top: 8px; right: 8px; min-height: 28px; border: 1px solid var(--material-border, var(--line)); border-radius: 8px; background: var(--material-glass, var(--panel-raised)); color: var(--muted); padding: 0 9px; cursor: pointer; font-size: 8px; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+.inspector-restore:hover { color: var(--text); background: rgba(255,255,255,.045); }
+.source-peek {
+  position: absolute;
+  z-index: 12;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(340px, 42%);
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  border: 1px solid var(--material-border, var(--line-strong));
+  border-right: 0;
+  border-radius: 12px 0 0 12px;
+  background: var(--material-elevated, #151d20);
+  box-shadow: -18px 0 54px rgba(0,0,0,.18);
+  backdrop-filter: blur(var(--material-blur-elevated, 28px));
+  -webkit-backdrop-filter: blur(var(--material-blur-elevated, 28px));
+  animation: source-peek-in var(--motion-layout, 300ms) var(--motion-ease, cubic-bezier(.22,1,.36,1));
+}
+@keyframes source-peek-in {
+  from { opacity: 0; transform: translateX(8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .source-peek { animation: none !important; }
+  .composer-shell,
+  .composer-tools button,
+  .send-btn,
+  .evidence-row { transition: none !important; }
+}
+.source-peek > header { min-height: 52px; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 14px; border-bottom: 1px solid var(--line); }
+.source-peek > header > div { display: flex; align-items: baseline; gap: 8px; }
+.source-peek > header span { color: var(--subtle); font-size: 7px; text-transform: uppercase; letter-spacing: .08em; }
+.source-peek > header b { color: var(--text); font-size: 11px; }
+.source-peek > header button { border: 0; background: transparent; color: var(--subtle); cursor: pointer; font-size: 16px; }
+.source-peek-meta { min-height: 42px; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 14px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 8px; }
+.source-peek-meta i { width: 6px; height: 6px; border: 1px solid var(--line-strong); border-radius: 50%; }
+.source-peek-meta i.ready { border-color: var(--ok); background: var(--ok); }
+.source-peek-body { min-height: 0; overflow: auto; padding: 15px 14px; color: var(--text); font-size: 9px; line-height: 1.7; }
+.source-peek-body p { margin: 0; color: var(--muted); }
+.source-peek > footer { padding: 10px 14px; border-top: 1px solid var(--line); }
+.source-peek > footer button { width: 100%; min-height: 34px; display: flex; align-items: center; justify-content: space-between; border: 0; border-top: 1px solid var(--line-strong); border-bottom: 1px solid var(--line-strong); border-radius: 0; background: transparent; color: var(--muted); padding: 0 10px; cursor: pointer; font-size: 9px; }
+.source-peek > footer button:hover { color: var(--text); background: var(--workspace-hover-bg); }
+.pos { color: #27c46b; }
+.neg { color: #ef5350; }
+
+@media (max-width: 1180px) {
+  .research-layout { grid-template-columns: 188px minmax(0, 1fr) 188px; }
+  .message-row { grid-template-columns: 66px minmax(0, 1fr); gap: 10px; }
+}
+@media (max-width: 940px) {
+  .research-layout,
+  .research-layout.inspector-collapsed { grid-template-columns: 186px minmax(0, 1fr); }
+  .context-inspector { display: none; }
+  .inspector-restore { display: none; }
+  .research-head { align-items: flex-start; }
+  .source-peek { width: min(360px, 52%); }
+}
+@media (max-width: 720px) {
+  .research-workspace { height: auto; min-height: 0; overflow: visible; }
+  .research-head { flex-direction: column; align-items: stretch; }
+  .research-head-actions { justify-content: space-between; }
+  .research-layout,
+  .research-layout.inspector-collapsed { grid-template-columns: 1fr; }
+  .evidence-dock { border: 1px solid var(--material-border, var(--line)); }
+  .evidence-detail { max-height: 290px; }
+  .chat-window { min-height: 300px; max-height: 520px; }
+  .message-row { grid-template-columns: 1fr; gap: 6px; }
+  .document-sources > div { grid-template-columns: 1fr; }
+  .source-peek { width: calc(100% - 12px); }
+}
 </style>

@@ -81,15 +81,15 @@ async function analyze() {
   <section class="sentiment-workspace">
     <div class="section-bar">
       <div>
-        <h1>BULL / BEAR DOSSIER</h1>
+        <h1>多空研报</h1>
         <span>多方论据 · 空方论据 · 争议核心 · 失效条件与综合研判</span>
       </div>
-      <span class="section-status"><i :class="{ ok: !validation }"></i>{{ validation ? 'SOURCE REQUIRED' : 'DOSSIER READY' }}</span>
+      <span class="section-status"><i :class="{ ok: !validation }"></i>{{ validation ? '请添加研报' : '可分析' }}</span>
     </div>
 
     <div class="sentiment-layout">
       <aside class="panel st-input-panel">
-        <div class="st-panel-title">SOURCE REPORTS / 研报文本</div>
+        <div class="st-panel-title">研报文本</div>
 
         <div v-for="(report, index) in reports" :key="report.id" class="st-report-item">
           <div class="st-report-head">
@@ -111,7 +111,7 @@ async function analyze() {
 
         <div v-if="validation" class="st-validation">{{ validation }}</div>
         <button class="btn primary st-run" type="button" :disabled="analyzing || !!validation" @click="analyze">
-          {{ analyzing ? 'PROCESSING…' : 'BUILD DOSSIER' }}
+          {{ analyzing ? '分析中…' : '开始分析' }}
         </button>
         <div class="st-note">逐篇给出看多/看空/中性倾向、置信度与关键论据，并汇总综合判断。</div>
       </aside>
@@ -127,7 +127,7 @@ async function analyze() {
 
           <div v-if="disputes.length" class="st-disputes">
             <div class="st-block-head">
-              <b>DISPUTE CORE / 争议焦点</b>
+              <b>争议焦点</b>
               <span>观点相左的研报按论据对比 · 共 {{ disputes.length }} 项 · 由模型归纳、服务端切分</span>
             </div>
             <div v-for="item in disputes" :key="item.id" class="st-dispute">
@@ -154,7 +154,7 @@ async function analyze() {
 
           <div class="panel st-result-panel">
             <div class="st-result-head">
-              <div><b>SYNTHESIS / 完整分析</b><span>模型原文，多空倾向自动识别，仅供参考，请结合原文独立判断</span></div>
+              <div><b>完整分析</b><span>模型原文，多空倾向自动识别，仅供参考，请结合原文独立判断</span></div>
             </div>
             <MarkdownContent class="st-output" :content="result" />
           </div>
@@ -165,8 +165,8 @@ async function analyze() {
         <DataState v-else-if="error" state="error" title="情感分析失败" :message="error" retryable @retry="analyze" />
 
         <div v-else class="panel st-empty">
-          <div class="st-empty-mark">B / B</div>
-          <b>WAITING FOR SOURCE REPORTS</b>
+          <div class="st-empty-mark">多空</div>
+          <b>等待研报分析</b>
           <span>在左侧粘贴一篇或多篇研报文本后运行分析，即可查看逐篇多空倾向、争议焦点对比与综合研判。</span>
         </div>
       </div>
@@ -192,11 +192,11 @@ async function analyze() {
 .st-report-head .text-action { margin-left: auto; border: 0; background: transparent; color: var(--subtle); font-size: 9px; cursor: pointer; }
 .st-report-head .text-action:hover { color: #e47d79; }
 .st-report-item textarea { width: 100%; background: transparent; border: 0; border-bottom: 1px solid var(--line-strong); color: var(--text); border-radius: 0; outline: none; font-size: 10px; padding: 8px 4px; resize: vertical; line-height: 1.6; }
-.st-report-item textarea:focus { border-color: #6a5b40; }
+.st-report-item textarea:focus { border-color: var(--workspace-focus); }
 .st-input-actions { display: flex; gap: 7px; margin-top: 10px; }
 .st-input-actions .btn { flex: 1; min-height: 30px; font-size: 10px; }
 .st-quota { margin-top: 10px; color: var(--subtle); font-size: 9px; font-variant-numeric: tabular-nums; }
-.st-validation { margin-top: 10px; color: #e3b466; background: rgba(227,180,102,.07); border-left: 2px solid #8a6d3e; padding: 8px 9px; font-size: 10px; line-height: 1.5; }
+.st-validation { margin-top: 10px; color: var(--workspace-warning-text); background: var(--workspace-warning-bg); border-left: 2px solid var(--workspace-warning-border); padding: 8px 9px; font-size: 10px; line-height: 1.5; }
 .st-run { width: 100%; min-height: 36px; margin-top: 12px; }
 .st-note { margin-top: 9px; color: var(--subtle); font-size: 9px; line-height: 1.5; }
 .st-main { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
@@ -213,7 +213,7 @@ async function analyze() {
 .st-dispute { background: transparent; border: 1px solid var(--line); border-radius: 0; padding: 12px; display: flex; flex-direction: column; gap: 9px; }
 .st-dispute-topic { color: var(--accent); font-size: 11px; font-weight: 650; }
 .st-sides { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; }
-.st-side { border-left: 2px solid var(--line-strong); background: rgba(239,235,227,.5); border-radius: 0; padding: 9px 11px; display: flex; flex-direction: column; gap: 4px; }
+.st-side { border-left: 2px solid var(--line-strong); background: var(--workspace-panel-soft); border-radius: 0; padding: 9px 11px; display: flex; flex-direction: column; gap: 4px; }
 .st-side.bull { border-left-color: #ef5350; }
 .st-side.bear { border-left-color: #27c46b; }
 .st-side span { color: var(--muted); font-size: 9px; }

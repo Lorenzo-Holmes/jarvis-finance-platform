@@ -105,7 +105,9 @@ const LOCAL_PREVIEW_USER = Object.freeze({
 const user = computed(() => previewMode.value ? LOCAL_PREVIEW_USER : sessionUser.value)
 const isLoggedIn = computed(() => previewMode.value || sessionLoggedIn.value)
 const workspace = useWorkspaceTabs(user)
-const { activeTab, visitedTabs, tabs, switchTab } = workspace
+const { activeTab, visitedTabs, workspaceTabs, tabs, switchTab, closeWorkspaceTab } = workspace
+const splitViewRoute = ref('')
+const SPLIT_VIEW_ROUTES = new Set(['行情', '研究助手', '财报解析', '风险预警'])
 const publicView = ref('landing')
 const activeModule = computed(() => JARVIS_MODULES.find(module => module.routeKey === activeTab.value) || null)
 const preparedModule = computed(() => (
@@ -252,6 +254,7 @@ function navigateWorkspace(routeKey) {
   workspaceRevealReady.value = !fromArchive
   switchTab(routeKey)
 
+  if (splitViewRoute.value === routeKey) splitViewRoute.value = ''
   if (fromArchive && !['行情', '多市场'].includes(routeKey)) {
     nextTick(async () => {
       await waitForTwoPaints()
@@ -260,6 +263,15 @@ function navigateWorkspace(routeKey) {
   }
 }
 
+function openSplitView(routeKey) {
+  if (!SPLIT_VIEW_ROUTES.has(routeKey) || routeKey === activeTab.value) return
+  splitViewRoute.value = routeKey
+  preloadWorkspace(routeKey, 'immediate')
+}
+
+function closeSplitView() {
+  splitViewRoute.value = ''
+}
 async function handleWorkspaceReady(routeKey = activeTab.value) {
   if (routeKey !== activeTab.value || activeTab.value === '研究终端') return
   await waitForTwoPaints()
@@ -282,6 +294,7 @@ function returnToArchive() {
   archiveHandoffTimer = 0
   archiveHandoffHold.value = false
   workspaceRevealReady.value = true
+  splitViewRoute.value = ''
   switchTab('研究终端')
 }
 
@@ -365,16 +378,23 @@ onBeforeUnmount(() => {
       :active="Boolean(activeModule)"
       :revealed="workspaceRevealReady"
       :modules="JARVIS_MODULES"
+      :workspace-tabs="workspaceTabs"
+      :split-route="splitViewRoute"
       :user="user"
       :context="researchContext"
       :night-mode="nightMode"
       @return="returnToArchive"
       @navigate-module="navigateWorkspace"
+      @close-workspace-tab="closeWorkspaceTab"
+      @open-split="openSplitView"
+      @close-split="closeSplitView"
       @legacy-admin="openLegacyAdmin"
       @logout="logout"
       @update-profile="updateProfile"
       @toggle-night-mode="toggleNightMode"
     >
+      <div class="workspace-view-stack" :class="{ 'is-split': splitViewRoute }">
+        <section class="workspace-primary-pane">
           <MarketPage
             v-if="workspaceRenderRoute === '行情'"
             :active="activeTab === '行情' && workspaceRevealReady"
@@ -399,11 +419,11 @@ onBeforeUnmount(() => {
       />
 
       <section v-else-if="workspaceRenderRoute === '模拟盘'">
-        <SimTradeView :user="user" @context-change="setResearchContext" />
+        <SimTradeView :user="user" @context-change="setResearchContext" @navigate-module="navigateWorkspace" />
       </section>
 
       <section v-else-if="workspaceRenderRoute === '研究助手'" class="panel-wrap">
-        <AiCenter :research-context="researchContext" />
+        <AiCenter :research-context="researchContext" @navigate-module="navigateWorkspace" />
       </section>
 
       <QuotePage v-else-if="workspaceRenderRoute === '智能报价'" />
@@ -417,6 +437,38 @@ onBeforeUnmount(() => {
       <section v-else-if="workspaceRenderRoute === '运维'" class="panel-wrap">
         <OpsView />
       </section>
+        </section>
+
+        <aside v-if="splitViewRoute" class="workspace-secondary-pane" :aria-label="`并排查看 ${splitViewRoute}`">
+          <header class="split-pane-head">
+            <div>
+              <span>并排查看</span>
+              <strong>{{ splitViewRoute }}</strong>
+            </div>
+            <button type="button" aria-label="关闭并排视图" @click="closeSplitView">×</button>
+          </header>
+          <div class="split-pane-body">
+            <MarketPage
+              v-if="splitViewRoute === '行情'"
+              :active="true"
+              @context-change="setResearchContext"
+            />
+            <AiCenter
+              v-else-if="splitViewRoute === '研究助手'"
+              :research-context="researchContext"
+              @navigate-module="navigateWorkspace"
+            />
+            <FinancialReportPage
+              v-else-if="splitViewRoute === '财报解析'"
+              :research-context="researchContext"
+            />
+            <RiskPage
+              v-else-if="splitViewRoute === '风险预警'"
+              :research-context="researchContext"
+            />
+          </div>
+        </aside>
+      </div>
     </ArchiveWorkspaceShell>
 
     <section v-if="user?.role === 'ADMIN' && activeTab === '管理'" class="panel-wrap">
@@ -435,6 +487,55 @@ onBeforeUnmount(() => {
 .container--analysis { max-width: none; padding: 0; }
 .container--workspace { max-width: none; padding: 0; }
 .panel-wrap { margin-top: 4px; }
+.workspace-view-stack { min-width: 0; }
+.workspace-view-stack.is-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1.12fr) minmax(380px, .88fr);
+  gap: 12px;
+  align-items: start;
+  transition: grid-template-columns var(--motion-layout, 300ms) var(--motion-ease, cubic-bezier(.22,1,.36,1));
+}
+.workspace-primary-pane { min-width: 0; }
+.workspace-secondary-pane {
+  min-width: 0;
+  overflow: hidden;
+  border: 0;
+  border-left: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  animation: split-pane-in var(--motion-layout, 300ms) var(--motion-ease, cubic-bezier(.22,1,.36,1));
+}
+@keyframes split-pane-in {
+  from { opacity: 0; transform: translateX(8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.split-pane-head {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 12px 0 14px;
+  border-bottom: 1px solid var(--line);
+}
+.split-pane-head > div { display: grid; gap: 3px; }
+.split-pane-head span { color: var(--subtle); font-size: 8px; }
+.split-pane-head strong { color: var(--text); font-size: 11px; font-weight: 650; }
+.split-pane-head button {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--subtle);
+  cursor: pointer;
+  font-size: 15px;
+  transition: color var(--motion-fast, 110ms) ease, background var(--motion-fast, 110ms) ease, transform var(--motion-fast, 110ms) ease;
+}
+.split-pane-head button:hover { color: var(--text); background: rgba(255,255,255,.045); }
+.split-pane-head button:active { transform: scale(.94); }
+.split-pane-body { min-width: 0; max-height: calc(100dvh - 190px); overflow: auto; padding: 12px; }
 .foot { color: var(--subtle); font-size: 11px; margin-top: 16px; }
 .auth-shell { position: relative; min-height: 100vh; background: var(--bg); }
 .home-back {
@@ -449,5 +550,17 @@ onBeforeUnmount(() => {
 @media (max-width: 620px) {
   .container { padding-left: 12px; padding-right: 12px; }
   .home-back { top: 12px; left: 12px; }
+}
+@media (max-width: 1100px) {
+  .workspace-view-stack.is-split { grid-template-columns: minmax(0, 1fr) minmax(330px, .72fr); gap: 9px; }
+  .split-pane-body { padding: 9px; }
+}
+@media (max-width: 980px) {
+  .workspace-view-stack.is-split { display: block; }
+  .workspace-secondary-pane { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .workspace-view-stack.is-split { transition: none !important; }
+  .workspace-secondary-pane { animation: none !important; }
 }
 </style>

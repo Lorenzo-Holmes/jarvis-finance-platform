@@ -53,14 +53,13 @@ test('industry graph, instrument list and market rail use workspace theme surfac
   const market = read('pages/MarketPage.vue')
   const night = getRule(shell, '.workspace-shell.is-night')
 
-  assert.match(chain, /\.industry-graph\s*\{[^}]*background:\s*var\(--workspace-panel-soft/)
-  assert.match(chain, /\.graph-node\s*\{[^}]*background:\s*var\(--workspace-node-bg/)
-  assert.match(chain, /\.node-file\s*\{[^}]*background:\s*var\(--workspace-panel-wash/)
+  assert.match(chain, /\.industry-graph\s*\{[^}]*background:\s*transparent/)
+  assert.match(chain, /\.graph-node\s*\{[\s\S]*?color-mix\(in srgb, var\(--workspace-node-bg/)
+  assert.match(chain, /\.node-file\s*\{[\s\S]*?background:\s*color-mix\(in srgb, var\(--material-elevated/)
   assert.match(instruments, /\.instrument-panel\s*\{[^}]*background:\s*transparent/)
   assert.match(instruments, /\.list-head span\s*\{[^}]*color:\s*var\(--subtle/)
   assert.match(market, /\.chart-shell\s*\{[^}]*background:\s*var\(--workspace-chart-bg/)
-  assert.match(market, /\.market-rail\s*\{[^}]*background:\s*var\(--workspace-panel-rail/)
-  assert.match(market, /\.rail-panel\s*\{[^}]*background:\s*var\(--workspace-panel-rail/)
+  assert.match(market, /\.market-rail\s*\{[^}]*background:\s*color-mix\(in srgb, var\(--material-glass/)
   for (const token of ['--workspace-panel-soft', '--workspace-panel-rail', '--workspace-node-bg', '--workspace-node-focus-bg']) {
     assert.match(night, new RegExp(`${token}:\\s*#[0-9a-f]{6}`, 'i'))
   }

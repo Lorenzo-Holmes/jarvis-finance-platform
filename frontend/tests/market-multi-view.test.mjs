@@ -21,7 +21,8 @@ test('market page mounts the multi-market board beside the gold chart', () => {
   assert.match(page, /<MultiMarketBoard :active="active" \/>/)
   // 不能把原来的黄金主图/侧栏挤掉：原有结构仍在
   assert.match(page, /market-primary-layout/)
-  assert.match(page, /marketFocusTabs/)
+  assert.match(page, /<QuoteStrip[\s\S]*@select="handleQuoteSelect"/)
+  assert.match(page, /class="market-rail market-inspector"/)
 })
 
 test('multi-market board consumes the existing extended-market APIs', () => {
