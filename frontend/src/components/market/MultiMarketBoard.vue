@@ -119,11 +119,12 @@ defineExpose({ loadBoard, loadNews })
   <div class="multi-market">
     <section class="board-panel">
       <header class="panel-head">
-        <div>
-          <h2>MULTI-MARKET BOARD</h2>
-          <span>黄金之外，同时盯 A 股 / 美股 / 加密</span>
+        <div class="panel-title">
+          <span class="panel-kicker">MULTI-MARKET BOARD</span>
+          <h2>多市场看板</h2>
+          <span class="panel-sub">黄金之外，同时盯 A 股 / 美股 / 加密</span>
         </div>
-        <button type="button" :disabled="boardState === 'loading'" @click="loadBoard"> 刷新</button>
+        <button type="button" :disabled="boardState === 'loading'" @click="loadBoard">刷新</button>
       </header>
 
       <p v-if="boardState === 'error'" class="notice">{{ boardError }}</p>
@@ -160,9 +161,10 @@ defineExpose({ loadBoard, loadNews })
 
     <section class="news-panel">
       <header class="panel-head">
-        <div>
-          <h2>DAILY BRIEFING</h2>
-          <span>每日要闻 · 点击标题跳转原文</span>
+        <div class="panel-title">
+          <span class="panel-kicker">DAILY BRIEFING</span>
+          <h2>每日要闻</h2>
+          <span class="panel-sub">点击标题跳转原文，来源与时间随行</span>
         </div>
         <button type="button" :disabled="newsState === 'loading'" @click="loadNews(true)">抓取</button>
       </header>
@@ -190,10 +192,12 @@ defineExpose({ loadBoard, loadNews })
 <style scoped>
 .multi-market { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 14px; margin-top: 14px; }
 .board-panel, .news-panel { border: 1px solid var(--line); background: var(--panel); padding: 14px 16px 16px; min-width: 0; }
-.panel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
-.panel-head h2 { margin: 0; color: var(--text); font: 650 12px/1 ui-monospace, monospace; letter-spacing: .12em; }
-.panel-head span { display: block; margin-top: 6px; color: var(--subtle); font-size: 11px; }
-.panel-head button { flex: 0 0 auto; border: 1px solid var(--line-strong); background: transparent; color: var(--muted); border-radius: var(--radius-sm); padding: 5px 11px; font-size: 12px; cursor: pointer; }
+.panel-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; padding-bottom: 10px; border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent); }
+.panel-title { display: grid; gap: 5px; }
+.panel-kicker { color: var(--subtle); font: 600 7px/1 ui-monospace, monospace; letter-spacing: .12em; }
+.panel-head h2 { margin: 0; color: var(--text); font-size: 15px; line-height: 1; font-weight: 650; letter-spacing: -.015em; }
+.panel-sub { color: var(--muted); font-size: 9px; }
+.panel-head button { flex: 0 0 auto; border: 1px solid var(--line-strong); background: transparent; color: var(--muted); border-radius: var(--radius-sm); padding: 5px 11px; font-size: 12px; cursor: pointer; transition: color var(--motion-fast, 110ms) ease, border-color var(--motion-fast, 110ms) ease; }
 .panel-head button:hover:not(:disabled) { color: var(--text); border-color: var(--text); }
 .panel-head button:disabled { opacity: .45; cursor: default; }
 .notice { margin: 12px 0 0; color: var(--muted); font-size: 12px; line-height: 1.7; }

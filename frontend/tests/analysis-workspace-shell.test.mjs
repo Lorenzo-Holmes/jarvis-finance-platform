@@ -165,7 +165,8 @@ test('sleep and wake remain a visual layer over the logical archive selection', 
 })
 
 test('representative workspace pages use the archive information language', () => {
-  assert.match(read('pages/MarketPage.vue'), /MARKET \/ LIVE FEED/)
+  assert.match(read('pages/MarketPage.vue'), /section-kicker">MARKET</)
+  assert.match(read('pages/MarketPage.vue'), /行情终端/)
   assert.match(read('components/CrossMarketView.vue'), /CROSS MARKET \/ OBSERVATORY/)
   assert.match(read('pages/BacktestPage.vue'), /BACKTEST \/ STRATEGY LABORATORY/)
   assert.match(read('components/SimTradeView.vue'), /操作终端/)

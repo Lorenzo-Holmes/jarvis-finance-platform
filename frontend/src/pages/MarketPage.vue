@@ -294,9 +294,10 @@ watch([marketFocus, () => jdKlineCfg.market], () => {
 <template>
   <section class="market-workspace">
     <div class="section-bar">
-      <div>
-        <h1>MARKET / LIVE FEED</h1>
-        <span>{{ focusedResearchContext.symbol }} · {{ focusedTitle }} · 核心报价、K 线与市场结构</span>
+      <div class="section-title">
+        <span class="section-kicker">MARKET</span>
+        <h1>行情终端</h1>
+        <span class="section-sub">{{ focusedResearchContext.symbol }} · {{ focusedTitle }} · 核心报价、K 线与市场结构</span>
       </div>
       <span class="section-status" :class="{ stale: freshness.stale || focusedQuoteStale }">
         <i :class="{ ok: connected && !freshness.stale && !focusedQuoteStale, warn: freshness.stale || focusedQuoteStale }"></i>
@@ -395,18 +396,23 @@ watch([marketFocus, () => jdKlineCfg.market], () => {
 
 <style scoped>
 .market-workspace { display: flex; flex-direction: column; gap: 12px; margin: 0; }
-.section-bar { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; min-height: 50px; padding: 0 2px 10px; border-bottom: 1px solid var(--line); }
-.section-bar h1 { margin: 0; color: var(--text); font: 650 13px/1 ui-monospace, monospace; letter-spacing: .11em; }
-.section-bar > div > span { display: block; margin-top: 7px; color: var(--subtle); font-size: 10px; }
-.section-status { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font: 600 9px/1 ui-monospace, monospace; letter-spacing: .05em; }
-.section-status i, .health-row i { width: 6px; height: 6px; border-radius: 50%; background: var(--bad); }
+.section-bar { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; min-height: 58px; padding: 0 0 10px; border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent); }
+.section-title { display: grid; gap: 5px; }
+.section-kicker { color: var(--subtle); font: 600 7px/1 ui-monospace, monospace; letter-spacing: .12em; }
+.section-bar h1 { margin: 0; color: var(--text); font-size: 18px; line-height: 1; font-weight: 650; letter-spacing: -.02em; }
+.section-sub { color: var(--muted); font-size: 9px; }
+.section-status { display: inline-flex; align-items: center; gap: 6px; min-height: 26px; color: var(--muted); font-size: 8px; font-weight: 600; white-space: nowrap; }
+.section-status i { width: 5px; height: 5px; border-radius: 50%; background: var(--bad); }
+.health-row i { width: 6px; height: 6px; border-radius: 50%; background: var(--bad); }
 .section-status i.ok, .health-row i.ok { background: var(--ok); }
 .section-status i.warn, .health-row i.warn { background: var(--warn); }
 .section-status.stale { color: var(--warn); }
-.market-focus-tabs { display: flex; gap: 24px; min-height: 32px; border-bottom: 1px solid var(--line); }
-.focus-tab { position: relative; border: 0; background: transparent; color: var(--muted); padding: 4px 0 10px; font: 600 9px/1 ui-monospace, monospace; letter-spacing: .06em; cursor: pointer; }
+.market-focus-tabs { display: flex; align-items: stretch; gap: 20px; min-height: 32px; border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent); overflow-x: auto; }
+.focus-tab { position: relative; border: 0; background: transparent; color: var(--muted); padding: 0 1px 9px; font-size: 9px; font-weight: 620; letter-spacing: .06em; cursor: pointer; white-space: nowrap; transition: color var(--motion-fast, 110ms) ease, transform var(--motion-fast, 110ms) ease; }
+.focus-tab:hover { color: var(--text); }
+.focus-tab:active { transform: translateY(1px); }
 .focus-tab.active { color: var(--text); font-weight: 650; }
-.focus-tab.active::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--accent); }
+.focus-tab.active::after { content: ''; position: absolute; left: 0; width: 18px; bottom: -1px; height: 2px; border-radius: 2px; background: var(--accent); }
 .market-primary-layout { display: grid; grid-template-columns: minmax(0, 1fr) 286px; gap: 0; align-items: stretch; border: 1px solid var(--line); }
 .market-chart-panel { min-width: 0; }
 .chart-caption { display: block; margin-top: 3px; color: var(--subtle); font-size: 10px; }
