@@ -2,6 +2,16 @@ import { defineConfig, devices } from '@playwright/test'
 import { FRONTEND_URL, MANAGED_WEB_SERVER } from './utils/env'
 
 const isCI = Boolean(process.env.CI)
+const visualProject = (name: string, width: number, height: number) => ({
+  name,
+  testMatch: /visual\.spec\.ts$/,
+  use: {
+    ...devices['Desktop Chrome'],
+    viewport: { width, height },
+    deviceScaleFactor: 1,
+    reducedMotion: 'reduce' as const,
+  },
+})
 
 /**
  * JARVIS E2E 配置。
@@ -60,6 +70,10 @@ export default defineConfig({
       testMatch: /auth\.spec\.ts$/,
       use: { ...devices['Desktop Chrome'] },
     },
+    visualProject('visual-1600', 1600, 900),
+    visualProject('visual-1280', 1280, 800),
+    visualProject('visual-1024', 1024, 768),
+    visualProject('visual-768', 768, 1024),
   ],
 
   webServer,

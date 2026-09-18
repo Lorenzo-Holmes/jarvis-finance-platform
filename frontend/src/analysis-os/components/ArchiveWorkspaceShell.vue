@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { api } from '../../api/client'
+import { groupCommandItems, searchCommandItems } from '../data/commandPalette'
 import { buildModuleNavGroups } from '../data/moduleNav'
 
 const props = defineProps({
@@ -40,13 +41,79 @@ const moduleGroups = computed(() => buildModuleNavGroups(props.modules))
 const workspaceTabModules = computed(() => props.workspaceTabs
   .map(routeKey => props.modules.find(item => item.routeKey === routeKey))
   .filter(Boolean))
-const commandResults = computed(() => {
-  const q = commandQuery.value.trim().toLowerCase()
-  if (!q) return props.modules
-  return props.modules.filter(item => [item.labelZh, item.labelEn, item.routeKey, item.category, item.code]
-    .filter(Boolean)
-    .some(value => String(value).toLowerCase().includes(q)))
+const commandItems = computed(() => {
+  const marketModule = props.modules.find(item => item.key === 'market') || props.modules[0] || null
+  const entityLabel = contextTitle.value
+  const entitySummary = props.context ? contextSubtitle.value : '前往行情选择研究对象'
+  const entityKeywords = [
+    props.context?.name,
+    props.context?.symbol,
+    props.context?.market,
+    '标的',
+    '证券',
+    '资产',
+  ].filter(Boolean)
+
+  const items = [{
+    id: 'entity:current',
+    kind: 'entity',
+    label: entityLabel,
+    summary: entitySummary,
+    meta: props.context ? '当前研究对象' : '研究对象',
+    module: marketModule,
+    keywords: entityKeywords,
+  }]
+
+  props.modules.forEach(item => {
+    items.push({
+      id: `workspace:${item.key}`,
+      kind: 'workspace',
+      label: item.labelZh,
+      summary: item.summary,
+      meta: moduleGroupLabel(item),
+      module: item,
+      keywords: [item.labelEn, item.routeKey, item.category, item.code, item.key].filter(Boolean),
+    })
+  })
+
+  items.push(
+    {
+      id: 'action:theme',
+      kind: 'action',
+      label: props.nightMode ? '切换到日间模式' : '切换到夜间模式',
+      summary: '调整整个金融工作区的视觉主题',
+      meta: '主题',
+      action: 'toggle-theme',
+      keywords: ['主题', '日间', '夜间', 'day', 'night', 'theme'],
+    },
+    {
+      id: 'action:return',
+      kind: 'action',
+      label: '返回档案海',
+      summary: '退出当前工作区并回到模块档案',
+      meta: '导航',
+      action: 'return-archive',
+      keywords: ['返回', '档案', 'archive', 'home'],
+    },
+  )
+
+  if (props.splitRoute) {
+    items.push({
+      id: 'action:close-split',
+      kind: 'action',
+      label: '关闭并排视图',
+      summary: '恢复单一工作面',
+      meta: '布局',
+      action: 'close-split',
+      keywords: ['关闭', '并排', 'split', 'layout'],
+    })
+  }
+
+  return items
 })
+const commandResults = computed(() => searchCommandItems(commandItems.value, commandQuery.value))
+const commandGroups = computed(() => groupCommandItems(commandResults.value))
+const activeCommand = computed(() => commandResults.value[Math.min(commandActiveIndex.value, Math.max(0, commandResults.value.length - 1))] || null)
 const contextTitle = computed(() => props.context?.name || props.context?.symbol || '选择研究对象')
 const contextSubtitle = computed(() => props.context?.symbol && props.context?.name
   ? `${props.context.symbol} · ${props.context.market || '研究上下文'}`
@@ -170,9 +237,25 @@ function closeCommandPalette() {
   commandActiveIndex.value = 0
 }
 
-function chooseCommandModule(item) {
+function executeCommand(item) {
+  if (!item) return
   closeCommandPalette()
-  requestModule(item)
+  if (item.kind === 'workspace' || item.kind === 'entity') {
+    if (item.module) requestModule(item.module)
+    return
+  }
+  if (item.action === 'toggle-theme') emit('toggle-night-mode')
+  else if (item.action === 'return-archive') requestReturn()
+  else if (item.action === 'close-split') emit('close-split')
+}
+
+function setCommandActiveIndex(nextIndex) {
+  if (!commandResults.value.length) {
+    commandActiveIndex.value = 0
+    return
+  }
+  commandActiveIndex.value = (nextIndex + commandResults.value.length) % commandResults.value.length
+  nextTick(() => document.querySelector('.command-results > button.active')?.scrollIntoView?.({ block: 'nearest' }))
 }
 
 function focusModuleTitle() {
@@ -212,9 +295,9 @@ function onKeydown(event) {
   if (commandOpen.value && ['ArrowDown', 'ArrowUp', 'Enter'].includes(event.key)) {
     event.preventDefault()
     if (!commandResults.value.length) return
-    if (event.key === 'ArrowDown') commandActiveIndex.value = (commandActiveIndex.value + 1) % commandResults.value.length
-    else if (event.key === 'ArrowUp') commandActiveIndex.value = (commandActiveIndex.value - 1 + commandResults.value.length) % commandResults.value.length
-    else chooseCommandModule(commandResults.value[Math.min(commandActiveIndex.value, commandResults.value.length - 1)])
+    if (event.key === 'ArrowDown') setCommandActiveIndex(commandActiveIndex.value + 1)
+    else if (event.key === 'ArrowUp') setCommandActiveIndex(commandActiveIndex.value - 1)
+    else executeCommand(activeCommand.value)
     return
   }
   if (event.key !== 'Escape') return
@@ -299,6 +382,7 @@ onBeforeUnmount(() => {
 <template>
   <section
     class="workspace-shell"
+    data-testid="common-workspace-shell"
     :class="[
       {
         returning,
@@ -457,23 +541,48 @@ onBeforeUnmount(() => {
       <section class="command-palette" role="dialog" aria-modal="true" aria-label="快速导航">
         <div class="command-search-row">
           <span aria-hidden="true">⌕</span>
-          <input v-model="commandQuery" type="search" placeholder="搜索证券、页面或命令…" aria-label="搜索工作区" />
+          <input v-model="commandQuery" type="search" placeholder="搜索标的、工作区或操作…" aria-label="搜索工作区" />
           <kbd>ESC</kbd>
         </div>
-        <div class="command-section-label">工作区</div>
-        <div class="command-results">
-          <button
-            v-for="(item, index) in commandResults"
-            :key="item.key"
-            type="button"
-            :class="{ active: commandActiveIndex === index }"
-            :aria-selected="commandActiveIndex === index"
-            @mouseenter="commandActiveIndex = index"
-            @click="chooseCommandModule(item)"
-          >
-            <span><strong>{{ item.labelZh }}</strong><small>{{ item.summary }}</small></span>
-                <em>{{ moduleGroupLabel(item) }}</em>
-          </button>
+        <div class="command-content">
+          <div class="command-list" role="listbox" aria-label="命令结果">
+            <section v-for="group in commandGroups" :key="group.key" class="command-group" :data-kind="group.key">
+              <div class="command-section-label">
+                <span>{{ group.label }}</span>
+                <small>{{ group.items.length }}</small>
+              </div>
+              <div class="command-results">
+                <button
+                  v-for="item in group.items"
+                  :key="item.id"
+                  type="button"
+                  role="option"
+                  :data-command-kind="item.kind"
+                  :class="{ active: commandActiveIndex === commandResults.indexOf(item) }"
+                  :aria-selected="commandActiveIndex === commandResults.indexOf(item)"
+                  @mouseenter="commandActiveIndex = commandResults.indexOf(item)"
+                  @click="executeCommand(item)"
+                >
+                  <i class="command-kind-mark" aria-hidden="true"></i>
+                  <span><strong>{{ item.label }}</strong><small>{{ item.summary }}</small></span>
+                  <em>{{ item.meta }}</em>
+                </button>
+              </div>
+            </section>
+            <div v-if="!commandResults.length" class="command-empty">
+              <strong>没有匹配结果</strong>
+              <small>尝试输入标的代码、模块名称或操作关键词。</small>
+            </div>
+          </div>
+          <aside v-if="activeCommand" class="command-preview" aria-label="当前命令预览">
+            <span>{{ activeCommand.kind === 'entity' ? 'ENTITY' : activeCommand.kind === 'action' ? 'ACTION' : 'WORKSPACE' }}</span>
+            <strong>{{ activeCommand.label }}</strong>
+            <p>{{ activeCommand.summary }}</p>
+            <div>
+              <small>{{ activeCommand.meta }}</small>
+              <kbd>ENTER</kbd>
+            </div>
+          </aside>
         </div>
       </section>
     </div>
@@ -1714,391 +1823,5 @@ onBeforeUnmount(() => {
 }
 .workspace-footer { border-top-color: var(--line); }
 
-/* V4 — modern financial workspace. Rhine is now an accent, not the layout system. */
-.workspace-shell {
-  --radius: 12px;
-  --radius-sm: 8px;
-  --material-toolbar-radius: 12px;
-  --material-popover-radius: 14px;
-  --material-dialog-radius: 16px;
-  --workspace-body-glow: transparent;
-}
-.workspace-shell.is-night {
-  --bg: #0a0d10;
-  --panel: #0f1317;
-  --panel-raised: #171c22;
-  --surface: #101418;
-  --surface-2: #161b20;
-  --line: rgba(255,255,255,.055);
-  --line-strong: rgba(255,255,255,.105);
-  --text: #f0f2f3;
-  --muted: #9ba3aa;
-  --subtle: #656d75;
-  --accent: #b79a67;
-  --accent-strong: #cfb47f;
-  --workspace-hover-bg: rgba(255,255,255,.042);
-  --material-glass: rgba(24,28,33,.76);
-  --material-elevated: rgba(30,35,41,.88);
-  --material-border: rgba(255,255,255,.065);
-  --material-shadow: 0 18px 52px rgba(0,0,0,.18);
-  --material-shadow-elevated: 0 28px 84px rgba(0,0,0,.30);
-}
-.global-rail {
-  width: 42px;
-  border-right: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
-  background: color-mix(in srgb, var(--bg) 96%, var(--panel));
-}
-.workspace-frame {
-  margin-left: 42px;
-  grid-template-rows: 52px 52px minmax(0, 1fr);
-}
-.rail-mark { height: 52px; font-size: 14px; opacity: .82; }
-.rail-shortcuts { padding: 11px 4px; }
-.rail-shortcuts button,
-.rail-search {
-  min-height: 36px;
-  border-radius: 9px;
-}
-.rail-shortcuts button:hover,
-.rail-search:hover { color: var(--text); background: rgba(255,255,255,.045); }
-.rail-search { margin: 0 4px 10px; }
-.workspace-header {
-  min-height: 52px;
-  padding: 0 20px;
-  grid-template-columns: 116px minmax(280px, 520px) minmax(100px, 1fr);
-  gap: 18px;
-  border-bottom: 0;
-  background: color-mix(in srgb, var(--bg) 96%, var(--panel));
-}
-.workspace-brand strong { font-size: 15px; font-weight: 690; letter-spacing: -.03em; }
-.global-search-field {
-  height: 34px;
-  border: 1px solid var(--material-border);
-  border-radius: 11px;
-  background: rgba(255,255,255,.025);
-  box-shadow: none;
-}
-.global-search-field:hover { background: rgba(255,255,255,.045); border-color: rgba(255,255,255,.10); }
-.global-search-field strong { font-size: 10px; }
-.entity-bar {
-  min-height: 52px;
-  grid-template-columns: auto minmax(176px, 236px) minmax(0, 1fr);
-  border-top: 1px solid color-mix(in srgb, var(--line) 65%, transparent);
-  border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
-  background: color-mix(in srgb, var(--bg) 98%, var(--panel));
-}
-.entity-history { padding: 0 6px 0 14px; }
-.entity-history button { width: 30px; height: 34px; border-radius: 9px; }
-.entity-context-display {
-  margin: 0;
-  height: auto;
-  padding: 0 14px;
-}
-.entity-context-display > span { gap: 3px; }
-.entity-context-display strong { font-size: 13px; font-weight: 660; }
-.entity-context-display small {
-  font-family: Inter, "MiSans", "PingFang SC", sans-serif;
-  font-size: 9px;
-  letter-spacing: 0;
-}
-.entity-views { gap: 4px; padding: 0 12px; }
-.entity-views > button,
-.entity-more > summary,
-.split-control > summary {
-  padding: 0 12px;
-  border-radius: 9px;
-  font-size: 11px;
-  font-weight: 560;
-}
-.entity-views > button:hover,
-.entity-more > summary:hover,
-.split-control > summary:hover { background: rgba(255,255,255,.038); }
-.entity-views > button.active::after,
-.entity-more.active > summary::after,
-.split-control.active > summary::after {
-  bottom: 5px;
-  width: 16px;
-  height: 2px;
-}
-.workspace-body {
-  padding: 24px 28px 32px;
-  background: var(--bg);
-}
-.workspace-body :deep(.market-workspace),
-.workspace-body :deep(.research-workspace),
-.workspace-body :deep(.ch-workspace),
-.workspace-body :deep(.sg-workspace) {
-  animation: workspace-surface-in 240ms cubic-bezier(.22,1,.36,1) both;
-}
-@keyframes workspace-surface-in {
-  from { opacity: 0; transform: translateY(5px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-.workspace-footer { display: none; }
-.workspace-body :deep(.btn.primary) {
-  border-radius: 9px !important;
-  box-shadow: none !important;
-}
-.workspace-body :deep(.btn:not(.primary)),
-.workspace-body :deep(.select) { border-radius: 8px !important; }
-
-@media (max-width: 820px) {
-  .global-rail { width: 40px; }
-  .workspace-frame { margin-left: 40px; grid-template-rows: 50px 50px minmax(0, 1fr); }
-  .workspace-header { min-height: 50px; padding: 0 10px; }
-  .entity-bar { min-height: 50px; }
-  .workspace-body { padding: 14px 12px 20px; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .workspace-shell { transition-duration: .01ms; }
-  .command-palette { animation: none !important; }
-  .workspace-body :deep(.market-workspace),
-  .workspace-body :deep(.research-workspace),
-  .workspace-body :deep(.ch-workspace),
-  .workspace-body :deep(.sg-workspace) { animation: none !important; }
-  .entity-views > button,
-  .entity-more > summary,
-  .split-control > summary,
-  .global-search-field,
-  .rail-shortcuts button,
-  .rail-search { transition: none !important; }
-}
-
-/* V5 — visual polish only: reduce route-switch flashing and standardize interaction feedback. */
-.workspace-shell {
-  font-family: Inter, "MiSans", "PingFang SC", "Microsoft YaHei", sans-serif;
-}
-.workspace-shell.switching .workspace-body {
-  opacity: .46;
-  transform: translateY(2px);
-}
-@keyframes workspace-surface-in {
-  from { opacity: .78; transform: translateY(3px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-.workspace-header,
-.entity-bar,
-.global-rail {
-  transition: background .18s ease, border-color .18s ease;
-}
-.global-search-field:focus-visible,
-.entity-history button:focus-visible,
-.entity-views > button:focus-visible,
-.entity-more > summary:focus-visible,
-.split-control > summary:focus-visible,
-.rail-shortcuts button:focus-visible,
-.rail-search:focus-visible {
-  outline: 0;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 13%, transparent);
-}
-.entity-views > button,
-.entity-more > summary,
-.split-control > summary { font-size: 11.5px; }
-.workspace-body { padding: 20px 24px 28px; }
-.workspace-body :deep(.section-bar > div:first-child > span),
-.workspace-body :deep(.research-head > div:first-child > span) {
-  font-size: 11px;
-  line-height: 1.45;
-}
-.workspace-body :deep(.btn) {
-  min-height: 34px;
-  transition: color .16s ease, background .16s ease, border-color .16s ease, box-shadow .16s ease, transform .10s ease !important;
-}
-.workspace-body :deep(.btn:active:not(:disabled)) { transform: scale(.98); }
-.workspace-body :deep(.btn:focus-visible),
-.workspace-body :deep(.select:focus-visible),
-.workspace-body :deep(input:focus-visible),
-.workspace-body :deep(textarea:focus-visible) {
-  outline: 0;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 11%, transparent);
-}
-.workspace-body :deep(.table tbody tr) {
-  transition: background .14s ease;
-}
-@media (max-width: 1180px) {
-  .workspace-body { padding: 16px 16px 22px; }
-}
-@media (max-width: 820px) {
-  .workspace-body { padding: 12px 10px 18px; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .workspace-shell.switching .workspace-body { opacity: 1; transform: none; }
-  .workspace-body :deep(.btn),
-  .workspace-header,
-  .entity-bar,
-  .global-rail { transition: none !important; }
-}
-
-/* V6 — selected-state surface language and tighter application chrome. */
-.global-search-field {
-  transition: border-color .16s ease, background .16s ease, box-shadow .16s ease, transform .10s ease;
-}
-.global-search-field:focus-visible {
-  border-color: color-mix(in srgb, var(--accent) 32%, var(--material-border));
-  background: color-mix(in srgb, var(--material-glass) 86%, transparent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 9%, transparent), inset 0 1px 0 rgba(255,255,255,.028);
-}
-.account-menu > summary {
-  min-height: 34px;
-  border-radius: 9px;
-  font-size: 10.5px;
-  transition: color .16s ease, background .16s ease, transform .10s ease;
-}
-.account-menu > summary:active { transform: scale(.97); }
-.account-menu[open] > summary {
-  background: color-mix(in srgb, var(--workspace-hover-bg) 78%, transparent);
-}
-.entity-views > button.active,
-.entity-more.active > summary,
-.split-control.active > summary {
-  color: var(--text);
-  background: color-mix(in srgb, var(--workspace-hover-bg) 82%, transparent);
-}
-.entity-views > button.active::after,
-.entity-more.active > summary::after,
-.split-control.active > summary::after { display: none; }
-.entity-views > button:hover:not(.active),
-.entity-more > summary:hover,
-.split-control > summary:hover {
-  background: color-mix(in srgb, var(--workspace-hover-bg) 60%, transparent);
-}
-.entity-context-display {
-  position: relative;
-}
-.entity-context-display::after {
-  content: '';
-  position: absolute;
-  right: 0;
-  top: 13px;
-  bottom: 13px;
-  width: 1px;
-  background: color-mix(in srgb, var(--line) 72%, transparent);
-}
-.command-results > button strong { font-size: 11.5px; }
-.command-results > button small { font-size: 9.5px; }
-.command-results > button em { font-size: 8.5px; }
-@media (max-width: 820px) {
-  .entity-context-display::after { display: none; }
-  .account-menu > summary { font-size: 10px; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .global-search-field,
-  .account-menu > summary { transition: none !important; }
-}
-
-/* V7 — Ambient Financial Workspace: persistent context + liquid selection. */
-.workspace-shell {
-  --module-aura: rgba(108, 125, 138, .028);
-  --context-accent: color-mix(in srgb, var(--accent) 68%, var(--text));
-}
-.workspace-shell.ambient-market { --module-aura: rgba(82, 126, 158, .045); --context-accent: #7894a7; }
-.workspace-shell.ambient-financial { --module-aura: rgba(118, 132, 119, .040); --context-accent: #819083; }
-.workspace-shell.ambient-ai-research { --module-aura: rgba(162, 126, 81, .045); --context-accent: #a18462; }
-.workspace-shell.ambient-industry-chain { --module-aura: rgba(148, 118, 78, .052); --context-accent: #a17f57; }
-.workspace-shell.ambient-risk { --module-aura: rgba(151, 90, 82, .045); --context-accent: #9d716a; }
-.workspace-shell.ambient-strategy { --module-aura: rgba(103, 122, 108, .042); --context-accent: #768778; }
-.workspace-shell.ambient-sim-trade { --module-aura: rgba(79, 113, 137, .046); --context-accent: #6d8799; }
-.workspace-body {
-  background:
-    radial-gradient(ellipse 58% 44% at 56% -8%, var(--module-aura), transparent 72%),
-    var(--bg);
-}
-.entity-context-display {
-  min-height: 38px;
-  margin: 6px 4px;
-  padding: 0 13px 0 12px;
-  gap: 9px;
-  border: 1px solid color-mix(in srgb, var(--material-border, var(--line)) 74%, transparent);
-  border-radius: 12px;
-  background:
-    linear-gradient(130deg, color-mix(in srgb, var(--context-accent) 4%, transparent), transparent 44%),
-    color-mix(in srgb, var(--material-glass, transparent) 42%, transparent);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.022);
-  view-transition-name: jarvis-context-capsule;
-  transition: border-color .22s ease, background .22s ease, box-shadow .22s ease, transform .22s cubic-bezier(.22,1,.36,1), opacity .18s ease;
-}
-.entity-context-display::after { display: none; }
-.entity-context-display.has-context {
-  border-color: color-mix(in srgb, var(--context-accent) 22%, var(--material-border, var(--line)));
-}
-.context-presence {
-  width: 6px;
-  height: 6px;
-  flex: 0 0 auto;
-  border-radius: 50%;
-  border: 1px solid color-mix(in srgb, var(--context-accent) 72%, var(--line-strong));
-  background: transparent;
-  box-shadow: 0 0 0 0 transparent;
-  transition: background .22s ease, border-color .22s ease, box-shadow .22s ease;
-}
-.entity-context-display.has-context .context-presence {
-  border-color: var(--context-accent);
-  background: var(--context-accent);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--context-accent) 7%, transparent);
-}
-.workspace-shell.switching .entity-context-display {
-  opacity: .74;
-  transform: translateY(-1px) scale(.985);
-}
-.entity-views {
-  position: relative;
-  isolation: isolate;
-}
-.entity-selection-lens {
-  position: absolute;
-  z-index: 0;
-  top: 7px;
-  left: 0;
-  height: calc(100% - 14px);
-  border: 1px solid color-mix(in srgb, var(--material-border, var(--line)) 76%, transparent);
-  border-radius: 10px;
-  background:
-    linear-gradient(180deg, rgba(255,255,255,.025), transparent),
-    color-mix(in srgb, var(--workspace-hover-bg) 74%, transparent);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.025);
-  pointer-events: none;
-  transition:
-    transform .34s cubic-bezier(.22,1,.36,1),
-    width .34s cubic-bezier(.22,1,.36,1),
-    opacity .16s ease,
-    background .22s ease;
-}
-.entity-views > button,
-.entity-more,
-.split-control { position: relative; z-index: 1; }
-.entity-views > button.active,
-.entity-more.active > summary {
-  background: transparent;
-}
-.split-control.active > summary {
-  color: var(--accent-strong);
-  background: color-mix(in srgb, var(--workspace-accent-wash) 48%, transparent);
-}
-.entity-context-display:hover {
-  border-color: color-mix(in srgb, var(--context-accent) 26%, var(--material-border, var(--line)));
-  background:
-    linear-gradient(130deg, color-mix(in srgb, var(--context-accent) 5.5%, transparent), transparent 48%),
-    color-mix(in srgb, var(--material-glass, transparent) 52%, transparent);
-}
-:global(::view-transition-old(root)),
-:global(::view-transition-new(root)) { animation: none; mix-blend-mode: normal; }
-:global(::view-transition-group(jarvis-context-capsule)) {
-  animation-duration: 320ms;
-  animation-timing-function: cubic-bezier(.22,1,.36,1);
-}
-:global(::view-transition-old(jarvis-context-capsule)) { animation: context-capsule-out 180ms ease both; }
-:global(::view-transition-new(jarvis-context-capsule)) { animation: context-capsule-in 300ms cubic-bezier(.22,1,.36,1) both; }
-@keyframes context-capsule-out { to { opacity: .35; transform: scale(.985); } }
-@keyframes context-capsule-in { from { opacity: .42; transform: scale(.985); } to { opacity: 1; transform: scale(1); } }
-@media (max-width: 820px) {
-  .entity-context-display { margin-left: 2px; margin-right: 2px; padding-left: 9px; padding-right: 9px; }
-  .context-presence { display: none; }
-  .entity-selection-lens { top: 6px; height: calc(100% - 12px); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .entity-selection-lens,
-  .entity-context-display,
-  .context-presence { transition: none !important; }
-}
 </style>
+<style scoped src="../styles/WorkspaceSystem.css"></style>

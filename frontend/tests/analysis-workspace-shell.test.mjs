@@ -196,13 +196,21 @@ test('representative workspace pages keep stable product headings during the pro
 
 test('fluid terminal P0 uses Apple interaction materials while preserving Rhine identity', () => {
   const shell = read('analysis-os/components/ArchiveWorkspaceShell.vue')
+  const system = read('analysis-os/styles/WorkspaceSystem.css')
   const market = read('pages/MarketPage.vue')
   const ticker = read('components/market/QuoteStrip.vue')
 
   assert.match(shell, /--material-glass:/)
   assert.match(shell, /--material-elevated:/)
   assert.match(shell, /--motion-standard:/)
+  assert.match(shell, /styles\/WorkspaceSystem\.css/)
+  assert.match(system, /--ds-motion-state:/)
+  assert.match(system, /--ds-focus-shadow:/)
+  assert.match(system, /--ds-selection-surface:/)
   assert.match(shell, /class="command-search-row"/)
+  assert.match(shell, /研究对象/)
+  assert.match(shell, /data-command-kind/)
+  assert.match(shell, /搜索标的、工作区或操作/)
   assert.match(shell, /event\.key === '\/'/)
   assert.match(shell, /event\.key === 'ArrowDown'/)
   assert.match(market, /class="floating-chart-toolbar"/)

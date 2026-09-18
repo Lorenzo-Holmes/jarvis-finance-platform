@@ -21,6 +21,8 @@ cd ../frontend && npm run dev
 cd ../e2e
 npm test                      # 全部
 npm run test:smoke            # 冒烟组：不依赖后端
+npm run test:visual           # 四档 viewport 的工作区视觉回归
+npm run test:visual:update    # 有意更新视觉时刷新基线截图
 npm run typecheck             # 只做类型检查，不需要浏览器
 npm run list                  # 只列出用例，不执行
 ```
@@ -52,7 +54,8 @@ e2e/
 │   └── selectors.ts          data-testid 命名约定 + 回退选择器（见第 4 节）
 └── tests/
     ├── smoke.spec.ts         冒烟：不依赖后端
-    └── auth.spec.ts          登录与权限
+    ├── auth.spec.ts          登录与权限
+    └── visual.spec.ts        Market / Research / Chain / Strategy / Execution 视觉回归
 ```
 
 ---
@@ -160,3 +163,10 @@ risk-alert-detail-chart    风险预警详情图表
 3. **官网是 iframe**：`LandingPage.vue` 内嵌 `/landing/index.html`，断言必须走 `frameLocator`。
 4. **CI 集成尚未开启**：新增 `e2e` job 属于后续任务（待确定门禁强度后接入）。
 5. **RSS 相关用例不在本目录**：按分工由信息中心负责人在本套件的 POM 基类之上编写。
+
+### 视觉回归约定
+
+- 基线覆盖 `1600×900`、`1280×800`、`1024×768`、`768×1024`。
+- 用例使用固定 API fixture、`reduced-motion` 与稳定化样式，避免实时价格、时间和新闻造成假失败。
+- 视觉 project 固定 `workers=1`，避免多个 Archive Sea WebGL 场景并发争抢 GPU 导致过场超时或像素抖动。
+- 只有确认视觉变化是有意设计时才运行 `npm run test:visual:update` 并提交对应快照。
