@@ -91,7 +91,7 @@ echo "== Local readiness =="
 assert_wrapped_ok "Java liveness" "$LOCAL_API_BASE/api/health/live"
 assert_wrapped_ok "Java + DB readiness" "$LOCAL_API_BASE/api/health/ready"
 metrics_body="$(curl "${curl_args[@]}" "$LOCAL_METRICS_URL")"
-printf '%s' "$metrics_body" | grep -q '^jarvis_market_stream_subscribers ' || {
+grep -Eq '^jarvis_market_stream_subscribers(\{[^}]*\})? ' <<<"$metrics_body" || {
   echo "ERROR: custom market telemetry metric missing" >&2
   exit 1
 }
