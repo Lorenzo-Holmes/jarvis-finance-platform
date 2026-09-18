@@ -97,6 +97,10 @@ class ScheduledTaskRunnerTest {
         assertEquals(0, task.getConsecutiveFailures());
         assertNull(task.getLastError());
         verify(eventPublisher, never()).publishEvent(any(ScheduledTaskAutoPausedEvent.class));
+        // 成功也要广播执行事实：内核只负责说清"发生了什么"，要不要提醒用户是通知模块的职责。
+        verify(eventPublisher).publishEvent(new ScheduledTaskRunFinishedEvent(
+                TASK_ID, 2L, "每日行情扫描", ScheduledTaskType.MARKET_SCAN,
+                TaskRunStatus.SUCCESS, "扫描完成：2 个标的正常", null, null));
     }
 
     @Test
@@ -126,6 +130,10 @@ class ScheduledTaskRunnerTest {
         assertEquals(1, task.getConsecutiveFailures());
         assertTrue(task.getLastError().contains("上游行情源超时"),
                 "错误摘要要能看出发生了什么，实际：" + task.getLastError());
+        // 失败事实必须广播出去：通知模块靠它决定"要不要告诉用户任务挂了"。
+        verify(eventPublisher).publishEvent(new ScheduledTaskRunFinishedEvent(
+                TASK_ID, 2L, "每日行情扫描", ScheduledTaskType.MARKET_SCAN,
+                TaskRunStatus.FAILED, null, "上游行情源超时", null));
     }
 
     @Test
@@ -141,7 +149,9 @@ class ScheduledTaskRunnerTest {
         assertEquals(ScheduledTaskStatus.PAUSED, task.getStatus());
         assertNull(task.getNextRunAt(), "暂停后不该再显示下次执行时间");
         // 必须发出事件：否则任务显示"已暂停"却仍在后台按时触发，是最难查的不一致。
-        verify(eventPublisher).publishEvent(new ScheduledTaskAutoPausedEvent(TASK_ID));
+        // 事件带上 userId / taskName，是为了让通知模块不必再查一次库（它要把"哪个用户的哪个任务停了"告诉人）。
+        verify(eventPublisher).publishEvent(new ScheduledTaskAutoPausedEvent(
+                TASK_ID, 2L, "每日行情扫描", 3));
     }
 
     @Test

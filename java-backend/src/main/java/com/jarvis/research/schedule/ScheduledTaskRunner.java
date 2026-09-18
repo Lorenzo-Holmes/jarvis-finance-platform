@@ -214,8 +214,15 @@ public class ScheduledTaskRunner {
 
         if (Boolean.TRUE.equals(autoPaused)) {
             log.warn("定时任务连续失败 {} 次，已自动暂停。taskId={}", maxConsecutiveFailures, task.getId());
-            eventPublisher.publishEvent(new ScheduledTaskAutoPausedEvent(task.getId()));
+            eventPublisher.publishEvent(new ScheduledTaskAutoPausedEvent(
+                    task.getId(), task.getUserId(), task.getName(), maxConsecutiveFailures));
         }
+
+        // 无论成败都广播一次执行事实：要不要提醒用户属于通知模块的职责，内核只负责说清楚"发生了什么"。
+        // 放在事务之外发布（与上面同一位置），所以监听方必须带 fallbackExecution = true。
+        eventPublisher.publishEvent(new ScheduledTaskRunFinishedEvent(
+                task.getId(), task.getUserId(), task.getName(), task.getTaskType(),
+                status, summary, errorMessage, artifactsJson));
     }
 
     /**

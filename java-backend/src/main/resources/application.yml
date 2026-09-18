@@ -65,6 +65,12 @@ jarvis:
     # 触发频率下限：低于它的 cron 直接 400，防用户配出每秒一次的任务打满服务。
     min-interval-seconds: ${SCHEDULED_TASK_MIN_INTERVAL_SECONDS:60}
     max-tasks-per-user: ${SCHEDULED_TASK_MAX_PER_USER:20}
+  # 站内通知（PRD V1.2 增量需求 3 的「通知机制」）。
+  notification:
+    # 每个用户最多保留多少条；超出后按"最近一次发生时间"裁掉最旧的（每次写入最多裁 50 条）。
+    keep-per-user: ${NOTIFICATION_KEEP_PER_USER:200}
+    # 同一任务同一类型的事件在该窗口内合并为一条并累加发生次数，避免坏任务刷屏。
+    dedup-window-minutes: ${NOTIFICATION_DEDUP_WINDOW_MINUTES:10}
   # Python 辅助微服务 (数据采集/AI预处理), 可选
   python-service:
     enabled: true

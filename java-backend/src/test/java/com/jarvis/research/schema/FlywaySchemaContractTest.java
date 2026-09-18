@@ -121,6 +121,7 @@ class FlywaySchemaContractTest {
                 "research_task",
                 "scheduled_task",
                 "scheduled_task_run",
+                "user_notification",
                 "flyway_schema_history"));
 
         assertEquals(expected, tableNames(), "迁移产出的表集合");
@@ -184,6 +185,30 @@ class FlywaySchemaContractTest {
         assertFalse(runColumns.contains("version"),
                 "scheduled_task_run 有意不带乐观锁，实体也没有 @Version；"
                         + "若这里多出 version，说明表与实体已经不一致");
+    }
+
+    /**
+     * 站内通知表（V11）的列必须与 {@code UserNotification} 实体一一对上。
+     *
+     * <p>额外钉两条这个表**特意如此**的设计：</p>
+     * <ul>
+     *   <li>{@code dedup_key} <strong>不能有唯一约束</strong> —— 去重语义是
+     *       "窗口内合并"，窗口外允许再写一条；加了唯一约束就变成"永远只留一条"，
+     *       会把"上周坏过、这周又坏"抹掉。</li>
+     *   <li>{@code created_at} 与 {@code last_seen_at} 两列都要在：前者是首次发生时间
+     *       （合并时不改），后者是最近一次发生时间（列表按它倒序）。少一列，
+     *       "这个故障还在持续发生"就表达不出来。</li>
+     * </ul>
+     */
+    @Test
+    void theUserNotificationTableHasEveryColumnTheEntityMaps() throws Exception {
+        Set<String> columns = columnNames("user_notification");
+
+        assertTrue(columns.containsAll(List.of(
+                        "id", "user_id", "type", "level", "title", "body",
+                        "link_kind", "link_ref", "dedup_key", "repeat_count",
+                        "read_at", "created_at", "last_seen_at")),
+                "user_notification 的列与 UserNotification 实体不符，现有: " + columns);
     }
 
     // ==================== 夹具 ====================
