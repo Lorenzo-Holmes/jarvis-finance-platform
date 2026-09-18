@@ -98,6 +98,9 @@ skills/**/runs/
 skills/**/.cache/
 skills/**/.copaw/
 
+# Local AI assistant context (IDE-generated, not shared)
+CODEBUDDY.md
+
 # Documents
 FINAL_SUBMISSION_CHECKLIST.md
 docs/

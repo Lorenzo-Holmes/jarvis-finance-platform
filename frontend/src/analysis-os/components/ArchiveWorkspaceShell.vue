@@ -104,7 +104,13 @@ function requestReturn() {
 }
 
 function requestModule(next) {
-  if (!props.active || !next || next.key === props.module.key || switching.value || returning.value) return
+  if (!props.active || !next || switching.value || returning.value) return
+  // 点击的正是当前模块：不切换视图，但要收起菜单，否则看起来像“点了没反应”。
+  if (next.key === props.module.key) {
+    if (entityMoreRef.value?.open) entityMoreRef.value.open = false
+    if (splitMenuRef.value?.open) splitMenuRef.value.open = false
+    return
+  }
   switching.value = true
   const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
   if (switchTimer) window.clearTimeout(switchTimer)
@@ -138,6 +144,40 @@ function syncEntitySelectionLens() {
       transform: `translate3d(${target.offsetLeft}px, 0, 0)`,
     }
   })
+}
+
+const POPOVER_GAP = 8
+const POPOVER_MARGIN = 8
+
+/**
+ * 视图导航是横向滚动容器（overflow-x: auto，overflow-y 会被浏览器计算成 auto），
+ * 绝对定位的弹层会被它整块裁掉，所以弹层改用 fixed 定位，
+ * 并在打开 / 导航滚动 / 窗口缩放时按摘要按钮的位置重新对齐。
+ */
+function alignPopover(details) {
+  if (!details) return
+  const summary = details.querySelector(':scope > summary')
+  const popover = details.querySelector(':scope > .entity-more-popover, :scope > .split-popover')
+  if (!summary || !popover) return
+  const anchor = summary.getBoundingClientRect()
+  // 弹层收起时拿不到用于布局的宽度，退回读取 CSS 里声明的宽度。
+  const width = popover.getBoundingClientRect().width
+    || Number.parseFloat(window.getComputedStyle(popover).width)
+    || 0
+  const maxLeft = Math.max(POPOVER_MARGIN, window.innerWidth - width - POPOVER_MARGIN)
+  const left = Math.min(Math.max(POPOVER_MARGIN, anchor.right - width), maxLeft)
+  popover.style.left = `${Math.round(left)}px`
+  popover.style.top = `${Math.round(anchor.bottom + POPOVER_GAP)}px`
+}
+
+function alignOpenPopovers() {
+  if (entityMoreRef.value?.open) alignPopover(entityMoreRef.value)
+  if (splitMenuRef.value?.open) alignPopover(splitMenuRef.value)
+}
+
+function onViewportResize() {
+  syncEntitySelectionLens()
+  alignOpenPopovers()
 }
 
 function navigateHistory(delta) {
@@ -278,7 +318,7 @@ watch(() => props.active, active => {
 
 onMounted(() => {
   window.addEventListener('keydown', onKeydown)
-  window.addEventListener('resize', syncEntitySelectionLens)
+  window.addEventListener('resize', onViewportResize)
   document.addEventListener('pointerdown', closeMenusFromOutside)
   if (props.active) requestAnimationFrame(() => {
     focusModuleTitle()
@@ -291,7 +331,7 @@ onBeforeUnmount(() => {
   if (switchTimer) window.clearTimeout(switchTimer)
   if (entityLensRaf) window.cancelAnimationFrame(entityLensRaf)
   window.removeEventListener('keydown', onKeydown)
-  window.removeEventListener('resize', syncEntitySelectionLens)
+  window.removeEventListener('resize', onViewportResize)
   document.removeEventListener('pointerdown', closeMenusFromOutside)
 })
 </script>
@@ -391,7 +431,7 @@ onBeforeUnmount(() => {
           </span>
         </div>
 
-        <nav ref="entityViewsRef" class="entity-views" aria-label="当前研究对象视图">
+        <nav ref="entityViewsRef" class="entity-views" aria-label="当前研究对象视图" @scroll.passive="alignOpenPopovers">
           <i class="entity-selection-lens" aria-hidden="true" :style="entityLensStyle"></i>
           <button
             v-for="item in entityViews"
@@ -403,8 +443,8 @@ onBeforeUnmount(() => {
           >
             {{ ENTITY_VIEW_LABELS[item.key] }}
           </button>
-          <details ref="entityMoreRef" class="entity-more" :class="{ active: secondaryViewActive }">
-            <summary>更多</summary>
+          <details ref="entityMoreRef" class="entity-more" :class="{ active: secondaryViewActive }" @toggle="alignOpenPopovers">
+            <summary @click="alignPopover(entityMoreRef)">更多</summary>
             <div class="entity-more-popover">
               <button
                 v-for="item in secondaryViews"
@@ -418,8 +458,8 @@ onBeforeUnmount(() => {
               </button>
             </div>
           </details>
-          <details ref="splitMenuRef" class="split-control" :class="{ active: props.splitRoute }">
-            <summary>{{ props.splitRoute ? `▥ ${splitLabel}` : '▥ 并排' }}</summary>
+          <details ref="splitMenuRef" class="split-control" :class="{ active: props.splitRoute }" @toggle="alignOpenPopovers">
+            <summary @click="alignPopover(splitMenuRef)">{{ props.splitRoute ? `▥ ${splitLabel}` : '▥ 并排' }}</summary>
             <div class="split-popover">
               <div class="split-popover-head">
                 <span>并排查看</span>
@@ -1296,8 +1336,8 @@ onBeforeUnmount(() => {
   align-items: stretch;
   gap: 2px;
   padding: 0 9px;
+  /* overflow-x 为 auto 时 overflow-y 会被浏览器计算成 auto，这里必然裁剪子元素。 */
   overflow-x: auto;
-  overflow-y: visible;
   scrollbar-width: none;
 }
 .entity-views::-webkit-scrollbar { display: none; }
@@ -1336,16 +1376,19 @@ onBeforeUnmount(() => {
   background: var(--accent);
   transform: translateX(-50%);
 }
-.entity-more { position: relative; }
+/* 弹层改成 fixed 后不再需要定位上下文；保持 static，
+   选择滑块的 offsetLeft 才会以 .entity-views 为基准，从而对齐到「更多」。 */
 .entity-more > summary::-webkit-details-marker { display: none; }
-.split-control { position: relative; margin-left: auto; }
+.split-control { margin-left: auto; }
 .split-control > summary::-webkit-details-marker { display: none; }
+/* fixed 定位：脱离 .entity-views 的横向滚动裁剪，坐标由 alignPopover() 运行时写入。 */
 .entity-more-popover {
-  position: absolute;
+  position: fixed;
   z-index: 170;
-  right: 0;
-  top: calc(100% + 8px);
+  left: 0;
+  top: 0;
   width: 270px;
+  box-sizing: border-box;
   padding: 8px;
   border: 1px solid var(--line-strong);
   border-radius: 7px;
@@ -1373,11 +1416,12 @@ onBeforeUnmount(() => {
 .entity-more-popover small { color: var(--subtle); font-size: 8px; line-height: 1.45; }
 
 .split-popover {
-  position: absolute;
+  position: fixed;
   z-index: 175;
-  right: 0;
-  top: calc(100% + 8px);
+  left: 0;
+  top: 0;
   width: 290px;
+  box-sizing: border-box;
   padding: 8px;
   border: 1px solid var(--line-strong);
   border-radius: 7px;
@@ -2043,7 +2087,9 @@ onBeforeUnmount(() => {
 }
 .entity-views {
   position: relative;
-  isolation: isolate;
+  /* 这里不能用 isolation: isolate：它会把导航条变成层叠上下文，
+     弹层的 z-index 就只在导航条内部生效，被 .workspace-body 里
+     z-index≥1 或带 transform 的元素盖住，点击也就被吃掉了。 */
 }
 .entity-selection-lens {
   position: absolute;
@@ -2064,9 +2110,13 @@ onBeforeUnmount(() => {
     opacity .16s ease,
     background .22s ease;
 }
-.entity-views > button,
+.entity-views > button { position: relative; z-index: 1; }
+/* 两个菜单保持 position: relative 且不设 z-index：
+   一旦给了 z-index 就会形成层叠上下文，把弹层关在导航条内。
+   不带 z-index 时它们的盒模型与原本一致，弹层则直接挂在
+   .workspace-shell 的层叠上下文里，z-index 170/175 才能真正盖过内容区。 */
 .entity-more,
-.split-control { position: relative; z-index: 1; }
+.split-control { position: relative; }
 .entity-views > button.active,
 .entity-more.active > summary {
   background: transparent;
