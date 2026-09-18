@@ -79,6 +79,7 @@ Z-Image-Turbo-int4-ov/
 *.jpeg
 *.gif
 *.webp
+!e2e/tests/*-snapshots/*.png
 
 # Editor / OS
 .vscode/

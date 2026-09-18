@@ -1,0 +1,31 @@
+/* Visual regression stabilization: preserve geometry while removing volatile data. */
+*,
+*::before,
+*::after {
+  caret-color: transparent !important;
+}
+
+time,
+.market-hero-price strong,
+.market-hero-price span,
+.rt-value,
+.rt-delta,
+.rail-price,
+.rail-change,
+.price,
+.chg,
+.stamp,
+.session-readout,
+.preference-status,
+.engine-status {
+  color: transparent !important;
+  text-shadow: none !important;
+}
+
+.news-list {
+  visibility: hidden !important;
+}
+
+::selection {
+  background: transparent !important;
+}
