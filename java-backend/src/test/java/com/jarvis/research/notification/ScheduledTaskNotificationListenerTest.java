@@ -28,8 +28,8 @@ import static org.mockito.Mockito.when;
  * <p>这是整条通知链路里唯一有产品判断的地方，所以逐条钉住：</p>
  * <ul>
  *   <li>失败与超时必须提醒（否则用户不知道任务挂了）；</li>
- *   <li>风险检测命中时，等级必须**跟着风控引擎的 riskStatus 走**（DANGER → RISK、WARN → WARN）——
- *       一律用最高级会让"接近强平"和"刚越警戒线"看起来一样，等于没有优先级；</li>
+ *   <li>风险检测命中时，等级必须与执行器口径一致：DANGER → RISK、WARN → WARN，
+ *       SAFE 但跌破任务自定义 warnBelowPct 时也必须发 WARN；</li>
  *   <li>成功**不**提醒，风险检测未命中也不提醒 —— 否则每天都在报"一切正常"，
  *       真正重要的那条会被淹掉；</li>
  *   <li>通知写入失败必须被吞掉，绝不能把异常抛回任务执行链路。</li>
@@ -123,6 +123,25 @@ class ScheduledTaskNotificationListenerTest {
 
         verify(notificationService).raise(eq(USER), eq(NotificationType.RISK_ALERT), eq(NotificationLevel.WARN),
                 any(), any(), eq("SCHEDULED_TASK"), eq(TASK_ID));
+    }
+
+    @Test
+    void aSafeAccountBelowTheCustomThresholdStillRaisesAWarning() {
+        listener.onRunFinished(runFinished(TaskRunStatus.SUCCESS, ScheduledTaskType.RISK_CHECK,
+                "风险检测命中：维持担保比例 180.00%（风险等级 SAFE，警戒线 200.00%）", null,
+                "{\"riskStatus\":\"SAFE\",\"maintMarginPct\":180.0,\"warnBelowPct\":200.0}"));
+
+        verify(notificationService).raise(eq(USER), eq(NotificationType.RISK_ALERT), eq(NotificationLevel.WARN),
+                any(), any(), eq("SCHEDULED_TASK"), eq(TASK_ID));
+    }
+
+    @Test
+    void noPositionStatusNeverAlertsEvenIfTheNumericRatioIsBelowTheCustomThreshold() {
+        listener.onRunFinished(runFinished(TaskRunStatus.SUCCESS, ScheduledTaskType.RISK_CHECK,
+                "风险检测完成：当前无持仓", null,
+                "{\"riskStatus\":\"NONE\",\"maintMarginPct\":0.0,\"warnBelowPct\":200.0}"));
+
+        verify(notificationService, never()).raise(any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test

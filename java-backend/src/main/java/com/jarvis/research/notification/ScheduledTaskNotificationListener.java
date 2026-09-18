@@ -100,12 +100,17 @@ public class ScheduledTaskNotificationListener {
     }
 
     /**
-     * 风险检测命中时提醒；未命中（SAFE / NONE）什么都不做。
+     * 风险检测命中时提醒；{@code NONE} 或未越过任何阈值时不通知。
      *
-     * <p>等级按风控引擎给的 {@code riskStatus} 映射，而不是一律最高级：
-     * 引擎的 `DANGER`（低于强平线 15%）对应 {@link NotificationLevel#RISK}（列表置顶），
-     * `WARN`（低于警戒线 25%）对应 {@link NotificationLevel#WARN}。
-     * 一律用最高级会让"真正接近强平"和"只是越了警戒线"看起来一样，等于没有优先级。</p>
+     * <p>等级与 {@code RiskCheckExecutor} 的命中口径保持一致：</p>
+     * <ul>
+     *   <li>引擎 {@code DANGER} → {@link NotificationLevel#RISK}（列表置顶）；</li>
+     *   <li>引擎 {@code WARN} → {@link NotificationLevel#WARN}；</li>
+     *   <li>引擎仍为 {@code SAFE}，但维持担保比例已经跌破任务自定义的
+     *       {@code warnBelowPct} → {@link NotificationLevel#WARN}。</li>
+     * </ul>
+     * <p>最后一条不能漏：执行器允许用户把警戒线设得比系统默认更严格，
+     * 否则会出现“执行历史已经判定风险命中，但站内通知完全不发”的口径分裂。</p>
      */
     private void raiseRiskAlertIfHit(ScheduledTaskRunFinishedEvent event) {
         Map<String, Object> artifacts = readMap(event.artifactsJson());
@@ -113,17 +118,22 @@ public class ScheduledTaskNotificationListener {
             return;
         }
         String riskStatus = asText(artifacts.get("riskStatus"));
+        Double maintMarginPct = asDouble(artifacts.get("maintMarginPct"));
+        Double warnBelowPct = asDouble(artifacts.get("warnBelowPct"));
         NotificationLevel level = switch (riskStatus == null ? "" : riskStatus) {
             case "DANGER" -> NotificationLevel.RISK;
             case "WARN" -> NotificationLevel.WARN;
-            default -> null;
+            case "NONE" -> null;
+            default -> maintMarginPct != null && warnBelowPct != null && maintMarginPct < warnBelowPct
+                    ? NotificationLevel.WARN
+                    : null;
         };
         if (level == null) {
             return;
         }
 
         notificationService.raise(event.userId(), NotificationType.RISK_ALERT, level,
-                "风险检测命中：" + name(event.taskName()) + "（维持担保比例 " + pct(artifacts.get("maintMarginPct")) + "）",
+                "风险检测命中：" + name(event.taskName()) + "（维持担保比例 " + pct(maintMarginPct) + "）",
                 event.resultSummary(),
                 LINK_SCHEDULED_TASK, event.taskId());
     }
@@ -142,11 +152,22 @@ public class ScheduledTaskNotificationListener {
         return taskName == null || taskName.isBlank() ? "未命名任务" : taskName;
     }
 
-    private static String pct(Object value) {
+    private static String pct(Double value) {
+        return value == null ? "—" : String.format(Locale.ROOT, "%.2f%%", value);
+    }
+
+    private static Double asDouble(Object value) {
         if (value instanceof Number number) {
-            return String.format(Locale.ROOT, "%.2f%%", number.doubleValue());
+            return number.doubleValue();
         }
-        return "—";
+        if (value == null) {
+            return null;
+        }
+        try {
+            return Double.parseDouble(value.toString());
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
     }
 
     private static String asText(Object value) {
