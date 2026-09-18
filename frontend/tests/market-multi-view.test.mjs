@@ -9,23 +9,38 @@ const src = path.resolve(here, '../src')
 const read = relative => fs.readFileSync(path.join(src, relative), 'utf8')
 
 /**
- * 行情页多市场 + 每日要闻的接线守卫。
+ * 行情页与多市场工作台的接线守卫。
  *
- * 这里断言的是**结构与安全点**，不是像素：多市场看板是否真的挂在行情页上、
- * 要闻是否只对 http(s) 链接渲染可点 <a>、接口路径是否对得上。
+ * 行情页只保留大盘/贵金属总览与黄金主图；A股/美股/加密标的 CRUD 必须独立在“多市场”。
  */
-test('market page mounts the multi-market board beside the gold chart', () => {
+test('market page mounts market overview instead of the multi-market workbench', () => {
   const page = read('pages/MarketPage.vue')
+  const app = read('App.vue')
 
-  assert.match(page, /import MultiMarketBoard from '\.\.\/components\/market\/MultiMarketBoard\.vue'/)
-  assert.match(page, /<MultiMarketBoard :active="active" \/>/)
-  // 不能把原来的黄金主图/侧栏挤掉：原有结构仍在
+  assert.match(page, /import MarketOverviewBoard from '\.\.\/components\/market\/MarketOverviewBoard\.vue'/)
+  assert.match(page, /<MarketOverviewBoard :active="active" @select-gold="handleQuoteSelect" \/>/)
+  assert.doesNotMatch(page, /MultiMarketBoard/)
+  assert.match(app, /'多市场': \(\) => import\('\.\/components\/CrossMarketView\.vue'\)/)
+  // 原来的黄金主图/侧栏仍保留。
   assert.match(page, /market-primary-layout/)
   assert.match(page, /<QuoteStrip[\s\S]*@select="handleQuoteSelect"/)
   assert.match(page, /class="market-rail market-inspector"/)
 })
 
-test('multi-market board consumes the existing extended-market APIs', () => {
+ test('market overview reads broad indexes, core gold quotes and daily news', () => {
+  const board = read('components/market/MarketOverviewBoard.vue')
+
+  assert.match(board, /sh000001/)
+  assert.match(board, /sz399001/)
+  assert.match(board, /sz399006/)
+  assert.match(board, /api\.marketAssetQuote\(item\.market, item\.symbol\)/)
+  assert.match(board, /api\.marketPrices\(\)/)
+  assert.match(board, /api\.jdPrices\(\)/)
+  assert.match(board, /api\.newsDaily\(8, force\)/)
+  assert.match(board, /@click="selectGold\(card\)"/)
+})
+
+test('legacy multi-market board still consumes the existing extended-market APIs', () => {
   const board = read('components/market/MultiMarketBoard.vue')
 
   assert.match(board, /api\.marketInstruments\(\)/)
@@ -60,6 +75,26 @@ test('api client exposes the daily news endpoint', () => {
   assert.match(client, /newsDaily: \(limit = 12, force = false\) => get\(API_BASE, '\/api\/news\/daily'/)
   // 必须带 refresh/force，否则后端不会触发抓取，前端"抓取"按钮会假成功
   assert.match(client, /refresh: true, force/)
+})
+
+test('cross-market instrument CRUD and selection are wired to persisted preferences', () => {
+  const view = read('components/CrossMarketView.vue')
+  const list = read('components/market/InstrumentList.vue')
+
+  // Create / Read(search) / Update / Delete 都必须存在。
+  assert.match(view, /新增标的/)
+  assert.match(view, /resolveCustomInstrument/)
+  assert.match(list, /placeholder="搜索名称 \/ 代码"/)
+  assert.match(view, /saveEditedInstrument/)
+  assert.match(view, /removeFromWatchlist/)
+  assert.match(view, /api\.saveMarketPreferences\(preferences\)/)
+
+  // 切换标的时先废弃旧请求，再立即加载新标的；不能只靠 watcher 间接刷新。
+  assert.match(view, /async function selectInstrument\(symbol\)/)
+  assert.match(view, /latestDataRequest\.invalidate\(\)/)
+  assert.match(view, /await nextTick\(\)[\s\S]*await loadData\(\)/)
+  assert.doesNotMatch(view, /watch\(\[selectedSymbol, interval\]/)
+  assert.match(view, /market\.value !== requestMarket[\s\S]*selectedSymbol\.value !== requestSymbol/)
 })
 
 test('unavailable news and unavailable board degrade independently', () => {

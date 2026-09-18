@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { api } from '../api/client'
 import QuoteStrip from '../components/market/QuoteStrip.vue'
-import MultiMarketBoard from '../components/market/MultiMarketBoard.vue'
+import MarketOverviewBoard from '../components/market/MarketOverviewBoard.vue'
 import DataState from '../components/common/DataState.vue'
 import { useMarketChart } from '../composables/useMarketChart'
 import { usePolling } from '../composables/usePolling'
@@ -459,8 +459,8 @@ watch([marketFocus, () => jdKlineCfg.market], () => {
       </aside>
     </div>
 
-    <!-- 黄金之外的维度：A 股 / 美股 / 加密 看板 +每日要闻（各自独立降级） -->
-    <MultiMarketBoard :active="active" />
+    <!-- 行情页只负责市场总览与黄金主图；A股/美股/加密的标的工作台独立放在“多市场”。 -->
+    <MarketOverviewBoard :active="active" @select-gold="handleQuoteSelect" />
   </section>
 </template>
 

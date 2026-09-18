@@ -214,7 +214,7 @@ async function resolveCustomInstrument() {
     if (existingIndex >= 0) watchlist.value.splice(existingIndex, 1, item)
     else watchlist.value.push(item)
     await persistPreferences()
-    selectInstrument(item.symbol)
+    await selectInstrument(item.symbol)
     customQuery.value = ''
   } catch (e) {
     resolveError.value = e?.message || String(e)
@@ -229,7 +229,7 @@ async function addToWatchlist(item) {
   if (existingIndex >= 0) watchlist.value.splice(existingIndex, 1, item)
   else watchlist.value.push(item)
   await persistPreferences()
-  selectInstrument(item.symbol)
+  await selectInstrument(item.symbol)
 }
 
 async function removeFromWatchlist(item) {
@@ -262,10 +262,25 @@ function resetSelectedData() {
   error.value = ''
 }
 
-function selectInstrument(symbol) {
-  if (selectedSymbol.value === symbol) return
-  selectedSymbol.value = symbol
-  resetSelectedData()
+async function selectInstrument(symbol) {
+  const nextSymbol = String(symbol || '').trim()
+  if (!nextSymbol) return
+
+  if (selectedSymbol.value === nextSymbol && loading.value) return
+
+  // 切换标的必须先让正在飞行中的旧请求失效；否则旧报价/K线可能在下一帧回写，
+  // 造成“高亮已经切换，但右侧仍停留在上一标的”甚至看起来无法切换。
+  latestDataRequest.invalidate()
+
+  if (selectedSymbol.value !== nextSymbol) {
+    selectedSymbol.value = nextSymbol
+    analysis.value = ''
+    resetSelectedData()
+  }
+
+  if (bootstrapping) return
+  await nextTick()
+  await loadData()
 }
 
 function chooseDefaultSymbol() {
@@ -274,6 +289,7 @@ function chooseDefaultSymbol() {
     ? selectedSymbol.value
     : available[0]?.symbol || ''
   if (nextSymbol !== selectedSymbol.value) {
+    latestDataRequest.invalidate()
     selectedSymbol.value = nextSymbol
     resetSelectedData()
   }
@@ -322,7 +338,7 @@ async function saveEditedInstrument() {
     watchlist.value.splice(index, 1, next)
     await persistPreferences()
     cancelEditInstrument()
-    selectInstrument(next.symbol)
+    await selectInstrument(next.symbol)
   } catch (e) {
     editError.value = e?.message || String(e)
   } finally {
@@ -358,7 +374,9 @@ async function loadData() {
       api.marketAssetQuote(requestMarket, requestSymbol),
       api.marketAssetKline(requestMarket, requestSymbol, requestInterval, 120),
     ])
-    if (!latestDataRequest.isLatest(requestVersion)) return
+    if (!latestDataRequest.isLatest(requestVersion)
+        || market.value !== requestMarket
+        || selectedSymbol.value !== requestSymbol) return
     if (quoteResponse.code !== 200) throw new Error(quoteResponse.message || '报价加载失败')
     if (klineResponse.code !== 200) throw new Error(klineResponse.message || 'K线加载失败')
     quote.value = quoteResponse.data
@@ -370,9 +388,17 @@ async function loadData() {
     await nextTick()
     if (latestDataRequest.isLatest(requestVersion)) await renderChart()
   } catch (e) {
-    if (latestDataRequest.isLatest(requestVersion)) error.value = e?.message || String(e)
+    if (latestDataRequest.isLatest(requestVersion)
+        && market.value === requestMarket
+        && selectedSymbol.value === requestSymbol) {
+      error.value = e?.message || String(e)
+    }
   } finally {
-    if (latestDataRequest.isLatest(requestVersion)) loading.value = false
+    if (latestDataRequest.isLatest(requestVersion)
+        && market.value === requestMarket
+        && selectedSymbol.value === requestSymbol) {
+      loading.value = false
+    }
   }
 }
 
@@ -434,8 +460,9 @@ watch(currentInstrument, item => {
     sourceModule: 'cross-market',
   })
 }, { immediate: true })
-watch([selectedSymbol, interval], () => {
+watch(interval, () => {
   analysis.value = ''
+  latestDataRequest.invalidate()
   resetSelectedData()
   if (bootstrapping) return
   loadData()
@@ -521,12 +548,12 @@ onBeforeUnmount(() => {
     <div v-if="error && kline.length" class="error">{{ error }}</div>
 
     <div class="symbol-parser">
-      <span class="parser-label">自定义标的</span>
+      <span class="parser-label">新增标的</span>
       <input v-model="customQuery" class="parser-input" :placeholder="market === 'a_share' ? '输入 600519 / SH600519' : market === 'us_stock' ? '输入 AAPL / BRK.B' : '输入 BTC / BTCUSDT'" @keyup.enter="resolveCustomInstrument" />
       <button type="button" class="btn parser-btn" :disabled="resolveLoading || !customQuery.trim()" @click="resolveCustomInstrument">
-        {{ resolveLoading ? '解析中…' : '解析并加载' }}
+        {{ resolveLoading ? '解析中…' : '添加并选中' }}
       </button>
-      <span class="parser-hint">仅校验代码格式，不会保存密钥或任意外部地址</span>
+      <span class="parser-hint">新增后写入自选；左侧支持搜索查看、修改名称/代码和删除，偏好同步到账号</span>
     </div>
     <div class="preference-status" aria-live="polite">
       <span v-if="preferenceSaving">标的偏好保存中…</span>
