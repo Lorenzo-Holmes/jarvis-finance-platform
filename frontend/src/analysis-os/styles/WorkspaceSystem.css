@@ -160,7 +160,7 @@
 .workspace-shell.switching .entity-context-display { opacity: .74; transform: translateY(-1px) scale(.985); }
 .entity-views {
   position: relative;
-  isolation: isolate;
+  /* 不创建独立层叠上下文：fixed 菜单需要真正盖过 workspace body。 */
   gap: 4px;
   padding: 0 12px;
 }
@@ -204,9 +204,9 @@
     opacity var(--ds-motion-state) ease,
     background var(--ds-motion-surface) ease;
 }
-.entity-views > button,
+.entity-views > button { position: relative; z-index: 1; }
 .entity-more,
-.split-control { position: relative; z-index: 1; }
+.split-control { position: relative; }
 
 /* Focus + common workspace controls */
 .global-search-field:focus-visible,

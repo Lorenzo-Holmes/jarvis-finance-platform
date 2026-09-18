@@ -110,15 +110,28 @@ export class VisualWorkspacePage extends WorkspacePage {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify(visualFixture(pathname)),
+      body: JSON.stringify(visualFixture(url)),
     })
   }
 }
 
-function visualFixture(pathname: string): unknown {
+function visualFixture(url: URL): unknown {
+  const pathname = url.pathname
   if (pathname === '/api/market/prices') return { code: 200, data: FIXED_MARKET }
   if (pathname === '/api/jd/prices') return { code: 200, data: FIXED_JD }
   if (pathname === '/api/market/kline') return { code: 200, data: [] }
+  if (pathname === '/api/market/extended/quote') {
+    const symbol = url.searchParams.get('symbol') || ''
+    const indexQuotes: Record<string, { name: string; price: number; change_pct: number }> = {
+      sh000001: { name: '上证指数', price: 3911.87, change_pct: 0.94 },
+      sz399001: { name: '深证成指', price: 13640.87, change_pct: 1.72 },
+      sz399006: { name: '创业板指', price: 3372.68, change_pct: 2.25 },
+    }
+    const quote = indexQuotes[symbol]
+    return quote
+      ? { code: 200, data: { symbol, ...quote, source: 'Visual Fixture' } }
+      : { code: 404, message: 'visual fixture symbol not found', data: null }
+  }
   if (pathname === '/api/market/instruments') return { code: 200, data: [] }
   if (pathname === '/api/market/preferences') {
     return { code: 200, data: { persisted: false, watchlist: [], hiddenDefaultKeys: [] } }

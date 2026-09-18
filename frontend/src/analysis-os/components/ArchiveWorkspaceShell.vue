@@ -171,7 +171,13 @@ function requestReturn() {
 }
 
 function requestModule(next) {
-  if (!props.active || !next || next.key === props.module.key || switching.value || returning.value) return
+  if (!props.active || !next || switching.value || returning.value) return
+  // 当前模块仍应收起已打开菜单，否则用户点击后会感觉操作没有生效。
+  if (next.key === props.module.key) {
+    if (entityMoreRef.value?.open) entityMoreRef.value.open = false
+    if (splitMenuRef.value?.open) splitMenuRef.value.open = false
+    return
+  }
   switching.value = true
   const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
   if (switchTimer) window.clearTimeout(switchTimer)
@@ -205,6 +211,38 @@ function syncEntitySelectionLens() {
       transform: `translate3d(${target.offsetLeft}px, 0, 0)`,
     }
   })
+}
+
+const POPOVER_GAP = 8
+const POPOVER_MARGIN = 8
+
+/**
+ * .entity-views 是横向滚动容器；浏览器会把它的纵向 overflow 也计算成可裁剪区域。
+ * 因此菜单使用 fixed 定位，并在打开、横向滚动与窗口缩放时按 summary 重新对齐。
+ */
+function alignPopover(details) {
+  if (!details) return
+  const summary = details.querySelector(':scope > summary')
+  const popover = details.querySelector(':scope > .entity-more-popover, :scope > .split-popover')
+  if (!summary || !popover) return
+  const anchor = summary.getBoundingClientRect()
+  const width = popover.getBoundingClientRect().width
+    || Number.parseFloat(window.getComputedStyle(popover).width)
+    || 0
+  const maxLeft = Math.max(POPOVER_MARGIN, window.innerWidth - width - POPOVER_MARGIN)
+  const left = Math.min(Math.max(POPOVER_MARGIN, anchor.right - width), maxLeft)
+  popover.style.left = `${Math.round(left)}px`
+  popover.style.top = `${Math.round(anchor.bottom + POPOVER_GAP)}px`
+}
+
+function alignOpenPopovers() {
+  if (entityMoreRef.value?.open) alignPopover(entityMoreRef.value)
+  if (splitMenuRef.value?.open) alignPopover(splitMenuRef.value)
+}
+
+function onViewportResize() {
+  syncEntitySelectionLens()
+  alignOpenPopovers()
 }
 
 function navigateHistory(delta) {
@@ -361,7 +399,7 @@ watch(() => props.active, active => {
 
 onMounted(() => {
   window.addEventListener('keydown', onKeydown)
-  window.addEventListener('resize', syncEntitySelectionLens)
+  window.addEventListener('resize', onViewportResize)
   document.addEventListener('pointerdown', closeMenusFromOutside)
   if (props.active) requestAnimationFrame(() => {
     focusModuleTitle()
@@ -374,7 +412,7 @@ onBeforeUnmount(() => {
   if (switchTimer) window.clearTimeout(switchTimer)
   if (entityLensRaf) window.cancelAnimationFrame(entityLensRaf)
   window.removeEventListener('keydown', onKeydown)
-  window.removeEventListener('resize', syncEntitySelectionLens)
+  window.removeEventListener('resize', onViewportResize)
   document.removeEventListener('pointerdown', closeMenusFromOutside)
 })
 </script>
@@ -475,7 +513,7 @@ onBeforeUnmount(() => {
           </span>
         </div>
 
-        <nav ref="entityViewsRef" class="entity-views" aria-label="当前研究对象视图">
+        <nav ref="entityViewsRef" class="entity-views" aria-label="当前研究对象视图" @scroll.passive="alignOpenPopovers">
           <i class="entity-selection-lens" aria-hidden="true" :style="entityLensStyle"></i>
           <button
             v-for="item in entityViews"
@@ -487,8 +525,8 @@ onBeforeUnmount(() => {
           >
             {{ ENTITY_VIEW_LABELS[item.key] }}
           </button>
-          <details ref="entityMoreRef" class="entity-more" :class="{ active: secondaryViewActive }">
-            <summary>更多</summary>
+          <details ref="entityMoreRef" class="entity-more" :class="{ active: secondaryViewActive }" @toggle="alignOpenPopovers">
+            <summary @click="alignPopover(entityMoreRef)">更多</summary>
             <div class="entity-more-popover">
               <button
                 v-for="item in secondaryViews"
@@ -502,8 +540,8 @@ onBeforeUnmount(() => {
               </button>
             </div>
           </details>
-          <details ref="splitMenuRef" class="split-control" :class="{ active: props.splitRoute }">
-            <summary>{{ props.splitRoute ? `▥ ${splitLabel}` : '▥ 并排' }}</summary>
+          <details ref="splitMenuRef" class="split-control" :class="{ active: props.splitRoute }" @toggle="alignOpenPopovers">
+            <summary @click="alignPopover(splitMenuRef)">{{ props.splitRoute ? `▥ ${splitLabel}` : '▥ 并排' }}</summary>
             <div class="split-popover">
               <div class="split-popover-head">
                 <span>并排查看</span>
@@ -1405,8 +1443,8 @@ onBeforeUnmount(() => {
   align-items: stretch;
   gap: 2px;
   padding: 0 9px;
+  /* overflow-x:auto 会让 overflow-y 被计算为 auto，子弹层因此会被裁剪。 */
   overflow-x: auto;
-  overflow-y: visible;
   scrollbar-width: none;
 }
 .entity-views::-webkit-scrollbar { display: none; }
@@ -1445,16 +1483,16 @@ onBeforeUnmount(() => {
   background: var(--accent);
   transform: translateX(-50%);
 }
-.entity-more { position: relative; }
 .entity-more > summary::-webkit-details-marker { display: none; }
-.split-control { position: relative; margin-left: auto; }
+.split-control { margin-left: auto; }
 .split-control > summary::-webkit-details-marker { display: none; }
 .entity-more-popover {
-  position: absolute;
+  position: fixed;
   z-index: 170;
-  right: 0;
-  top: calc(100% + 8px);
+  left: 0;
+  top: 0;
   width: 270px;
+  box-sizing: border-box;
   padding: 8px;
   border: 1px solid var(--line-strong);
   border-radius: 7px;
@@ -1482,11 +1520,12 @@ onBeforeUnmount(() => {
 .entity-more-popover small { color: var(--subtle); font-size: 8px; line-height: 1.45; }
 
 .split-popover {
-  position: absolute;
+  position: fixed;
   z-index: 175;
-  right: 0;
-  top: calc(100% + 8px);
+  left: 0;
+  top: 0;
   width: 290px;
+  box-sizing: border-box;
   padding: 8px;
   border: 1px solid var(--line-strong);
   border-radius: 7px;

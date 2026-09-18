@@ -223,6 +223,18 @@ test('fluid terminal P0 uses Apple interaction materials while preserving Rhine 
   assert.match(ticker, /transform: scale\(\.98\)/)
 })
 
+test('workspace navigation popovers escape the horizontal nav stacking context', () => {
+  const shell = read('analysis-os/components/ArchiveWorkspaceShell.vue')
+  const system = read('analysis-os/styles/WorkspaceSystem.css')
+
+  assert.match(shell, /function alignPopover\(details\)/)
+  assert.match(shell, /@scroll\.passive="alignOpenPopovers"/)
+  assert.match(shell, /\.entity-more-popover\s*\{[\s\S]*position:\s*fixed/)
+  assert.match(shell, /\.split-popover\s*\{[\s\S]*position:\s*fixed/)
+  assert.doesNotMatch(system, /\.entity-views\s*\{[^}]*isolation:\s*isolate/)
+  assert.doesNotMatch(system, /\.entity-more,\s*\n\.split-control\s*\{[^}]*z-index:/)
+})
+
 test('strategy inputs and research quick peek share the fluid interaction system', () => {
   const strategy = read('pages/StrategyPage.vue')
   const choice = read('components/common/ChoicePopover.vue')
