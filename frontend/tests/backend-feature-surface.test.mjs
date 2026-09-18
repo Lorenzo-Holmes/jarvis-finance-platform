@@ -12,6 +12,7 @@ test('backend scheduled-task capabilities have a visible frontend workspace', ()
   const client = read('api/client.js')
   const page = read('pages/ScheduledTasksPage.vue')
   const modules = read('analysis-os/data/modules.js')
+  const tabs = read('composables/useWorkspaceTabs.js')
 
   assert.match(client, /scheduledTasks:/)
   assert.match(client, /scheduledTaskTypes:/)
@@ -24,12 +25,30 @@ test('backend scheduled-task capabilities have a visible frontend workspace', ()
   assert.match(client, /scheduledTaskRuns:/)
 
   assert.match(modules, /labelZh: '定时任务'/)
+  assert.match(tabs, /'定时任务'/)
   assert.match(page, /新建任务/)
   assert.match(page, /立即执行/)
   assert.match(page, /暂停/)
   assert.match(page, /恢复/)
   assert.match(page, /执行历史/)
   assert.match(page, /执行器未就绪/)
+})
+
+test('admin backend is surfaced as an ADMIN-only SYSTEM workspace instead of a legacy tab', () => {
+  const app = read('App.vue')
+  const modules = read('analysis-os/data/modules.js')
+  const tabs = read('composables/useWorkspaceTabs.js')
+  const shell = read('analysis-os/components/ArchiveWorkspaceShell.vue')
+
+  assert.match(modules, /ADMIN_WORKSPACE_MODULE/)
+  assert.match(modules, /labelZh: '管理后台'/)
+  assert.match(modules, /category: 'SYSTEM'/)
+  assert.match(modules, /adminOnly: true/)
+  assert.match(app, /user\.value\?\.role === 'ADMIN'/)
+  assert.match(app, /\[\.\.\.JARVIS_MODULES, ADMIN_WORKSPACE_MODULE\]/)
+  assert.match(app, /workspaceRenderRoute === '管理后台'/)
+  assert.match(tabs, /const ADMIN_TAB = '管理后台'/)
+  assert.doesNotMatch(shell, /旧版后台/)
 })
 
 test('backend notifications are surfaced in the workspace header', () => {

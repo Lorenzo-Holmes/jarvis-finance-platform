@@ -52,7 +52,7 @@ test.describe('冒烟 · 基础渲染', () => {
     await expect(page.getByRole('heading', { name: '多市场自选' })).toBeVisible()
     await expect(page.getByRole('heading', { name: '市场要闻' })).toBeVisible()
 
-    for (const label of ['研究', '产业链', '策略', '交易'] as const) {
+    for (const label of ['研究', '产业链', '策略', '交易', '系统'] as const) {
       await visualWorkspacePage.openWorkspaceModule(label)
       await expect(visualWorkspacePage.workspaceShell).toBeVisible()
     }

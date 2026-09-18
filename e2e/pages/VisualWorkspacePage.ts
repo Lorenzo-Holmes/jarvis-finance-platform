@@ -63,13 +63,14 @@ export class VisualWorkspacePage extends WorkspacePage {
     await this.raw.waitForTimeout(250)
   }
 
-  async openWorkspaceModule(label: '行情' | '研究' | '产业链' | '策略' | '交易'): Promise<void> {
+  async openWorkspaceModule(label: '行情' | '研究' | '产业链' | '策略' | '交易' | '系统'): Promise<void> {
     const target = {
       行情: { group: '市场', module: '行情' },
       研究: { group: '研究', module: '研究助手' },
       产业链: { group: '情报', module: '产业链图谱' },
       策略: { group: '策略', module: '策略生成' },
       交易: { group: '执行', module: '模拟盘' },
+      系统: { group: '系统', module: '定时任务' },
     }[label]
     const menu = this.raw.getByLabel(target.group + '功能菜单')
     await this.clickAndWait(menu, '视觉回归应能展开' + target.group + '功能菜单')

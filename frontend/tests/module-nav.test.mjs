@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { JARVIS_MODULES } from '../src/analysis-os/data/modules.js'
+import { ADMIN_WORKSPACE_MODULE, JARVIS_MODULES } from '../src/analysis-os/data/modules.js'
 import {
   buildModuleNavGroups,
   groupIsCurrent,
@@ -42,6 +42,17 @@ test('各分组的模块数量与模块表一致', () => {
   assert.equal(modulesInGroup(groups, 'EXECUTION').length, 1)
   assert.equal(modulesInGroup(groups, 'SYSTEM').length, 2)
   assert.deepEqual(modulesInGroup(groups, 'NOPE'), [])
+})
+
+test('管理员工作区把管理后台注入 SYSTEM，基础模块表仍保持普通用户可见集合', () => {
+  const adminModules = [...JARVIS_MODULES, ADMIN_WORKSPACE_MODULE]
+  const adminGroups = buildModuleNavGroups(adminModules)
+  const system = modulesInGroup(adminGroups, 'SYSTEM')
+
+  assert.equal(JARVIS_MODULES.some(module => module.key === 'admin'), false)
+  assert.equal(ADMIN_WORKSPACE_MODULE.adminOnly, true)
+  assert.deepEqual(system.map(module => module.key), ['ops', 'scheduled-tasks', 'admin'])
+  assert.equal(navCoversAllModules(adminModules, adminGroups), true)
 })
 
 test('切换模块会展开该模块所在分组', () => {

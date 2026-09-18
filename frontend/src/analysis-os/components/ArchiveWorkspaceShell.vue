@@ -17,7 +17,7 @@ const props = defineProps({
   nightMode: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['return', 'navigate-module', 'close-workspace-tab', 'open-split', 'close-split', 'legacy-admin', 'logout', 'update-profile', 'toggle-night-mode'])
+const emit = defineEmits(['return', 'navigate-module', 'close-workspace-tab', 'open-split', 'close-split', 'logout', 'update-profile', 'toggle-night-mode'])
 const returning = ref(false)
 const switching = ref(false)
 const editingProfile = ref(false)
@@ -517,7 +517,6 @@ onBeforeUnmount(() => {
                 <span>夜间模式</span>
                 <i class="theme-toggle-indicator" aria-hidden="true"></i>
               </button>
-              <button v-if="props.user?.role === 'ADMIN'" type="button" aria-label="旧版后台" @click="emit('legacy-admin')">旧版后台</button>
               <button type="button" @click="api.githubBindAuthorize()">GitHub</button>
               <button type="button" class="account-logout" @click="emit('logout')">退出登录</button>
             </div>

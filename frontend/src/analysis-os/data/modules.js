@@ -52,6 +52,13 @@ export function groupModulesByCategory(modules = JARVIS_MODULES) {
   return result
 }
 
+export const ADMIN_WORKSPACE_MODULE = Object.freeze({
+  id: 'module:admin', no: 15, lane: 4, row: 3, key: 'admin',
+  labelEn: 'ADMIN', labelZh: '管理后台', category: 'SYSTEM', routeKey: '管理后台',
+  code: 'SY-15', summary: '管理用户状态、角色、配额与功能权限。',
+  capabilities: ['USERS', 'ROLES', 'QUOTAS'], availability: 'ready', adminOnly: true,
+})
+
 export const JARVIS_MODULES = [
   {
     id: 'module:market', no: 1, lane: 0, row: 0, key: 'market',

@@ -124,6 +124,8 @@ assert_wrapped_ok "database detail" "$SMOKE_API_BASE/api/health/db"
 
 echo "== Business reads =="
 assert_wrapped_ok "market prices" "$SMOKE_API_BASE/api/market/prices"
+assert_wrapped_ok "market overview" "$SMOKE_API_BASE/api/market/overview"
+assert_wrapped_ok "daily market news" "$SMOKE_API_BASE/api/news/daily?limit=12&refresh=true&force=false"
 assert_price_stream "1Hz market SSE" "$SMOKE_API_BASE/api/market/prices/stream"
 assert_wrapped_ok "daily K-line" "$SMOKE_API_BASE/api/market/kline?market=gold_etf&interval=day&limit=5"
 assert_wrapped_ok "sim account" "$SMOKE_API_BASE/api/sim/account"

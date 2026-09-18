@@ -94,7 +94,13 @@ export function newsHost(url) {
  * limit 只做节流，不改变顺序（资讯按时间新→旧，顺序就是语义）。
  */
 export function pickNewsItems(payload, limit = 12) {
-  const list = Array.isArray(payload) ? payload : Array.isArray(payload?.data) ? payload.data : []
+  const list = Array.isArray(payload)
+    ? payload
+    : Array.isArray(payload?.items)
+      ? payload.items
+      : Array.isArray(payload?.data)
+        ? payload.data
+        : []
   const cap = Number.isFinite(limit) && limit > 0 ? limit : list.length
   return list
     .slice(0, cap)

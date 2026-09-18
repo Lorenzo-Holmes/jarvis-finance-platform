@@ -1,13 +1,14 @@
 import { computed, ref, watch } from 'vue'
 
 const DEFAULT_TAB = '研究终端'
-const BASE_TABS = [DEFAULT_TAB, '行情', '多市场', '回测', '模拟盘', '研究助手', '智能报价', '多空研报', '财报解析', '产业链图谱', '风险预警', '策略生成', '市场趋势预测', '运维']
+const BASE_TABS = [DEFAULT_TAB, '行情', '多市场', '回测', '模拟盘', '研究助手', '智能报价', '多空研报', '财报解析', '产业链图谱', '风险预警', '策略生成', '市场趋势预测', '运维', '定时任务']
+const ADMIN_TAB = '管理后台'
 
 export function useWorkspaceTabs(userRef) {
   const activeTab = ref(DEFAULT_TAB)
   const visitedTabs = ref(new Set([DEFAULT_TAB]))
   const workspaceTabs = ref([])
-  const tabs = computed(() => userRef.value?.role === 'ADMIN' ? [...BASE_TABS, '管理'] : BASE_TABS)
+  const tabs = computed(() => userRef.value?.role === 'ADMIN' ? [...BASE_TABS, ADMIN_TAB] : BASE_TABS)
   let restoringSession = false
 
   function sessionKey() {
@@ -43,7 +44,7 @@ export function useWorkspaceTabs(userRef) {
     if (!saved || typeof saved !== 'object') return
     const allowed = new Set(tabs.value)
     const restoredTabs = Array.isArray(saved.workspaceTabs)
-      ? saved.workspaceTabs.filter(name => allowed.has(name) && name !== DEFAULT_TAB && name !== '管理')
+      ? saved.workspaceTabs.filter(name => allowed.has(name) && name !== DEFAULT_TAB)
       : []
     const restoredActive = allowed.has(saved.activeTab) ? saved.activeTab : DEFAULT_TAB
 
@@ -68,7 +69,7 @@ export function useWorkspaceTabs(userRef) {
       next.add(name)
       visitedTabs.value = next
     }
-    if (name !== DEFAULT_TAB && name !== '管理' && !workspaceTabs.value.includes(name)) {
+    if (name !== DEFAULT_TAB && !workspaceTabs.value.includes(name)) {
       workspaceTabs.value = [...workspaceTabs.value, name]
     }
   }

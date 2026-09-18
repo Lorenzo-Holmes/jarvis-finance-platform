@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { pickNewsItems } from '../src/utils/marketBoard.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const src = path.resolve(here, '../src')
@@ -49,6 +50,25 @@ test('market home watchlist supports import and promotes a selected instrument t
   assert.match(board, /api\.saveMarketPreferences\(value\)/)
   assert.match(board, /emit\('context-change'/)
   assert.match(board, /sourceModule: 'market-watchlist'/)
+})
+
+test('market news accepts the Java daily-news payload shape instead of dropping data.items', () => {
+  const items = pickNewsItems({
+    available: true,
+    items: [
+      {
+        title: 'Market headline',
+        url: 'https://example.com/news/1',
+        source: 'Example Wire',
+        published: '2026-09-18T17:08:01Z',
+      },
+    ],
+  }, 12)
+
+  assert.equal(items.length, 1)
+  assert.equal(items[0].title, 'Market headline')
+  assert.equal(items[0].source, 'Example Wire')
+  assert.equal(items[0].linkable, true)
 })
 
 test('market news is a dedicated section below the watchlist', () => {

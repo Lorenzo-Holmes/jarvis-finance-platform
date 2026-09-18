@@ -2,13 +2,11 @@
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { api } from './api/client'
 import LoginView from './components/LoginView.vue'
-import AppHeader from './components/common/AppHeader.vue'
-import AppTabs from './components/common/AppTabs.vue'
 import LandingPage from './pages/LandingPage.vue'
 import { useAuthSession } from './composables/useAuthSession'
 import { useWorkspaceTabs } from './composables/useWorkspaceTabs'
 import ArchiveWorkspaceShell from './analysis-os/components/ArchiveWorkspaceShell.vue'
-import { JARVIS_MODULES } from './analysis-os/data/modules'
+import { ADMIN_WORKSPACE_MODULE, JARVIS_MODULES } from './analysis-os/data/modules'
 import { useResearchContext } from './analysis-os/state/researchContext'
 import { useWorkflowHandoff } from './analysis-os/state/workflowHandoff'
 
@@ -28,6 +26,7 @@ const workspaceLoaders = Object.freeze({
   '运维': () => import('./components/OpsView.vue'),
   '市场趋势预测': () => import('./pages/TrendPage.vue'),
   '定时任务': () => import('./pages/ScheduledTasksPage.vue'),
+  '管理后台': () => import('./components/AdminView.vue'),
 })
 const MarketPage = defineAsyncComponent(workspaceLoaders['行情'])
 const BacktestPage = defineAsyncComponent(workspaceLoaders['回测'])
@@ -43,7 +42,7 @@ const QuotePage = defineAsyncComponent(workspaceLoaders['智能报价'])
 const TrendPage = defineAsyncComponent(workspaceLoaders['市场趋势预测'])
 const OpsView = defineAsyncComponent(workspaceLoaders['运维'])
 const ScheduledTasksPage = defineAsyncComponent(workspaceLoaders['定时任务'])
-const AdminView = defineAsyncComponent(() => import('./components/AdminView.vue'))
+const AdminView = defineAsyncComponent(workspaceLoaders['管理后台'])
 const workspacePreloads = new Map()
 const preparedWorkspaceRoute = ref('')
 const archiveHandoffHold = ref(false)
@@ -107,14 +106,19 @@ const LOCAL_PREVIEW_USER = Object.freeze({
 const user = computed(() => previewMode.value ? LOCAL_PREVIEW_USER : sessionUser.value)
 const isLoggedIn = computed(() => previewMode.value || sessionLoggedIn.value)
 const workspace = useWorkspaceTabs(user)
-const { activeTab, visitedTabs, workspaceTabs, tabs, switchTab, closeWorkspaceTab } = workspace
+const { activeTab, visitedTabs, workspaceTabs, switchTab, closeWorkspaceTab } = workspace
 const splitViewRoute = ref('')
 const SPLIT_VIEW_ROUTES = new Set(['行情', '研究助手', '财报解析', '风险预警'])
 const publicView = ref('landing')
-const activeModule = computed(() => JARVIS_MODULES.find(module => module.routeKey === activeTab.value) || null)
+const workspaceModules = computed(() => (
+  user.value?.role === 'ADMIN'
+    ? [...JARVIS_MODULES, ADMIN_WORKSPACE_MODULE]
+    : JARVIS_MODULES
+))
+const activeModule = computed(() => workspaceModules.value.find(module => module.routeKey === activeTab.value) || null)
 const preparedModule = computed(() => (
   activeModule.value
-  || JARVIS_MODULES.find(module => module.routeKey === preparedWorkspaceRoute.value)
+  || workspaceModules.value.find(module => module.routeKey === preparedWorkspaceRoute.value)
   || null
 ))
 const workspaceRenderRoute = computed(() => activeModule.value?.routeKey || preparedWorkspaceRoute.value)
@@ -245,7 +249,7 @@ function preloadWorkspace(routeKey, priority = 'idle') {
 
 function navigateWorkspace(routeKey) {
   const fromArchive = activeTab.value === '研究终端'
-  const module = JARVIS_MODULES.find(item => item.routeKey === routeKey)
+  const module = workspaceModules.value.find(item => item.routeKey === routeKey)
   if (module) {
     archiveModuleKey.value = module.key
     preparedWorkspaceRoute.value = routeKey
@@ -285,13 +289,10 @@ async function handleWorkspaceReady(routeKey = activeTab.value) {
   }, 320)
 }
 
-function openLegacyAdmin() {
-  if (user.value?.role !== 'ADMIN') return
-  switchTab('管理')
-}
-
 function returnToArchive() {
-  if (activeModule.value) archiveModuleKey.value = activeModule.value.key
+  if (activeModule.value && JARVIS_MODULES.some(module => module.key === activeModule.value.key)) {
+    archiveModuleKey.value = activeModule.value.key
+  }
   if (archiveHandoffTimer) window.clearTimeout(archiveHandoffTimer)
   archiveHandoffTimer = 0
   archiveHandoffHold.value = false
@@ -359,9 +360,6 @@ onBeforeUnmount(() => {
       'container--workspace': Boolean(activeModule),
     }"
   >
-    <AppHeader v-if="activeTab === '管理'" :user="user" @logout="logout" @update-profile="updateProfile" />
-    <AppTabs v-if="activeTab === '管理'" :tabs="tabs" :active="activeTab" @change="switchTab" />
-
     <AnalysisOsPage
       v-if="visitedTabs.has('研究终端')"
       v-show="activeTab === '研究终端' || archiveHandoffHold"
@@ -379,7 +377,7 @@ onBeforeUnmount(() => {
       :module="preparedModule"
       :active="Boolean(activeModule)"
       :revealed="workspaceRevealReady"
-      :modules="JARVIS_MODULES"
+      :modules="workspaceModules"
       :workspace-tabs="workspaceTabs"
       :split-route="splitViewRoute"
       :user="user"
@@ -390,7 +388,6 @@ onBeforeUnmount(() => {
       @close-workspace-tab="closeWorkspaceTab"
       @open-split="openSplitView"
       @close-split="closeSplitView"
-      @legacy-admin="openLegacyAdmin"
       @logout="logout"
       @update-profile="updateProfile"
       @toggle-night-mode="toggleNightMode"
@@ -437,6 +434,9 @@ onBeforeUnmount(() => {
       <StrategyPage v-else-if="workspaceRenderRoute === '策略生成'" @send-backtest="sendStrategyToBacktest" />
       <TrendPage v-else-if="workspaceRenderRoute === '市场趋势预测'" />
       <ScheduledTasksPage v-else-if="workspaceRenderRoute === '定时任务'" />
+      <section v-else-if="workspaceRenderRoute === '管理后台'" class="panel-wrap">
+        <AdminView />
+      </section>
 
       <section v-else-if="workspaceRenderRoute === '运维'" class="panel-wrap">
         <OpsView />
@@ -476,13 +476,6 @@ onBeforeUnmount(() => {
       </div>
     </ArchiveWorkspaceShell>
 
-    <section v-if="user?.role === 'ADMIN' && activeTab === '管理'" class="panel-wrap">
-      <AdminView />
-    </section>
-
-    <footer v-if="activeTab === '管理'" class="foot">
-      <span>贾维斯金融投研平台 · 仅供研究参考，不构成投资建议</span>
-    </footer>
   </div>
 </template>
 
