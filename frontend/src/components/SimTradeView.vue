@@ -34,6 +34,8 @@ const account = ref(null)
 const realtimePrices = ref(null)
 const jdPrices = ref(null)
 const openOrders = ref([])
+const trades = ref([])
+const tradeTotal = ref(0)
 const instruments = ref([])
 const watchlist = ref([])
 const hiddenDefaultKeys = ref([])
@@ -148,13 +150,17 @@ async function loadSession() {
 }
 
 async function loadWorkspace() {
-  const [accountResponse, ordersResponse, marketResponse, jdResponse] = await Promise.all([
-    api.simAccount(), api.simOpenOrders(), api.marketPrices().catch(() => null), api.jdPrices().catch(() => null),
+  const [accountResponse, ordersResponse, tradesResponse, marketResponse, jdResponse] = await Promise.all([
+    api.simAccount(), api.simOpenOrders(), api.simTrades(50).catch(() => null), api.marketPrices().catch(() => null), api.jdPrices().catch(() => null),
   ])
   if (accountResponse?.code !== 200) throw new Error(accountResponse?.message || '模拟账户加载失败')
   if (ordersResponse?.code !== 200) throw new Error(ordersResponse?.message || '挂单加载失败')
   account.value = accountResponse.data
   openOrders.value = Array.isArray(ordersResponse.data) ? ordersResponse.data : []
+  if (tradesResponse?.code === 200) {
+    trades.value = Array.isArray(tradesResponse?.data?.trades) ? tradesResponse.data.trades : []
+    tradeTotal.value = Number(tradesResponse?.data?.total || 0)
+  }
   if (marketResponse?.data) realtimePrices.value = marketResponse.data
   if (jdResponse?.code === 200 && jdResponse.data) jdPrices.value = jdResponse.data
 }
@@ -465,6 +471,27 @@ onBeforeUnmount(() => {
           @cancel-order="cancelOrder"
         />
       </div>
+
+      <section class="trade-history" aria-label="模拟成交历史">
+        <header><div><strong>成交历史</strong><span>最近 50 笔 / 共 {{ tradeTotal }} 笔</span></div><button type="button" @click="loadWorkspace">刷新</button></header>
+        <p v-if="!trades.length" class="trade-empty">暂无成交记录。</p>
+        <div v-else class="trade-table-wrap">
+          <table class="trade-table">
+            <thead><tr><th>时间</th><th>方向</th><th>标的</th><th>价格</th><th>数量</th><th>金额</th><th>杠杆</th></tr></thead>
+            <tbody>
+              <tr v-for="trade in trades" :key="trade.id">
+                <td>{{ String(trade.createdAt || '').replace('T', ' ').slice(0, 19) || '—' }}</td>
+                <td><span :class="trade.type === 'BUY' ? 'trade-buy' : 'trade-sell'">{{ trade.type }}</span></td>
+                <td><strong>{{ trade.symbol }}</strong></td>
+                <td>{{ trade.price }}</td>
+                <td>{{ trade.quantity }}</td>
+                <td>{{ trade.amount }}</td>
+                <td>{{ trade.leverage || 1 }}x</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
     </template>
   </div>
 </template>
@@ -498,6 +525,21 @@ onBeforeUnmount(() => {
 .preference-status { min-height: 10px; display: flex; gap: 10px; }
 .parser-error { color: var(--warn); }
 .sim-content { display: grid; grid-template-columns: clamp(148px, 10.5vw, 164px) minmax(0, 1fr); gap: 0; align-items: stretch; min-width: 0; border: 0; border-top: 1px solid color-mix(in srgb, var(--line) 72%, transparent); border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent); }
+.trade-history { margin-top: 4px; border: 1px solid color-mix(in srgb, var(--line) 72%, transparent); }
+.trade-history > header { min-height: 40px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 10px; border-bottom: 1px solid var(--line); }
+.trade-history > header > div { display: flex; align-items: baseline; gap: 8px; }
+.trade-history header strong { color: var(--text); font-size: 9px; }
+.trade-history header span { color: var(--subtle); font-size: 7px; }
+.trade-history header button { min-height: 24px; padding: 0 7px; border: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; font-size: 7px; }
+.trade-table-wrap { overflow-x: auto; }
+.trade-table { width: 100%; min-width: 720px; border-collapse: collapse; font-size: 8px; }
+.trade-table th, .trade-table td { padding: 8px 10px; border-bottom: 1px solid var(--line); color: var(--muted); text-align: left; }
+.trade-table th { color: var(--subtle); font: 650 7px/1 ui-monospace, monospace; }
+.trade-table tbody tr:last-child td { border-bottom: 0; }
+.trade-table td strong { color: var(--text); }
+.trade-buy { color: var(--ok); }
+.trade-sell { color: var(--bad); }
+.trade-empty { margin: 0; padding: 18px 10px; color: var(--muted); font-size: 8px; }
 .terminal-recovery {
   min-height: 310px;
   display: grid;

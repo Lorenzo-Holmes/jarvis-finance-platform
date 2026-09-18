@@ -3,6 +3,8 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { api } from '../api/client'
 import QuoteStrip from '../components/market/QuoteStrip.vue'
 import MarketOverviewBoard from '../components/market/MarketOverviewBoard.vue'
+import MarketWatchlistBoard from '../components/market/MarketWatchlistBoard.vue'
+import MarketNewsBoard from '../components/market/MarketNewsBoard.vue'
 import DataState from '../components/common/DataState.vue'
 import { useMarketChart } from '../composables/useMarketChart'
 import { usePolling } from '../composables/usePolling'
@@ -10,7 +12,10 @@ import { useLatestRequest } from '../composables/useLatestRequest'
 import { useFreshness } from '../composables/useFreshness'
 import { formatNumber, formatPercent } from '../utils/formatters'
 
-const props = defineProps({ active: { type: Boolean, default: true } })
+const props = defineProps({
+  active: { type: Boolean, default: true },
+  user: { type: Object, default: null },
+})
 const emit = defineEmits(['connection-change', 'context-change', 'ready'])
 
 const connected = ref(false)
@@ -213,6 +218,11 @@ async function handleQuoteSelect(selection) {
   await setMarketFocus(selection.key, selection.jdMarket || null)
 }
 
+function handleResearchTarget(target) {
+  if (!target) return
+  emit('context-change', target)
+}
+
 async function setFocusedInterval(value) {
   if (marketFocus.value === 'gold_etf') {
     etfCfg.interval = value
@@ -344,6 +354,16 @@ watch([marketFocus, () => jdKlineCfg.market], () => {
 
 <template>
   <section class="market-workspace">
+    <MarketOverviewBoard :active="active" @select="handleResearchTarget" />
+    <MarketWatchlistBoard :active="active" :user="user" @context-change="handleResearchTarget" />
+    <MarketNewsBoard :active="active" />
+
+    <section class="market-deep-dive" aria-label="黄金与贵金属深度行情">
+      <div class="deep-dive-kicker">
+        <span>DEEP DIVE</span>
+        <strong>黄金与贵金属深度行情</strong>
+      </div>
+
     <div class="section-bar">
       <div class="market-identity">
         <div>
@@ -459,13 +479,16 @@ watch([marketFocus, () => jdKlineCfg.market], () => {
       </aside>
     </div>
 
-    <!-- 行情页只负责市场总览与黄金主图；A股/美股/加密的标的工作台独立放在“多市场”。 -->
-    <MarketOverviewBoard :active="active" @select-gold="handleQuoteSelect" />
+    </section>
   </section>
 </template>
 
 <style scoped>
 .market-workspace { display: flex; flex-direction: column; gap: 0; margin: 0; }
+.market-deep-dive { margin-top: 4px; padding-top: 14px; border-top: 1px solid color-mix(in srgb, var(--line) 72%, transparent); }
+.deep-dive-kicker { display: flex; align-items: baseline; gap: 9px; padding: 0 2px 4px; }
+.deep-dive-kicker span { color: var(--subtle); font: 650 7px/1 ui-monospace, monospace; letter-spacing: .12em; }
+.deep-dive-kicker strong { color: var(--muted); font-size: 10px; font-weight: 620; }
 .section-bar { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; min-height: 68px; padding: 0 2px 10px; }
 .market-identity { display: flex; align-items: flex-end; gap: 22px; min-width: 0; }
 .section-bar h1 { margin: 0; color: var(--text); font-size: 20px; line-height: 1; font-weight: 640; letter-spacing: -.02em; }

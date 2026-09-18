@@ -20,7 +20,7 @@ test('分组覆盖全部模块，且不重复不丢失', () => {
   // 导航少一个模块就是功能消失，这种错误在界面上看不出来，必须钉住
   assert.equal(navCoversAllModules(JARVIS_MODULES, groups), true)
   assert.equal(groups.flatMap(group => group.modules).length, JARVIS_MODULES.length)
-  assert.equal(JARVIS_MODULES.length, 13)
+  assert.equal(JARVIS_MODULES.length, 14)
 })
 
 test('分组顺序按工作流，未知分类落到 OTHER 且排在最后', () => {
@@ -40,7 +40,7 @@ test('各分组的模块数量与模块表一致', () => {
   assert.equal(modulesInGroup(groups, 'INTELLIGENCE').length, 4)
   assert.equal(modulesInGroup(groups, 'STRATEGY').length, 2)
   assert.equal(modulesInGroup(groups, 'EXECUTION').length, 1)
-  assert.equal(modulesInGroup(groups, 'SYSTEM').length, 1)
+  assert.equal(modulesInGroup(groups, 'SYSTEM').length, 2)
   assert.deepEqual(modulesInGroup(groups, 'NOPE'), [])
 })
 
@@ -48,6 +48,7 @@ test('切换模块会展开该模块所在分组', () => {
   assert.equal(openGroupForModule(groups, 'market'), 'MARKET')
   assert.equal(openGroupForModule(groups, 'market-trend'), 'INTELLIGENCE')
   assert.equal(openGroupForModule(groups, 'ops'), 'SYSTEM')
+  assert.equal(openGroupForModule(groups, 'scheduled-tasks'), 'SYSTEM')
   // 未知模块不展开任何一组，而不是糊在第一个组上
   assert.equal(openGroupForModule(groups, 'not-a-module'), '')
   assert.equal(groupKeyOfModule(groups, 'not-a-module'), '')

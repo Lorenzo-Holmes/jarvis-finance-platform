@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { api } from '../../api/client'
+import NotificationCenter from '../../components/common/NotificationCenter.vue'
 import { groupCommandItems, searchCommandItems } from '../data/commandPalette'
 import { buildModuleNavGroups } from '../data/moduleNav'
 
@@ -23,7 +24,6 @@ const editingProfile = ref(false)
 const displayName = ref('')
 const moduleTitleRef = ref(null)
 const accountMenuRef = ref(null)
-const entityMoreRef = ref(null)
 const splitMenuRef = ref(null)
 const entityViewsRef = ref(null)
 const entityLensStyle = ref({ opacity: '0' })
@@ -118,21 +118,9 @@ const contextTitle = computed(() => props.context?.name || props.context?.symbol
 const contextSubtitle = computed(() => props.context?.symbol && props.context?.name
   ? `${props.context.symbol} · ${props.context.market || '研究上下文'}`
   : props.context?.symbol || '从行情页选择研究对象')
-const ENTITY_VIEW_KEYS = ['market', 'financial', 'ai-research', 'industry-chain', 'risk', 'strategy', 'sim-trade']
-const ENTITY_VIEW_LABELS = Object.freeze({
-  market: '行情',
-  financial: '财务',
-  'ai-research': '研究',
-  'industry-chain': '产业链',
-  risk: '风险',
-  strategy: '策略',
-  'sim-trade': '交易',
-})
-const entityViews = computed(() => ENTITY_VIEW_KEYS
-  .map(key => props.modules.find(item => item.key === key))
-  .filter(Boolean))
-const secondaryViews = computed(() => props.modules.filter(item => !ENTITY_VIEW_KEYS.includes(item.key)))
-const secondaryViewActive = computed(() => secondaryViews.value.some(item => item.key === props.module.key))
+const currentModuleGroupKey = computed(() => (
+  moduleGroups.value.find(group => group.modules.some(item => item.key === props.module.key))?.key || ''
+))
 const canGoBack = computed(() => navigationIndex.value > 0)
 const canGoForward = computed(() => navigationIndex.value < navigationHistory.value.length - 1)
 const SPLIT_ROUTES = Object.freeze(['行情', '研究助手', '财报解析', '风险预警'])
@@ -174,10 +162,11 @@ function requestModule(next) {
   if (!props.active || !next || switching.value || returning.value) return
   // 当前模块仍应收起已打开菜单，否则用户点击后会感觉操作没有生效。
   if (next.key === props.module.key) {
-    if (entityMoreRef.value?.open) entityMoreRef.value.open = false
+    closeFunctionMenus()
     if (splitMenuRef.value?.open) splitMenuRef.value.open = false
     return
   }
+  closeFunctionMenus()
   switching.value = true
   const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
   if (switchTimer) window.clearTimeout(switchTimer)
@@ -200,15 +189,17 @@ function syncEntitySelectionLens() {
     entityLensRaf = 0
     const nav = entityViewsRef.value
     if (!nav) return
-    const target = nav.querySelector(':scope > button[aria-current="page"], :scope > .entity-more.active > summary')
+    const target = nav.querySelector(':scope > .workspace-function-menu.current > summary')
     if (!target) {
       entityLensStyle.value = { opacity: '0' }
       return
     }
+    const navRect = nav.getBoundingClientRect()
+    const targetRect = target.getBoundingClientRect()
     entityLensStyle.value = {
       opacity: '1',
-      width: `${target.offsetWidth}px`,
-      transform: `translate3d(${target.offsetLeft}px, 0, 0)`,
+      width: `${targetRect.width}px`,
+      transform: `translate3d(${targetRect.left - navRect.left + nav.scrollLeft}px, 0, 0)`,
     }
   })
 }
@@ -223,7 +214,7 @@ const POPOVER_MARGIN = 8
 function alignPopover(details) {
   if (!details) return
   const summary = details.querySelector(':scope > summary')
-  const popover = details.querySelector(':scope > .entity-more-popover, :scope > .split-popover')
+  const popover = details.querySelector(':scope > .function-menu-popover, :scope > .split-popover')
   if (!summary || !popover) return
   const anchor = summary.getBoundingClientRect()
   const width = popover.getBoundingClientRect().width
@@ -235,8 +226,33 @@ function alignPopover(details) {
   popover.style.top = `${Math.round(anchor.bottom + POPOVER_GAP)}px`
 }
 
+function functionMenus() {
+  return Array.from(entityViewsRef.value?.querySelectorAll(':scope > .workspace-function-menu') || [])
+}
+
+function closeFunctionMenus(except = null) {
+  for (const details of functionMenus()) {
+    if (details !== except && details.open) details.open = false
+  }
+}
+
+function handleFunctionMenuToggle(event) {
+  const details = event.currentTarget
+  if (!details?.open) return
+  closeFunctionMenus(details)
+  if (splitMenuRef.value?.open) splitMenuRef.value.open = false
+  nextTick(() => alignPopover(details))
+}
+
+function handleSplitMenuToggle() {
+  if (splitMenuRef.value?.open) closeFunctionMenus()
+  alignOpenPopovers()
+}
+
 function alignOpenPopovers() {
-  if (entityMoreRef.value?.open) alignPopover(entityMoreRef.value)
+  for (const details of functionMenus()) {
+    if (details.open) alignPopover(details)
+  }
   if (splitMenuRef.value?.open) alignPopover(splitMenuRef.value)
 }
 
@@ -260,6 +276,13 @@ function closeWorkspaceTab(event, item) {
   event?.stopPropagation?.()
   if (!item) return
   emit('close-workspace-tab', item.routeKey)
+}
+
+function handleNotificationNavigate(target) {
+  const routeKey = target?.routeKey
+  if (!routeKey) return
+  const next = props.modules.find(item => item.routeKey === routeKey)
+  if (next) requestModule(next)
 }
 
 function openCommandPalette() {
@@ -306,8 +329,9 @@ function closeMenusFromOutside(event) {
     accountMenu.open = false
     editingProfile.value = false
   }
-  const entityMore = entityMoreRef.value
-  if (entityMore?.open && !entityMore.contains(event.target)) entityMore.open = false
+  for (const details of functionMenus()) {
+    if (details.open && !details.contains(event.target)) details.open = false
+  }
   const splitMenu = splitMenuRef.value
   if (splitMenu?.open && !splitMenu.contains(event.target)) splitMenu.open = false
 }
@@ -344,9 +368,10 @@ function onKeydown(event) {
     closeCommandPalette()
     return
   }
-  if (entityMoreRef.value?.open) {
+  const openFunctionMenu = functionMenus().find(details => details.open)
+  if (openFunctionMenu) {
     event.preventDefault()
-    entityMoreRef.value.open = false
+    openFunctionMenu.open = false
     return
   }
   if (splitMenuRef.value?.open) {
@@ -376,7 +401,7 @@ watch(() => props.module.key, () => {
     switching.value = false
     focusModuleTitle()
     syncEntitySelectionLens()
-    if (entityMoreRef.value) entityMoreRef.value.open = false
+    closeFunctionMenus()
     if (splitMenuRef.value) splitMenuRef.value.open = false
   })
 })
@@ -460,6 +485,7 @@ onBeforeUnmount(() => {
         </button>
 
         <div class="workspace-actions">
+          <NotificationCenter v-if="props.user" @navigate="handleNotificationNavigate" />
           <details v-if="props.user" ref="accountMenuRef" class="account-menu">
             <summary>
               <span>{{ props.user.displayName || 'Account' }}</span>
@@ -515,32 +541,37 @@ onBeforeUnmount(() => {
 
         <nav ref="entityViewsRef" class="entity-views" aria-label="当前研究对象视图" @scroll.passive="alignOpenPopovers">
           <i class="entity-selection-lens" aria-hidden="true" :style="entityLensStyle"></i>
-          <button
-            v-for="item in entityViews"
-            :key="item.key"
-            type="button"
-            :class="{ active: item.key === props.module.key }"
-            :aria-current="item.key === props.module.key ? 'page' : undefined"
-            @click="requestModule(item)"
+          <details
+            v-for="group in moduleGroups"
+            :key="group.key"
+            class="workspace-function-menu"
+            :class="{ current: group.key === currentModuleGroupKey }"
+            @toggle="handleFunctionMenuToggle"
           >
-            {{ ENTITY_VIEW_LABELS[item.key] }}
-          </button>
-          <details ref="entityMoreRef" class="entity-more" :class="{ active: secondaryViewActive }" @toggle="alignOpenPopovers">
-            <summary @click="alignPopover(entityMoreRef)">更多</summary>
-            <div class="entity-more-popover">
+            <summary :aria-label="`${group.labelZh}功能菜单`">
+              <span>{{ group.labelZh }}</span>
+              <small>{{ group.modules.length }}</small>
+              <i aria-hidden="true"></i>
+            </summary>
+            <div class="function-menu-popover">
+              <header>
+                <span>{{ group.labelEn }}</span>
+                <strong>{{ group.labelZh }}</strong>
+              </header>
               <button
-                v-for="item in secondaryViews"
+                v-for="item in group.modules"
                 :key="item.key"
                 type="button"
                 :class="{ active: item.key === props.module.key }"
+                :aria-current="item.key === props.module.key ? 'page' : undefined"
                 @click="requestModule(item)"
               >
-                <span>{{ item.labelZh }}</span>
-                <small>{{ item.summary }}</small>
+                <span><strong>{{ item.labelZh }}</strong><small>{{ item.summary }}</small></span>
+                <em>{{ item.code }}</em>
               </button>
             </div>
           </details>
-          <details ref="splitMenuRef" class="split-control" :class="{ active: props.splitRoute }" @toggle="alignOpenPopovers">
+          <details ref="splitMenuRef" class="split-control" :class="{ active: props.splitRoute }" @toggle="handleSplitMenuToggle">
             <summary @click="alignPopover(splitMenuRef)">{{ props.splitRoute ? `▥ ${splitLabel}` : '▥ 并排' }}</summary>
             <div class="split-popover">
               <div class="split-popover-head">
@@ -1448,6 +1479,8 @@ onBeforeUnmount(() => {
   scrollbar-width: none;
 }
 .entity-views::-webkit-scrollbar { display: none; }
+.workspace-function-menu { position: relative; flex: 0 0 auto; }
+.workspace-function-menu > summary,
 .entity-views > button,
 .entity-more > summary,
 .split-control > summary {
@@ -1465,12 +1498,20 @@ onBeforeUnmount(() => {
   font-weight: 550;
   list-style: none;
 }
+.workspace-function-menu > summary:hover,
+.workspace-function-menu[open] > summary,
+.workspace-function-menu.current > summary,
 .entity-views > button:hover,
 .entity-more > summary:hover,
 .split-control > summary:hover,
 .entity-views > button.active,
 .entity-more.active > summary,
 .split-control.active > summary { color: var(--text); background: var(--workspace-hover-bg); }
+.workspace-function-menu > summary::-webkit-details-marker { display: none; }
+.workspace-function-menu > summary { gap: 6px; }
+.workspace-function-menu > summary small { color: var(--subtle); font: 600 7px/1 ui-monospace, monospace; }
+.workspace-function-menu > summary i { width: 5px; height: 5px; border-right: 1px solid currentColor; border-bottom: 1px solid currentColor; transform: rotate(45deg) translateY(-1px); transition: transform .16s ease; }
+.workspace-function-menu[open] > summary i { transform: rotate(225deg) translate(-1px,-1px); }
 .entity-views > button.active::after,
 .entity-more.active > summary::after,
 .split-control.active > summary::after {
@@ -1484,6 +1525,30 @@ onBeforeUnmount(() => {
   transform: translateX(-50%);
 }
 .entity-more > summary::-webkit-details-marker { display: none; }
+.function-menu-popover {
+  position: fixed;
+  z-index: 176;
+  left: 0;
+  top: 0;
+  width: min(310px, calc(100vw - 16px));
+  box-sizing: border-box;
+  padding: 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  background: var(--panel-raised);
+  box-shadow: 0 22px 60px rgba(0,0,0,.26);
+}
+.function-menu-popover > header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 7px 8px 9px; border-bottom: 1px solid var(--line); }
+.function-menu-popover > header span { color: var(--subtle); font: 650 7px/1 ui-monospace, monospace; letter-spacing: .11em; }
+.function-menu-popover > header strong { color: var(--muted); font-size: 9px; font-weight: 620; }
+.function-menu-popover > button { width: 100%; min-height: 52px; display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 12px; padding: 8px 9px; border: 0; border-bottom: 1px solid var(--line); border-radius: 5px; background: transparent; color: var(--muted); text-align: left; cursor: pointer; }
+.function-menu-popover > button:last-child { border-bottom: 0; }
+.function-menu-popover > button:hover,
+.function-menu-popover > button.active { color: var(--text); background: var(--workspace-hover-bg); }
+.function-menu-popover > button > span { min-width: 0; display: grid; gap: 4px; }
+.function-menu-popover > button strong { color: inherit; font-size: 10.5px; font-weight: 650; }
+.function-menu-popover > button small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--subtle); font-size: 8px; }
+.function-menu-popover > button em { color: var(--subtle); font: 600 7px/1 ui-monospace, monospace; font-style: normal; }
 .split-control { margin-left: auto; }
 .split-control > summary::-webkit-details-marker { display: none; }
 .entity-more-popover {

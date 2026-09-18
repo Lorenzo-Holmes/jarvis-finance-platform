@@ -7,6 +7,8 @@ const java = ref(null)   // Java + DB readiness
 const db = ref(null)     // 数据库详细状态（登录后）
 const py = ref(null)     // Python AI 服务（经 Java 代理检查）
 const engine = ref(null) // AI provider/model
+const auditEvents = ref([])
+const auditError = ref('')
 const lastCheck = ref('')
 
 async function check() {
@@ -28,6 +30,22 @@ async function check() {
     const d = await api.aiStatus()
     engine.value = d.data?.available ? d.data : { error: d.data?.message || d.message || 'AI引擎不可用' }
   } catch (e) { engine.value = { error: String(e) } }
+}
+
+async function loadAudit() {
+  auditError.value = ''
+  try {
+    const response = await api.auditRecent(20)
+    if (response?.code !== 200) throw new Error(response?.message || '审计日志加载失败')
+    auditEvents.value = Array.isArray(response?.data) ? response.data : []
+  } catch (e) {
+    auditError.value = e?.message || '审计日志暂不可用'
+  }
+}
+
+function formatAuditTime(value) {
+  if (!value) return '—'
+  return String(value).replace('T', ' ').slice(0, 19)
 }
 
 function ok(v) { return !v || v.error ? 'bad' : 'ok' }
@@ -57,7 +75,8 @@ const services = computed(() => [
 const allHealthy = computed(() => services.value.every(service => service.health === 'ok'))
 
 const polling = usePolling(check, 10000)
-onMounted(() => { check(); polling.start() })
+const auditPolling = usePolling(loadAudit, 30000)
+onMounted(() => { check(); loadAudit(); polling.start(); auditPolling.start() })
 </script>
 
 <template>
@@ -84,6 +103,18 @@ onMounted(() => { check(); polling.start() })
               </td>
             </tr>
           </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="audit-panel">
+      <header><div><strong>最近审计事件</strong><span>当前账号 · 最近 20 条</span></div><button type="button" @click="loadAudit">刷新</button></header>
+      <p v-if="auditError && !auditEvents.length" class="audit-state">{{ auditError }}</p>
+      <p v-else-if="!auditEvents.length" class="audit-state">暂无审计事件。</p>
+      <div v-else class="audit-table-wrap">
+        <table class="audit-table">
+          <thead><tr><th>时间</th><th>动作</th><th>目标</th><th>详情</th></tr></thead>
+          <tbody><tr v-for="event in auditEvents" :key="event.id"><td>{{ formatAuditTime(event.createdAt) }}</td><td><code>{{ event.action }}</code></td><td>{{ event.target || '—' }}</td><td class="audit-detail">{{ event.detail || '—' }}</td></tr></tbody>
         </table>
       </div>
     </section>
@@ -123,6 +154,21 @@ onMounted(() => { check(); polling.start() })
 .detail-cell { max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
 .health-table a { color: var(--accent-strong); text-decoration: none; font-size: 9px; }
 .health-table a:hover { text-decoration: underline; }
+.audit-panel { border: 1px solid var(--line); overflow: hidden; }
+.audit-panel > header { min-height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 12px; border-bottom: 1px solid var(--line); }
+.audit-panel > header > div { display: flex; align-items: baseline; gap: 8px; }
+.audit-panel header strong { color: var(--text); font-size: 10px; }
+.audit-panel header span { color: var(--subtle); font-size: 8px; }
+.audit-panel header button { min-height: 26px; padding: 0 8px; border: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; font-size: 8px; }
+.audit-panel header button:hover { color: var(--text); border-color: var(--line-strong); }
+.audit-state { margin: 0; padding: 20px 12px; color: var(--muted); font-size: 9px; }
+.audit-table-wrap { overflow-x: auto; }
+.audit-table { width: 100%; min-width: 760px; border-collapse: collapse; font-size: 9px; }
+.audit-table th, .audit-table td { padding: 9px 11px; border-bottom: 1px solid var(--line); color: var(--muted); text-align: left; }
+.audit-table th { color: var(--subtle); font: 650 8px/1 ui-monospace, monospace; }
+.audit-table tbody tr:last-child td { border-bottom: 0; }
+.audit-table code { color: var(--text); font: 600 8px/1 ui-monospace, monospace; }
+.audit-detail { max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ops-footer { display: flex; align-items: center; gap: 18px; color: var(--subtle); font-size: 9px; }
 .ops-footer b { color: var(--muted); font-weight: 600; font-variant-numeric: tabular-nums; }
 .ops-footer button { margin-left: auto; border: 1px solid var(--workspace-action-border); background: var(--workspace-action-bg); color: var(--workspace-action-text); border-radius: 0; padding: 6px 10px; font: 650 8px/1 ui-monospace, monospace; letter-spacing: .06em; cursor: pointer; }

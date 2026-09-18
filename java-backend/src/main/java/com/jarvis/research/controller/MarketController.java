@@ -124,6 +124,14 @@ public class MarketController {
         return ApiResponse.ok(marketService.getMinuteKline(market, minutes, limit));
     }
 
+    /** 行情首页聚合：A股/美股/港股主要指数与上海金 Au99.99。 */
+    @GetMapping("/overview")
+    public ApiResponse<Object> overview(HttpServletRequest request) {
+        // 聚合接口内部会访问多个第三方行情源，沿用公开 quote 限流并由服务层再做整页缓存。
+        publicMarketRateLimitService.checkQuote(clientIp(request));
+        return ApiResponse.ok(extendedMarketDataService.marketOverview());
+    }
+
     /** A股、美股、加密货币的常用标的列表。 */
     @GetMapping("/instruments")
     public ApiResponse<Object> instruments() {

@@ -1,4 +1,4 @@
-import { test } from '../fixtures/test'
+import { expect, test } from '../fixtures/test'
 import { PREVIEW_PARAMS } from '../utils/env'
 
 /**
@@ -42,5 +42,19 @@ test.describe('冒烟 · 基础渲染', () => {
     test.skip(!available, '当前环境未启用 DEV 预览模式（?preview=1 仅在 dev + localhost 生效）')
 
     await workspacePage.expectShellVisible()
+  })
+
+  test('分类菜单与新版行情首页可在无后端 fixture 下完整导航', async ({ visualWorkspacePage, page }) => {
+    test.setTimeout(45_000)
+    await visualWorkspacePage.openStablePreview()
+
+    await expect(page.getByRole('heading', { name: '全球市场脉搏' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '多市场自选' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '市场要闻' })).toBeVisible()
+
+    for (const label of ['研究', '产业链', '策略', '交易'] as const) {
+      await visualWorkspacePage.openWorkspaceModule(label)
+      await expect(visualWorkspacePage.workspaceShell).toBeVisible()
+    }
   })
 })

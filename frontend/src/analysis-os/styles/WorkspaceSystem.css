@@ -164,6 +164,7 @@
   gap: 4px;
   padding: 0 12px;
 }
+.workspace-function-menu > summary,
 .entity-views > button,
 .entity-more > summary,
 .split-control > summary {
@@ -172,12 +173,15 @@
   font-size: 11.5px;
   font-weight: 560;
 }
+.workspace-function-menu.current > summary,
+.workspace-function-menu[open] > summary,
 .entity-views > button.active,
 .entity-more.active > summary,
 .split-control.active > summary { color: var(--text); background: transparent; }
 .entity-views > button.active::after,
 .entity-more.active > summary::after,
 .split-control.active > summary::after { display: none; }
+.workspace-function-menu > summary:hover,
 .entity-views > button:hover:not(.active),
 .entity-more > summary:hover,
 .split-control > summary:hover { background: color-mix(in srgb, var(--workspace-hover-bg) 60%, transparent); }
@@ -205,12 +209,14 @@
     background var(--ds-motion-surface) ease;
 }
 .entity-views > button { position: relative; z-index: 1; }
+.workspace-function-menu,
 .entity-more,
 .split-control { position: relative; }
 
 /* Focus + common workspace controls */
 .global-search-field:focus-visible,
 .entity-history button:focus-visible,
+.workspace-function-menu > summary:focus-visible,
 .entity-views > button:focus-visible,
 .entity-more > summary:focus-visible,
 .split-control > summary:focus-visible,

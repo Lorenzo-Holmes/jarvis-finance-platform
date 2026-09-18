@@ -1,0 +1,58 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const here = path.dirname(fileURLToPath(import.meta.url))
+const src = path.resolve(here, '../src')
+const read = relative => fs.readFileSync(path.join(src, relative), 'utf8')
+
+test('backend scheduled-task capabilities have a visible frontend workspace', () => {
+  const client = read('api/client.js')
+  const page = read('pages/ScheduledTasksPage.vue')
+  const modules = read('analysis-os/data/modules.js')
+
+  assert.match(client, /scheduledTasks:/)
+  assert.match(client, /scheduledTaskTypes:/)
+  assert.match(client, /createScheduledTask:/)
+  assert.match(client, /updateScheduledTask:/)
+  assert.match(client, /pauseScheduledTask:/)
+  assert.match(client, /resumeScheduledTask:/)
+  assert.match(client, /runScheduledTask:/)
+  assert.match(client, /deleteScheduledTask:/)
+  assert.match(client, /scheduledTaskRuns:/)
+
+  assert.match(modules, /labelZh: '定时任务'/)
+  assert.match(page, /新建任务/)
+  assert.match(page, /立即执行/)
+  assert.match(page, /暂停/)
+  assert.match(page, /恢复/)
+  assert.match(page, /执行历史/)
+  assert.match(page, /执行器未就绪/)
+})
+
+test('backend notifications are surfaced in the workspace header', () => {
+  const client = read('api/client.js')
+  const center = read('components/common/NotificationCenter.vue')
+  const shell = read('analysis-os/components/ArchiveWorkspaceShell.vue')
+
+  assert.match(client, /notifications:/)
+  assert.match(client, /notificationUnreadCount:/)
+  assert.match(client, /markNotificationRead:/)
+  assert.match(client, /markAllNotificationsRead:/)
+  assert.match(client, /deleteNotification:/)
+  assert.match(center, /window\.setInterval\(loadUnread, 15000\)/)
+  assert.match(center, /item\?\.link\?\.kind === 'SCHEDULED_TASK'/)
+  assert.match(shell, /<NotificationCenter v-if="props\.user"/)
+})
+
+test('user audit events are surfaced in Ops instead of remaining API-only', () => {
+  const client = read('api/client.js')
+  const ops = read('components/OpsView.vue')
+
+  assert.match(client, /auditRecent:/)
+  assert.match(ops, /api\.auditRecent\(20\)/)
+  assert.match(ops, /最近审计事件/)
+  assert.match(ops, /event\.action/)
+})

@@ -17,6 +17,7 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.time.DayOfWeek;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
@@ -47,10 +48,34 @@ public class ExtendedMarketDataService {
 
     private static final Charset GBK = Charset.forName("GBK");
     private static final long QUOTE_CACHE_NANOS = TimeUnit.MILLISECONDS.toNanos(800);
+    private static final long OVERVIEW_CACHE_NANOS = TimeUnit.SECONDS.toNanos(10);
     private static final int MAX_QUOTE_CACHE_ENTRIES = 2_000;
     private static final ZoneId SHANGHAI_ZONE = ZoneId.of("Asia/Shanghai");
     private static final ZoneId NEW_YORK_ZONE = ZoneId.of("America/New_York");
     private static final DateTimeFormatter INTRADAY_DATE = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+    private static final Pattern HTML_ROW_PATTERN = Pattern.compile("<tr[^>]*>(.*?)</tr>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+    private static final Pattern HTML_CELL_PATTERN = Pattern.compile("<td[^>]*>(.*?)</td>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+    private static final String SGE_DAILY_URL = "https://www.sge.com.cn/sjzx/quotation_daily_new";
+
+    private record OverviewInstrument(String key, String name, String market, String symbol,
+                                      String currency, String region) {}
+
+    private static final List<OverviewInstrument> OVERVIEW_INSTRUMENTS = List.of(
+            new OverviewInstrument("sse", "上证指数", "a_share", "sh000001", "CNY", "CN"),
+            new OverviewInstrument("chinext", "创业板指", "a_share", "sz399006", "CNY", "CN"),
+            new OverviewInstrument("star50", "科创50", "a_share", "sh000688", "CNY", "CN"),
+            new OverviewInstrument("szse", "深证成指", "a_share", "sz399001", "CNY", "CN"),
+            new OverviewInstrument("bse50", "北证50", "a_share", "bj899050", "CNY", "CN"),
+            new OverviewInstrument("sse50", "上证50", "a_share", "sh000016", "CNY", "CN"),
+            new OverviewInstrument("dow", "道琼斯", "global_index", "^DJI", "USD", "US"),
+            new OverviewInstrument("nasdaq", "纳斯达克", "global_index", "^IXIC", "USD", "US"),
+            new OverviewInstrument("sp500", "标普500", "global_index", "^GSPC", "USD", "US"),
+            new OverviewInstrument("nasdaq100", "纳斯达克100", "global_index", "^NDX", "USD", "US"),
+            new OverviewInstrument("au9999", "黄金9999", "sge_gold", "Au99.99", "CNY/g", "CN"),
+            new OverviewInstrument("hsi", "恒生指数", "global_index", "^HSI", "HKD", "HK"),
+            new OverviewInstrument("hscei", "恒生国企指数", "global_index", "^HSCE", "HKD", "HK"),
+            new OverviewInstrument("hstech", "恒生科技指数", "global_index", "HSTECH.HK", "HKD", "HK")
+    );
     /**
      * 对外承诺支持的K线周期，按市场区分（*API 契约*，不是来源能力）。
      *
@@ -93,6 +118,9 @@ public class ExtendedMarketDataService {
     private final ProviderRegistry providerRegistry;
     /** 多用户秒级轮询时对同一标的做极短缓存，减少重复打第三方报价源。 */
     private final Map<String, CachedQuote> quoteCache = new ConcurrentHashMap<>();
+    /** 首页 14 项聚合比单标的更重，单独做 10 秒整页缓存，防止刷新风暴放大第三方请求。 */
+    private volatile List<Map<String, Object>> overviewCache = List.of();
+    private volatile long overviewCacheExpiresAtNanos = 0L;
     private final AtomicLong quoteCacheWrites = new AtomicLong();
 
     private record CachedQuote(Map<String, Object> value, long expiresAtNanos) {}
@@ -156,6 +184,128 @@ public class ExtendedMarketDataService {
     }
 
     /**
+     * 行情首页聚合：A股主要指数 + 美港股指数 + 上海黄金交易所 Au99.99。
+     * 单项失败只标记该项不可用，不让一个上游故障拖垮整个首屏。
+     */
+    public synchronized List<Map<String, Object>> marketOverview() {
+        long now = System.nanoTime();
+        if (!overviewCache.isEmpty() && now < overviewCacheExpiresAtNanos) {
+            return copyOverview(overviewCache);
+        }
+        Map<String, Object> sgeGold = null;
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (OverviewInstrument item : OVERVIEW_INSTRUMENTS) {
+            Map<String, Object> card = new LinkedHashMap<>();
+            card.put("key", item.key());
+            card.put("name", item.name());
+            card.put("market", item.market());
+            card.put("symbol", item.symbol());
+            card.put("currency", item.currency());
+            card.put("region", item.region());
+            try {
+                Map<String, Object> quote;
+                if ("sge_gold".equals(item.market())) {
+                    if (sgeGold == null) sgeGold = sgeAu9999Quote();
+                    quote = sgeGold;
+                } else {
+                    quote = quote(item.market(), item.symbol());
+                }
+                card.putAll(quote);
+                // Provider 可能返回自己的名称，但首页文案必须稳定使用产品定义名。
+                card.put("name", item.name());
+                card.put("available", true);
+            } catch (Exception e) {
+                log.warn("行情首页单项失败 key={}, market={}, symbol={}, message={}",
+                        item.key(), item.market(), item.symbol(), e.getMessage());
+                card.put("available", false);
+                card.put("error", e.getMessage() == null ? "行情暂不可用" : e.getMessage());
+            }
+            result.add(card);
+        }
+        overviewCache = copyOverview(result);
+        overviewCacheExpiresAtNanos = now + OVERVIEW_CACHE_NANOS;
+        return copyOverview(result);
+    }
+
+    private List<Map<String, Object>> copyOverview(List<Map<String, Object>> source) {
+        return source.stream()
+                .map(item -> (Map<String, Object>) new LinkedHashMap<String, Object>(item))
+                .toList();
+    }
+
+    private Map<String, Object> sgeAu9999Quote() {
+        LocalDate end = LocalDate.now(SHANGHAI_ZONE);
+        LocalDate start = end.minusDays(10);
+        String url = SGE_DAILY_URL + "?start_date=" + start + "&end_date=" + end;
+        String html = webClient.get()
+                .uri(url)
+                .headers(headers -> {
+                    headers.set("User-Agent", "Mozilla/5.0 (compatible; JARVIS-Market/1.0)");
+                    headers.set("Accept", "text/html,application/xhtml+xml");
+                    headers.set("Referer", "https://www.sge.com.cn/");
+                })
+                .retrieve()
+                .bodyToMono(String.class)
+                .block();
+        if (html == null || html.isBlank()) throw upstream("上海黄金交易所日行情为空");
+
+        Matcher rows = HTML_ROW_PATTERN.matcher(html);
+        while (rows.find()) {
+            List<String> cells = new ArrayList<>();
+            Matcher cellMatcher = HTML_CELL_PATTERN.matcher(rows.group(1));
+            while (cellMatcher.find()) cells.add(cleanHtmlCell(cellMatcher.group(1)));
+            if (cells.size() < 8 || !"Au99.99".equalsIgnoreCase(cells.get(1))) continue;
+
+            Double open = parseMarketNumber(cells.get(2));
+            Double high = parseMarketNumber(cells.get(3));
+            Double low = parseMarketNumber(cells.get(4));
+            Double close = parseMarketNumber(cells.get(5));
+            Double change = parseMarketNumber(cells.get(6));
+            Double changePct = parsePercent(cells.get(7));
+            if (close == null) continue;
+
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("market", "sge_gold");
+            out.put("symbol", "Au99.99");
+            out.put("price", close);
+            out.put("prev_close", change == null ? null : close - change);
+            out.put("change", change == null ? 0.0 : change);
+            out.put("change_pct", changePct == null ? 0.0 : changePct);
+            out.put("open", open);
+            out.put("high", high);
+            out.put("low", low);
+            out.put("quote_time", cells.get(0));
+            out.put("source", "上海黄金交易所（日行情）");
+            out.put("stale", !end.toString().equals(cells.get(0)));
+            return out;
+        }
+        throw upstream("上海黄金交易所近10日无 Au99.99 有效行情");
+    }
+
+    private String cleanHtmlCell(String value) {
+        return value.replaceAll("<[^>]+>", "")
+                .replace("&nbsp;", " ")
+                .replace("&amp;", "&")
+                .trim();
+    }
+
+    private Double parseMarketNumber(String value) {
+        if (value == null) return null;
+        String normalized = value.replace(",", "").trim();
+        if (normalized.isBlank() || "-".equals(normalized)) return null;
+        try {
+            return Double.parseDouble(normalized);
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private Double parsePercent(String value) {
+        if (value == null) return null;
+        return parseMarketNumber(value.replace("%", ""));
+    }
+
+    /**
      * 解析用户输入的市场标的。只返回通过市场专属格式校验的标准化 symbol，
      * 后续报价与 K 线接口仍会复用同一套校验，避免将任意输入拼接到外部 URL。
      */
@@ -166,6 +316,7 @@ public class ExtendedMarketDataService {
                 case "a_share" -> registryQuote(instrument, "EastMoney (fallback)");
                 case "us_stock" -> registryQuote(instrument, "Yahoo Finance (fallback)");
                 case "crypto" -> registryQuote(instrument, "Yahoo Finance (fallback)");
+                case "global_index" -> registryQuote(instrument, "Yahoo Finance (fallback)");
                 default -> Map.of();
             };
             Object resolvedName = resolved.get("name");
@@ -217,6 +368,7 @@ public class ExtendedMarketDataService {
                 case "a_share" -> registryQuote(instrument, "EastMoney (fallback)");
                 case "us_stock" -> registryQuote(instrument, "Yahoo Finance (fallback)");
                 case "crypto" -> registryQuote(instrument, "Yahoo Finance (fallback)");
+                case "global_index" -> registryQuote(instrument, "Yahoo Finance (fallback)");
                 default -> throw invalid("不支持的市场: " + instrument.market());
             };
             cacheQuote(cacheKey, result, now);
@@ -596,13 +748,14 @@ public class ExtendedMarketDataService {
             case "a_share" -> parseAShare(raw);
             case "us_stock" -> parseUsStock(raw);
             case "crypto" -> parseCrypto(raw);
+            case "global_index" -> parseGlobalIndex(raw);
             default -> throw invalid("不支持的市场: " + market);
         };
     }
 
     private String normalizeMarket(String market) {
         String normalized = market.trim().toLowerCase(Locale.ROOT);
-        if (!Set.of("a_share", "us_stock", "crypto").contains(normalized)) {
+        if (!Set.of("a_share", "us_stock", "crypto", "global_index").contains(normalized)) {
             throw invalid("不支持的市场: " + market);
         }
         return normalized;
@@ -640,6 +793,19 @@ public class ExtendedMarketDataService {
             default -> symbol + "（自定义标的）";
         };
         return new Instrument("us_stock", symbol, name, "USD", "Yahoo Finance");
+    }
+
+    private Instrument parseGlobalIndex(String raw) {
+        return switch (raw) {
+            case "^DJI" -> new Instrument("global_index", raw, "道琼斯", "USD", "Yahoo Finance");
+            case "^IXIC" -> new Instrument("global_index", raw, "纳斯达克", "USD", "Yahoo Finance");
+            case "^GSPC" -> new Instrument("global_index", raw, "标普500", "USD", "Yahoo Finance");
+            case "^NDX" -> new Instrument("global_index", raw, "纳斯达克100", "USD", "Yahoo Finance");
+            case "^HSI" -> new Instrument("global_index", raw, "恒生指数", "HKD", "Yahoo Finance");
+            case "^HSCE" -> new Instrument("global_index", raw, "恒生国企指数", "HKD", "Yahoo Finance");
+            case "HSTECH.HK" -> new Instrument("global_index", raw, "恒生科技指数", "HKD", "Yahoo Finance");
+            default -> throw invalid("不支持的全球指数代码: " + raw);
+        };
     }
 
     private Instrument parseCrypto(String raw) {

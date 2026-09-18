@@ -27,6 +27,7 @@ const workspaceLoaders = Object.freeze({
   '策略生成': () => import('./pages/StrategyPage.vue'),
   '运维': () => import('./components/OpsView.vue'),
   '市场趋势预测': () => import('./pages/TrendPage.vue'),
+  '定时任务': () => import('./pages/ScheduledTasksPage.vue'),
 })
 const MarketPage = defineAsyncComponent(workspaceLoaders['行情'])
 const BacktestPage = defineAsyncComponent(workspaceLoaders['回测'])
@@ -41,6 +42,7 @@ const StrategyPage = defineAsyncComponent(workspaceLoaders['策略生成'])
 const QuotePage = defineAsyncComponent(workspaceLoaders['智能报价'])
 const TrendPage = defineAsyncComponent(workspaceLoaders['市场趋势预测'])
 const OpsView = defineAsyncComponent(workspaceLoaders['运维'])
+const ScheduledTasksPage = defineAsyncComponent(workspaceLoaders['定时任务'])
 const AdminView = defineAsyncComponent(() => import('./components/AdminView.vue'))
 const workspacePreloads = new Map()
 const preparedWorkspaceRoute = ref('')
@@ -398,6 +400,7 @@ onBeforeUnmount(() => {
           <MarketPage
             v-if="workspaceRenderRoute === '行情'"
             :active="activeTab === '行情' && workspaceRevealReady"
+            :user="user"
             @context-change="setResearchContext"
             @ready="handleWorkspaceReady('行情')"
           />
@@ -433,6 +436,7 @@ onBeforeUnmount(() => {
       <RiskPage v-else-if="workspaceRenderRoute === '风险预警'" :research-context="researchContext" />
       <StrategyPage v-else-if="workspaceRenderRoute === '策略生成'" @send-backtest="sendStrategyToBacktest" />
       <TrendPage v-else-if="workspaceRenderRoute === '市场趋势预测'" />
+      <ScheduledTasksPage v-else-if="workspaceRenderRoute === '定时任务'" />
 
       <section v-else-if="workspaceRenderRoute === '运维'" class="panel-wrap">
         <OpsView />
@@ -451,6 +455,7 @@ onBeforeUnmount(() => {
             <MarketPage
               v-if="splitViewRoute === '行情'"
               :active="true"
+              :user="user"
               @context-change="setResearchContext"
             />
             <AiCenter

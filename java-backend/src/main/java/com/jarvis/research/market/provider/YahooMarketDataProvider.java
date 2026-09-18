@@ -82,7 +82,8 @@ public class YahooMarketDataProvider implements MarketDataProvider {
     public boolean supports(String market) {
         return "london_gold".equalsIgnoreCase(market)
                 || "us_stock".equalsIgnoreCase(market)
-                || "crypto".equalsIgnoreCase(market);
+                || "crypto".equalsIgnoreCase(market)
+                || "global_index".equalsIgnoreCase(market);
     }
 
     @Override
@@ -104,6 +105,7 @@ public class YahooMarketDataProvider implements MarketDataProvider {
             case "london_gold" -> "core.yahoo.gold-futures";
             case "us_stock" -> "extended.yahoo.stock";
             case "crypto" -> "extended.yahoo.crypto";
+            case "global_index" -> "extended.yahoo.index";
             default -> MarketDataProvider.super.sourceKey(market);
         };
     }
@@ -169,7 +171,9 @@ public class YahooMarketDataProvider implements MarketDataProvider {
      */
     @Override
     public Map<String, Object> quote(String market, String symbol) {
-        if ("us_stock".equalsIgnoreCase(market) || "crypto".equalsIgnoreCase(market)) {
+        if ("us_stock".equalsIgnoreCase(market)
+                || "crypto".equalsIgnoreCase(market)
+                || "global_index".equalsIgnoreCase(market)) {
             return chartMetaQuote(market, symbol);
         }
         return quoteGold();
@@ -204,7 +208,9 @@ public class YahooMarketDataProvider implements MarketDataProvider {
         try {
             providerSymbol = "crypto".equalsIgnoreCase(market)
                     ? cryptoSymbol(symbol)
-                    : stockSymbol(symbol);
+                    : "global_index".equalsIgnoreCase(market)
+                        ? indexSymbol(symbol)
+                        : stockSymbol(symbol);
         } catch (IllegalArgumentException e) {
             log.warn("Yahoo 标的不合法: market={}, symbol={}, message={}", market, symbol, e.getMessage());
             return Map.of("error", e.getMessage());
@@ -258,6 +264,14 @@ public class YahooMarketDataProvider implements MarketDataProvider {
             throw new IllegalArgumentException("Yahoo 标的不合法: 空标的");
         }
         return symbol.replace('.', '-');
+    }
+
+    /** 全球指数代码直接透传到 Yahoo chart；允许的指数已由业务层白名单约束。 */
+    static String indexSymbol(String symbol) {
+        if (symbol == null || symbol.isBlank()) {
+            throw new IllegalArgumentException("Yahoo 指数标的不合法: 空标的");
+        }
+        return symbol.trim();
     }
 
     /** {@code BTCUSDT} → {@code BTC-USD}，与扩展行情服务既有实现一致。 */

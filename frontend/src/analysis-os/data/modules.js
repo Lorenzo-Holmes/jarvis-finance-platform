@@ -31,7 +31,7 @@ export const MODULE_CATEGORY_ORDER = [
  * 两条不变量：**不丢模块**（未知或缺失 category 的模块落到 OTHER 组并排在最后，
  * 不被静默吞掉）、**组内保持原顺序**（模块数组本身按 no 升序，分组不改动它）。
  *
- * 分组只影响导航的呈现：归档版面（lane/row）与键盘循环仍按扁平的 13 项走，
+ * 分组只影响导航的呈现：归档版面（lane/row）与键盘循环仍按扁平模块表走，
  * 所以这个函数不改变、也不该改变任何模块数据。
  */
 export function groupModulesByCategory(modules = JARVIS_MODULES) {
@@ -130,6 +130,12 @@ export const JARVIS_MODULES = [
     labelEn: 'MARKET TREND', labelZh: '市场趋势预测', category: 'INTELLIGENCE', routeKey: '市场趋势预测',
     code: 'IN-13', summary: '基于服务端自营日 K 数据，展示统计趋势区间、技术依据与 AI 解读。',
     capabilities: ['TREND BAND', 'TECHNICAL BASIS', 'AI INTERPRETATION'], availability: 'ready',
+  },
+  {
+    id: 'module:scheduled-tasks', no: 14, lane: 4, row: 2, key: 'scheduled-tasks',
+    labelEn: 'AUTOMATION', labelZh: '定时任务', category: 'SYSTEM', routeKey: '定时任务',
+    code: 'SY-14', summary: '管理周期任务、立即执行、暂停恢复、执行历史与自动化通知。',
+    capabilities: ['SCHEDULE', 'RUN HISTORY', 'NOTIFY'], availability: 'ready',
   },
 ]
 

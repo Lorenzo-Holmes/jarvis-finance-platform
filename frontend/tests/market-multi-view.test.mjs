@@ -18,7 +18,9 @@ test('market page mounts market overview instead of the multi-market workbench',
   const app = read('App.vue')
 
   assert.match(page, /import MarketOverviewBoard from '\.\.\/components\/market\/MarketOverviewBoard\.vue'/)
-  assert.match(page, /<MarketOverviewBoard :active="active" @select-gold="handleQuoteSelect" \/>/)
+  assert.match(page, /<MarketOverviewBoard :active="active" @select="handleResearchTarget" \/>/)
+  assert.match(page, /<MarketWatchlistBoard :active="active" :user="user" @context-change="handleResearchTarget" \/>/)
+  assert.match(page, /<MarketNewsBoard :active="active" \/>/)
   assert.doesNotMatch(page, /MultiMarketBoard/)
   assert.match(app, /'多市场': \(\) => import\('\.\/components\/CrossMarketView\.vue'\)/)
   // 原来的黄金主图/侧栏仍保留。
@@ -27,45 +29,45 @@ test('market page mounts market overview instead of the multi-market workbench',
   assert.match(page, /class="market-rail market-inspector"/)
 })
 
- test('market overview reads broad indexes, core gold quotes and daily news', () => {
+test('market overview uses the aggregated global pulse endpoint and horizontal carousel', () => {
   const board = read('components/market/MarketOverviewBoard.vue')
+  const client = read('api/client.js')
 
-  assert.match(board, /sh000001/)
-  assert.match(board, /sz399001/)
-  assert.match(board, /sz399006/)
-  assert.match(board, /api\.marketAssetQuote\(item\.market, item\.symbol\)/)
-  assert.match(board, /api\.marketPrices\(\)/)
-  assert.match(board, /api\.jdPrices\(\)/)
-  assert.match(board, /api\.newsDaily\(8, force\)/)
-  assert.match(board, /@click="selectGold\(card\)"/)
+  assert.match(board, /api\.marketOverview\(\)/)
+  assert.match(client, /marketOverview: \(\) => get\(API_BASE, '\/api\/market\/overview'\)/)
+  assert.match(board, /class="pulse-track"/)
+  assert.match(board, /window\.setInterval[\s\S]*scrollByCard\(1\)/)
+  assert.match(board, /emit\('select'/)
 })
 
-test('legacy multi-market board still consumes the existing extended-market APIs', () => {
-  const board = read('components/market/MultiMarketBoard.vue')
+test('market home watchlist supports import and promotes a selected instrument to research context', () => {
+  const board = read('components/market/MarketWatchlistBoard.vue')
 
-  assert.match(board, /api\.marketInstruments\(\)/)
-  assert.match(board, /api\.marketAssetQuote\(/)
-  assert.match(board, /api\.newsDaily\(/)
-  // 分组与涨跌样式必须走被单测覆盖的纯函数，不在组件里另写一套
-  assert.match(board, /groupInstrumentsByMarket/)
+  assert.match(board, /accept="\.json,\.csv,\.txt/)
+  assert.match(board, /function parseImport\(text\)/)
+  assert.match(board, /api\.resolveMarketInstrument\(row\.market, row\.symbol\)/)
+  assert.match(board, /api\.saveMarketPreferences\(value\)/)
+  assert.match(board, /emit\('context-change'/)
+  assert.match(board, /sourceModule: 'market-watchlist'/)
+})
+
+test('market news is a dedicated section below the watchlist', () => {
+  const board = read('components/market/MarketNewsBoard.vue')
+
+  assert.match(board, /api\.newsDaily\(12, force\)/)
   assert.match(board, /pickNewsItems/)
-  assert.match(board, /quoteClass/)
-  // 单个标的报价失败不能拖垮整块看板
-  assert.match(board, /Promise\.allSettled/)
+  assert.match(board, /MARKET BRIEFING/)
+  assert.match(board, /市场要闻/)
 })
 
-test('news links are external-safe and guarded by the linkable flag', () => {
-  const board = read('components/market/MultiMarketBoard.vue')
+test('market news links are external-safe and guarded by the normalized linkable flag', () => {
+  const board = read('components/market/MarketNewsBoard.vue')
 
-  // 可点链接必须新窗口 + noopener noreferrer
-  const anchor = board.match(/<a[^>]*>/g) || []
-  assert.equal(anchor.length, 1, '要闻区应只有一处 <a> 渲染')
+  const anchor = board.match(/<a\s[^>]*>/g) || []
+  assert.equal(anchor.length, 1, '市场要闻区应只有一处 <a> 渲染')
+  assert.match(anchor[0], /v-if="item\.linkable"/)
   assert.match(anchor[0], /target="_blank"/)
   assert.match(anchor[0], /rel="noopener noreferrer"/)
-  // 且必须受 linkable 守卫，非 http(s) 走纯文本分支
-  assert.match(board, /<a v-if="item\.linkable"/)
-  assert.match(board, /v-else class="news-plain"/)
-  // 反向控制：不允许出现无条件渲染的 href 绑定
   assert.doesNotMatch(board, /<a\s+:href="item\.url"(?![^>]*v-if)/)
 })
 
@@ -97,14 +99,13 @@ test('cross-market instrument CRUD and selection are wired to persisted preferen
   assert.match(view, /market\.value !== requestMarket[\s\S]*selectedSymbol\.value !== requestSymbol/)
 })
 
-test('unavailable news and unavailable board degrade independently', () => {
-  const board = read('components/market/MultiMarketBoard.vue')
+test('unavailable market pulse and news degrade independently', () => {
+  const overview = read('components/market/MarketOverviewBoard.vue')
+  const news = read('components/market/MarketNewsBoard.vue')
 
-  // available=false 走不可用分支，而不是当成空列表渲染
-  assert.match(board, /payload\.available === false/)
-  assert.match(board, /boardState === 'error'/)
-  assert.match(board, /newsState\.value = 'unavailable'/)
-  assert.match(board, /newsState\.value = 'empty'/)
-  // 模板：非 ready 一律显示提示文案（把 unavailable 与 empty 都覆盖到）
-  assert.match(board, /v-else-if="newsState !== 'ready'"/)
+  assert.match(overview, /item\.available === false/)
+  assert.match(overview, /error\.value = e\?\.message/)
+  assert.match(news, /payload\.available === false/)
+  assert.match(news, /state\.value = 'unavailable'/)
+  assert.match(news, /state\.value = items\.value\.length \? 'ready' : 'empty'/)
 })

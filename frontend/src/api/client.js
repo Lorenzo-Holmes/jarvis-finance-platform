@@ -243,6 +243,7 @@ export const api = {
     API_BASE, '/api/market/prices/stream', 'prices', onEvent, onError,
   ),
   marketKline: (params) => get(API_BASE, '/api/market/kline', params),
+  marketOverview: () => get(API_BASE, '/api/market/overview'),
   marketInstruments: () => get(API_BASE, '/api/market/instruments'),
   resolveMarketInstrument: (market, query) => get(API_BASE, '/api/market/instruments/resolve', { market, query }),
   marketPreferences: () => get(API_BASE, '/api/market/preferences'),
@@ -296,6 +297,28 @@ export const api = {
   researchTask: (id) => get(API_BASE, `/api/research/tasks/${id}`),
   createResearchTask: (body) => post(API_BASE, '/api/research/tasks', body),
   runResearchTask: (id) => post(API_BASE, `/api/research/tasks/${id}/run`, {}),
+
+  // 定时任务：后端能力已上线，前端统一从这里接入，避免页面各自拼 URL。
+  scheduledTasks: (type = '', page = 0, size = 20) => get(API_BASE, '/api/scheduled-tasks', { type: type || undefined, page, size }),
+  scheduledTask: (id) => get(API_BASE, `/api/scheduled-tasks/${id}`),
+  scheduledTaskTypes: () => get(API_BASE, '/api/scheduled-tasks/types'),
+  createScheduledTask: (body) => post(API_BASE, '/api/scheduled-tasks', body),
+  updateScheduledTask: (id, body) => request(API_BASE, `/api/scheduled-tasks/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  pauseScheduledTask: (id) => post(API_BASE, `/api/scheduled-tasks/${id}/pause`, {}),
+  resumeScheduledTask: (id) => post(API_BASE, `/api/scheduled-tasks/${id}/resume`, {}),
+  runScheduledTask: (id) => post(API_BASE, `/api/scheduled-tasks/${id}/run`, {}),
+  deleteScheduledTask: (id) => request(API_BASE, `/api/scheduled-tasks/${id}`, { method: 'DELETE' }),
+  scheduledTaskRuns: (id, page = 0, size = 20) => get(API_BASE, `/api/scheduled-tasks/${id}/runs`, { page, size }),
+
+  // 站内通知：任务完成/失败、风险事件等统一从后端通知中心读取。
+  notifications: (unreadOnly = false, page = 0, size = 20) => get(API_BASE, '/api/notifications', { unread_only: unreadOnly, page, size }),
+  notificationUnreadCount: () => get(API_BASE, '/api/notifications/unread-count'),
+  markNotificationRead: (id) => post(API_BASE, `/api/notifications/${id}/read`, {}),
+  markAllNotificationsRead: () => post(API_BASE, '/api/notifications/read-all', {}),
+  deleteNotification: (id) => request(API_BASE, `/api/notifications/${id}`, { method: 'DELETE' }),
+
+  // 当前用户审计事件。
+  auditRecent: (limit = 50) => get(API_BASE, '/api/audit/recent', { limit }),
 
   // 管理员账户、配额和功能权限
   adminUsers: (query = '', limit = 50) => get(API_BASE, '/api/admin/users', { query, limit }),

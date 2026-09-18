@@ -53,7 +53,7 @@ class MarketDataProvidersTest {
      */
     @Test
     void everySupportedMarketHasAtLeastOneCapability() {
-        List<String> markets = List.of("gold_etf", "london_gold", "a_share", "us_stock", "crypto");
+        List<String> markets = List.of("gold_etf", "london_gold", "a_share", "us_stock", "crypto", "global_index");
 
         for (MarketDataProvider provider : List.of(yahoo, eastMoney, binance, sina, tencent)) {
             for (String market : markets) {
@@ -83,18 +83,21 @@ class MarketDataProvidersTest {
         // 美股与加密货币的报价本已实现，所以可以声明支持。
         assertTrue(yahoo.supports("us_stock"));
         assertTrue(yahoo.supports("crypto"));
+        assertTrue(yahoo.supports("global_index"));
 
         assertEquals("core.yahoo.gold-futures", yahoo.sourceKey("london_gold"));
         assertEquals("extended.yahoo.stock", yahoo.sourceKey("us_stock"));
         // 显式写死：接口默认推导会给出 core.yahoo.crypto，
         // 而加密货币备用源的既有运维键是 extended.yahoo.crypto。
         assertEquals("extended.yahoo.crypto", yahoo.sourceKey("crypto"));
+        assertEquals("extended.yahoo.index", yahoo.sourceKey("global_index"));
 
         assertTrue(yahoo.supportsQuote("london_gold"));
         assertFalse(yahoo.supportsKline("london_gold"));
         // 黄金不做K线（core 伦敦金的K线走新浪）；美股与加密货币的K线现在都已迁移。
         assertTrue(yahoo.supportsKline("us_stock"));
         assertTrue(yahoo.supportsKline("crypto"));
+        assertFalse(yahoo.supportsKline("global_index"));
 
         // Yahoo 的 chart 接口对分钟级一次最多 500 条，服务层聚合 10m 时要按它取原始K线。
         assertEquals(500, yahoo.maxKlineLimit());
@@ -213,6 +216,8 @@ class MarketDataProvidersTest {
         assertEquals("AAPL", YahooMarketDataProvider.stockSymbol("AAPL"));
         assertEquals("BTC-USD", YahooMarketDataProvider.cryptoSymbol("BTCUSDT"));
         assertEquals("SOL-USD", YahooMarketDataProvider.cryptoSymbol("SOLUSDT"));
+        assertEquals("^DJI", YahooMarketDataProvider.indexSymbol("^DJI"));
+        assertEquals("HSTECH.HK", YahooMarketDataProvider.indexSymbol("HSTECH.HK"));
     }
 
     /**

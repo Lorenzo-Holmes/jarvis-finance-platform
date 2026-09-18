@@ -56,6 +56,53 @@ class ExtendedMarketDataServiceTest {
     }
 
     @Test
+    void globalIndexResolverUsesAnExplicitAllowList() {
+        Map<String, Object> dow = service.resolveInstrument("global_index", "^DJI");
+        Map<String, Object> tech = service.resolveInstrument("global_index", "HSTECH.HK");
+
+        assertEquals("global_index", dow.get("market"));
+        assertEquals("^DJI", dow.get("symbol"));
+        assertEquals("道琼斯", dow.get("name"));
+        assertEquals("HSTECH.HK", tech.get("symbol"));
+        assertEquals("恒生科技指数", tech.get("name"));
+
+        ResponseStatusException invalid = assertThrows(ResponseStatusException.class,
+                () -> service.resolveInstrument("global_index", "^RUT"));
+        assertEquals(400, invalid.getStatusCode().value());
+    }
+
+    @Test
+    void overviewKeepsAllFourteenSlotsWhenMostUpstreamsAreDown() {
+        String html = """
+                <html><body><table>
+                <tr><td>2026-09-18</td><td>Au99.99</td><td>937.00</td><td>948.90</td><td>935.50</td><td>947.09</td><td>12.28</td><td>1.31%</td></tr>
+                </table></body></html>
+                """;
+        WebClient sgeClient = WebClient.builder()
+                .exchangeFunction(request -> Mono.just(ClientResponse.create(HttpStatus.OK)
+                        .header("Content-Type", "text/html; charset=utf-8")
+                        .body(html)
+                        .build()))
+                .build();
+        ExtendedMarketDataService isolated = new ExtendedMarketDataService(new ObjectMapper(), null, sgeClient);
+
+        List<Map<String, Object>> overview = isolated.marketOverview();
+
+        assertEquals(14, overview.size());
+        assertEquals(List.of("sse", "chinext", "star50", "szse", "bse50", "sse50",
+                        "dow", "nasdaq", "sp500", "nasdaq100", "au9999", "hsi", "hscei", "hstech"),
+                overview.stream().map(item -> String.valueOf(item.get("key"))).toList());
+        Map<String, Object> gold = overview.get(10);
+        assertEquals(true, gold.get("available"));
+        assertEquals("Au99.99", gold.get("symbol"));
+        assertEquals(947.09, gold.get("price"));
+        assertEquals(1.31, gold.get("change_pct"));
+        assertEquals("上海黄金交易所（日行情）", gold.get("source"));
+        assertEquals(false, overview.get(0).get("available"), "A股源故障只能降级单卡，不能让 overview 失败");
+        assertEquals(false, overview.get(6).get("available"), "全球指数源故障同样只降级单卡");
+    }
+
+    @Test
     void reportsCryptoAsAlwaysOpen() {
         MarketStatusDTO status = service.session("crypto");
         assertEquals("open", status.status());
