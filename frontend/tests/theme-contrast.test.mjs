@@ -47,6 +47,17 @@ test('Markdown and OPS table headers keep readable contrast in day and night the
   assert.match(ops, /\.health-table th\s*\{[^}]*color:\s*var\(--text/)
 })
 
+test('research tasks use workspace theme surfaces instead of hard-coded light panels', () => {
+  const tasks = read('components/ResearchTasksPanel.vue')
+
+  assert.match(tasks, /background:\s*var\(--workspace-panel-wash/)
+  assert.match(tasks, /background:\s*var\(--workspace-control-bg/)
+  assert.match(tasks, /background:\s*var\(--workspace-action-bg/)
+  assert.match(tasks, /background:\s*var\(--workspace-accent-wash/)
+  assert.doesNotMatch(tasks, /rgba\(239,235,227/)
+  assert.doesNotMatch(tasks, /rgba\(255,255,255,\.5\)/)
+})
+
 test('industry graph, instrument list and market rail use workspace theme surfaces', () => {
   const chain = read('pages/ChainPage.vue')
   const instruments = read('components/market/InstrumentList.vue')

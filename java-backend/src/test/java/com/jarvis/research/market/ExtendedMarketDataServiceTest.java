@@ -103,6 +103,36 @@ class ExtendedMarketDataServiceTest {
     }
 
     @Test
+    void overviewUsesEastMoneyAu9999BeforeSlowerExchangeFallbacks() {
+        String json = """
+                {"rc":0,"data":{"f43":94600,"f44":94769,"f45":93850,"f46":94450,"f58":"黄金9999","f60":94709,"f86":1789756197,"f152":2}}
+                """;
+        AtomicInteger calls = new AtomicInteger();
+        WebClient client = WebClient.builder()
+                .exchangeFunction(request -> {
+                    calls.incrementAndGet();
+                    return Mono.just(ClientResponse.create(HttpStatus.OK)
+                            .header("Content-Type", "application/json; charset=utf-8")
+                            .body(json)
+                            .build());
+                })
+                .build();
+        ExtendedMarketDataService isolated = new ExtendedMarketDataService(new ObjectMapper(), null, client);
+
+        Map<String, Object> gold = isolated.marketOverview().get(10);
+
+        assertEquals(true, gold.get("available"));
+        assertEquals("Au99.99", gold.get("symbol"));
+        assertEquals(946.0, gold.get("price"));
+        assertEquals(947.09, gold.get("prev_close"));
+        assertEquals(947.69, gold.get("high"));
+        assertEquals(938.5, gold.get("low"));
+        assertEquals(944.5, gold.get("open"));
+        assertEquals("东方财富（AU9999）", gold.get("source"));
+        assertEquals(1, calls.get(), "东方财富成功时不应继续请求新浪/上金所");
+    }
+
+    @Test
     void reportsCryptoAsAlwaysOpen() {
         MarketStatusDTO status = service.session("crypto");
         assertEquals("open", status.status());

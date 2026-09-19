@@ -236,7 +236,7 @@ async function removeFromWatchlist(item) {
   if (!item) return
   watchlist.value = watchlist.value.filter(candidate => instrumentKey(candidate) !== instrumentKey(item))
   await persistPreferences()
-  chooseDefaultSymbol()
+  await reconcileSelection()
 }
 
 async function removeDefault(item) {
@@ -244,14 +244,14 @@ async function removeDefault(item) {
   const key = instrumentKey(item)
   if (!hiddenDefaultKeys.value.includes(key)) hiddenDefaultKeys.value.push(key)
   await persistPreferences()
-  chooseDefaultSymbol()
+  await reconcileSelection()
 }
 
 async function restoreDefaults() {
   const marketPrefix = `${market.value}:`
   hiddenDefaultKeys.value = hiddenDefaultKeys.value.filter(key => !key.startsWith(marketPrefix))
   await persistPreferences()
-  chooseDefaultSymbol()
+  await reconcileSelection()
 }
 
 function resetSelectedData() {
@@ -296,6 +296,14 @@ function chooseDefaultSymbol() {
   if (!marketIntervals.value.some(i => i.value === interval.value)) {
     interval.value = marketIntervals.value[0].value
   }
+}
+
+async function reconcileSelection() {
+  const previousSymbol = selectedSymbol.value
+  chooseDefaultSymbol()
+  if (bootstrapping || !selectedSymbol.value || selectedSymbol.value === previousSymbol) return
+  await nextTick()
+  await loadData()
 }
 
 function startEditInstrument(item) {
@@ -538,8 +546,8 @@ onBeforeUnmount(() => {
         <span class="market-status" :class="{ open: session?.is_open }">
           <i></i>{{ session?.label || '交易状态加载中' }}
         </span>
-        <span class="refresh-note" :class="{ stale: freshness.stale }">
-          {{ freshness.stale ? '数据可能陈旧' : interval === '1d' ? `30s 自动刷新 · ${freshness.label}` : session?.is_open || market === 'crypto' ? `盯盘中 · 15s刷新 · ${freshness.label}` : '非交易时段 · 手动刷新' }}
+        <span class="refresh-note">
+          {{ interval === '1d' ? `30s 自动刷新 · ${freshness.label}` : session?.is_open || market === 'crypto' ? `盯盘中 · 15s刷新 · ${freshness.label}` : `非交易时段 · 最近更新 ${freshness.label}` }}
         </span>
         <button type="button" class="btn" @click="refresh" :disabled="loading">{{ loading ? '加载中…' : '刷新' }}</button>
       </div>
@@ -639,7 +647,6 @@ onBeforeUnmount(() => {
 .period-btn:last-child { border-right: 0; }
 .period-btn.active { background: var(--workspace-action-bg); color: var(--workspace-action-text); font-weight: 700; }
 .refresh-note { color: var(--subtle); font-size: 9px; white-space: nowrap; }
-.refresh-note.stale { color: var(--warn); }
 .market-status { display: inline-flex; align-items: center; gap: 5px; color: var(--subtle); font-size: 9px; white-space: nowrap; }
 .market-status i { width: 5px; height: 5px; border-radius: 50%; background: var(--workspace-neutral-dot); }
 .market-status.open { color: #27c46b; }

@@ -22,6 +22,8 @@ const selectedKey = ref('')
 const loading = ref(true)
 const error = ref('')
 const importInputRef = ref(null)
+const codeInput = ref('')
+const addingCode = ref(false)
 const importing = ref(false)
 const importMessage = ref('')
 
@@ -123,6 +125,36 @@ function choose(item) {
 function openImporter() {
   importMessage.value = ''
   importInputRef.value?.click()
+}
+
+async function addCode() {
+  const symbol = codeInput.value.trim()
+  if (!symbol || addingCode.value) return
+  addingCode.value = true
+  importMessage.value = ''
+  try {
+    const market = inferMarket(symbol)
+    const response = await api.resolveMarketInstrument(market, symbol)
+    if (response?.code !== 200 || !response?.data?.symbol) {
+      throw new Error(response?.message || '代码解析失败')
+    }
+    const item = response.data
+    const key = instrumentKey(item)
+    const merged = [...watchlist.value]
+    const index = merged.findIndex(existing => instrumentKey(existing) === key)
+    if (index >= 0) merged.splice(index, 1, item)
+    else merged.push(item)
+    watchlist.value = merged
+    hiddenDefaultKeys.value = hiddenDefaultKeys.value.filter(existing => existing !== key)
+    await persistPreferences()
+    codeInput.value = ''
+    importMessage.value = `${item.name || item.symbol} 已加入自选`
+    choose(item)
+  } catch (e) {
+    importMessage.value = e?.message || '添加标的失败'
+  } finally {
+    addingCode.value = false
+  }
 }
 
 function inferMarket(symbol) {
@@ -236,8 +268,12 @@ watch(() => props.active, active => {
         <p>点击标的即可切换整个工作台的研究目标。</p>
       </div>
       <div class="watchlist-actions">
+        <form class="code-add" @submit.prevent="addCode">
+          <input v-model="codeInput" type="text" autocomplete="off" aria-label="输入股票代码" placeholder="输入代码：600519 / AAPL / BTCUSDT" />
+          <button type="submit" :disabled="addingCode || !codeInput.trim()">{{ addingCode ? '添加中…' : '添加' }}</button>
+        </form>
         <input ref="importInputRef" class="file-input" type="file" accept=".json,.csv,.txt,text/plain,text/csv,application/json" @change="handleImportFile" />
-        <button type="button" :disabled="importing" @click="openImporter">{{ importing ? '导入中…' : '导入自选' }}</button>
+        <button type="button" :disabled="importing" @click="openImporter">{{ importing ? '导入中…' : '从文件导入' }}</button>
         <button type="button" :disabled="loading" @click="load">刷新</button>
       </div>
     </header>
@@ -287,6 +323,10 @@ watch(() => props.active, active => {
 .watchlist-actions { display: flex; align-items: center; gap: 6px; }
 .watchlist-actions button { height: 30px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; background: transparent; color: var(--muted); cursor: pointer; font-size: 9px; }
 .watchlist-actions button:hover:not(:disabled) { color: var(--text); border-color: var(--line-strong); background: var(--workspace-hover-bg); }
+.watchlist-actions button:disabled { opacity: .45; cursor: default; }
+.code-add { display: flex; align-items: center; gap: 5px; }
+.code-add input { width: 238px; height: 30px; padding: 0 9px; border: 1px solid var(--line); border-radius: 7px; outline: none; background: var(--workspace-control-bg, transparent); color: var(--text); font-size: 9px; }
+.code-add input:focus { border-color: var(--workspace-focus, var(--accent)); }
 .file-input { display: none; }
 .import-message { margin: 10px 0 0; color: var(--accent-strong); font-size: 9px; }
 .watchlist-empty { margin: 12px 0 0; color: var(--muted); font-size: 10px; }
@@ -306,5 +346,6 @@ watch(() => props.active, active => {
 .watch-cards em { flex: 0 0 auto; color: var(--subtle); font-size: 7px; font-style: normal; }
 .watch-cards button.active em { color: var(--accent-strong); }
 .watchlist-foot { display: flex; justify-content: space-between; gap: 18px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); color: var(--subtle); font-size: 8px; line-height: 1.5; }
-@media (max-width: 760px) { .watchlist-head { align-items: flex-start; flex-direction: column; } .watchlist-actions { width: 100%; } .watchlist-foot { flex-direction: column; gap: 4px; } }
+@media (max-width: 900px) { .watchlist-head { align-items: flex-start; flex-direction: column; } .watchlist-actions { width: 100%; flex-wrap: wrap; } .code-add { flex: 1 1 320px; } .code-add input { min-width: 0; width: 100%; } }
+@media (max-width: 760px) { .watchlist-foot { flex-direction: column; gap: 4px; } }
 </style>

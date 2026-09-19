@@ -4,6 +4,7 @@ import { api } from '../api/client'
 import DataState from './common/DataState.vue'
 import MarkdownContent from './common/MarkdownContent.vue'
 import ResearchTasksPanel from './ResearchTasksPanel.vue'
+import { extractFinancialDocument } from '../utils/financialDocumentImport'
 
 const props = defineProps({
   researchContext: { type: Object, default: null },
@@ -26,6 +27,13 @@ const chatBox = ref(null)
 const activeEvidence = ref('market')
 const inspectorCollapsed = ref(true)
 const sourcePeek = ref(null)
+const researchFileInput = ref(null)
+const researchAttachments = ref([])
+const documentImporting = ref(false)
+const documentImportStatus = ref('')
+const documentImportError = ref('')
+let attachmentSequence = 0
+let documentImportController = null
 let currentChatAbort = null
 
 // ---- 智能报价 ----
@@ -112,8 +120,82 @@ async function loadStatus() {
   }
 }
 
-function push(role, content) {
-  messages.value.push({ role, content })
+function push(role, content, apiContent = '') {
+  messages.value.push({ role, content, apiContent })
+}
+
+function chooseResearchFile() {
+  documentImportError.value = ''
+  researchFileInput.value?.click()
+}
+
+async function handleResearchFileChange(event) {
+  const file = event.target?.files?.[0]
+  if (event.target) event.target.value = ''
+  if (!file || documentImporting.value) return
+
+  documentImportController?.abort()
+  const controller = new AbortController()
+  documentImportController = controller
+  documentImporting.value = true
+  documentImportStatus.value = `正在读取 ${file.name}`
+  documentImportError.value = ''
+  try {
+    const extracted = await extractFinancialDocument(file, {
+      signal: controller.signal,
+      onProgress(update) {
+        documentImportStatus.value = update.status || `正在读取 ${file.name}`
+      },
+    })
+    if (controller.signal.aborted) return
+    const text = String(extracted?.text || '').trim()
+    if (!text) throw new Error('没有从文件中提取到可用文字')
+    const attachment = {
+      id: `research-file-${++attachmentSequence}`,
+      name: file.name,
+      text,
+      warnings: extracted.warnings || [],
+      sent: false,
+    }
+    researchAttachments.value = [...researchAttachments.value, attachment].slice(-4)
+    documentImportStatus.value = `已加入 ${file.name} · ${text.length.toLocaleString()} 字符`
+    if (!reportText.value.trim()) {
+      reportText.value = text
+      reportResult.value = ''
+      reportError.value = ''
+      activeEvidence.value = 'filing'
+    }
+  } catch (e) {
+    if (e?.name !== 'AbortError') documentImportError.value = e?.message || '文件读取失败'
+  } finally {
+    if (documentImportController === controller) documentImportController = null
+    if (!controller.signal.aborted) documentImporting.value = false
+  }
+}
+
+function removeResearchAttachment(id) {
+  researchAttachments.value = researchAttachments.value.filter(item => item.id !== id)
+}
+
+function buildAttachmentContext(question) {
+  const pending = researchAttachments.value.filter(item => !item.sent)
+  if (!pending.length) return { content: '', attachedIds: [] }
+  const available = Math.max(0, 9_200 - question.length)
+  if (available < 300) return { content: '', attachedIds: [] }
+
+  let remaining = available
+  const blocks = []
+  const attachedIds = []
+  for (const item of pending) {
+    const heading = `【上传文件：${item.name}】\n`
+    if (remaining <= heading.length + 80) break
+    const bodyLimit = Math.min(item.text.length, remaining - heading.length)
+    const body = item.text.slice(0, bodyLimit)
+    blocks.push(`${heading}${body}${bodyLimit < item.text.length ? '\n[文件内容已按对话长度限制截断]' : ''}`)
+    attachedIds.push(item.id)
+    remaining -= heading.length + body.length + 20
+  }
+  return { content: blocks.join('\n\n'), attachedIds }
 }
 
 async function scrollChatToBottom() {
@@ -128,10 +210,21 @@ function stopChat() {
 async function sendChat() {
   const text = input.value.trim()
   if (!text || sending.value) return
-  push('user', text)
+  const attachmentContext = buildAttachmentContext(text)
+  const apiContent = attachmentContext.content
+    ? `${text}\n\n以下是用户在本轮明确上传并要求纳入研究的材料：\n${attachmentContext.content}`
+    : text
+  push('user', text, apiContent)
+  if (attachmentContext.attachedIds.length) {
+    const sent = new Set(attachmentContext.attachedIds)
+    researchAttachments.value = researchAttachments.value.map(item => sent.has(item.id) ? { ...item, sent: true } : item)
+  }
   input.value = ''
   // 不把前端欢迎语发给模型；保留最近 20 条真实 user/assistant 上下文。
-  const history = messages.value.slice(1).slice(-20).map(({ role, content }) => ({ role, content }))
+  const history = messages.value.slice(1).slice(-20).map(({ role, content, apiContent: hiddenContent }) => ({
+    role,
+    content: hiddenContent || content,
+  }))
   push('assistant', '')
   const assistantIndex = messages.value.length - 1
   sending.value = true
@@ -279,6 +372,8 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onResearchKeydown)
+  documentImportController?.abort()
+  currentChatAbort?.abort()
 })
 </script>
 
@@ -433,6 +528,24 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
+        <input
+          ref="researchFileInput"
+          class="research-file-input"
+          type="file"
+          accept=".pdf,.docx,.md,.markdown,.txt,.png,.jpg,.jpeg,.webp,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/markdown,text/plain,image/png,image/jpeg,image/webp"
+          aria-label="上传研究文件"
+          @change="handleResearchFileChange"
+        />
+        <div v-if="researchAttachments.length || documentImporting || documentImportStatus || documentImportError" class="research-attachments" aria-live="polite">
+          <div v-for="item in researchAttachments" :key="item.id" class="research-attachment-chip">
+            <span><b>{{ item.name }}</b><small>{{ item.sent ? '已引用到对话' : '待引用' }} · {{ item.text.length.toLocaleString() }} 字符</small></span>
+            <button type="button" :aria-label="`移除 ${item.name}`" @click="removeResearchAttachment(item.id)">×</button>
+          </div>
+          <span v-if="documentImporting" class="attachment-status">{{ documentImportStatus || '正在读取文件…' }}</span>
+          <span v-else-if="documentImportError" class="attachment-status error">{{ documentImportError }}</span>
+          <span v-else-if="documentImportStatus" class="attachment-status">{{ documentImportStatus }}</span>
+        </div>
+
         <div class="composer-shell">
           <textarea
             v-model="input"
@@ -444,6 +557,7 @@ onBeforeUnmount(() => {
           ></textarea>
           <div class="composer-tools">
             <div>
+              <button type="button" :disabled="documentImporting" @click="chooseResearchFile">{{ documentImporting ? '读取中…' : '上传文件' }}</button>
               <button type="button" @click="appendReference('行情')">@ 行情</button>
               <button type="button" @click="appendReference('财报')">@ 财报</button>
               <button type="button" @click="appendReference('产业链')">@ 产业链</button>
@@ -718,6 +832,16 @@ onBeforeUnmount(() => {
 .message-row.assistant .message-meta i { background: var(--accent); }
 .message-content { color: var(--text); font-size: 12px; line-height: 1.72; overflow-wrap: anywhere; }
 
+.research-file-input { display: none; }
+.research-attachments { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; margin-top: 8px; padding: 0 2px; overflow-x: auto; scrollbar-width: thin; }
+.research-attachment-chip { flex: 0 0 auto; min-width: 0; max-width: 300px; display: flex; align-items: center; gap: 7px; padding: 6px 7px 6px 9px; border: 1px solid var(--material-border, var(--line)); border-radius: 8px; background: color-mix(in srgb, var(--workspace-accent-wash) 45%, transparent); }
+.research-attachment-chip > span { min-width: 0; display: grid; gap: 2px; }
+.research-attachment-chip b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-size: 8.5px; font-weight: 620; }
+.research-attachment-chip small { color: var(--subtle); font-size: 7.5px; }
+.research-attachment-chip button { border: 0; background: transparent; color: var(--subtle); cursor: pointer; font-size: 13px; }
+.attachment-status { flex: 0 0 auto; color: var(--subtle); font-size: 8px; }
+.attachment-status.error { color: var(--bad); }
+
 .composer-shell {
   flex: 0 0 auto;
   margin-top: 12px;
@@ -736,7 +860,8 @@ onBeforeUnmount(() => {
 .composer-tools > div { display: flex; align-items: center; gap: 3px; }
 .composer-tools button:not(.send-btn) { border: 0; background: transparent; color: var(--subtle); padding: 5px 6px; cursor: pointer; font-size: 8px; }
 .composer-tools button:not(.send-btn) { border-radius: 7px; transition: color var(--motion-fast, 110ms) ease, background var(--motion-fast, 110ms) ease, transform var(--motion-fast, 110ms) ease; }
-.composer-tools button:not(.send-btn):hover { color: var(--text); background: rgba(255,255,255,.045); }
+.composer-tools button:not(.send-btn):hover:not(:disabled) { color: var(--text); background: rgba(255,255,255,.045); }
+.composer-tools button:not(.send-btn):disabled { opacity: .42; cursor: default; }
 .composer-tools button:not(.send-btn):active { transform: scale(.96); }
 .send-btn { min-width: 74px; min-height: 29px; border: 1px solid var(--workspace-action-border); border-radius: 8px; background: transparent; color: var(--workspace-action-text); padding: 0 10px; cursor: pointer; font-size: 9px; font-weight: 650; transition: background var(--motion-fast, 110ms) ease, transform var(--motion-fast, 110ms) ease; }
 .send-btn:hover:not(:disabled) { background: rgba(255,255,255,.045); }
@@ -921,16 +1046,18 @@ onBeforeUnmount(() => {
   position: relative;
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   border-radius: 12px;
   background: linear-gradient(180deg, color-mix(in srgb, var(--surface) 24%, transparent), transparent 24%);
 }
 .research-document {
-  flex: 1 1 0;
-  min-height: 0;
-  overflow: auto;
-  overscroll-behavior: contain;
-  scrollbar-gutter: stable;
-  padding-right: 8px;
+  flex: 0 0 auto;
+  min-height: auto;
+  max-height: none;
+  overflow: visible;
+  padding-right: 4px;
 }
 .document-masthead {
   padding-top: 8px;
@@ -979,7 +1106,7 @@ onBeforeUnmount(() => {
   .research-head { min-height: 46px; padding-bottom: 8px; }
   .desk-switch { padding: 2px; }
   .desk-switch button { min-height: 28px; padding-left: 10px; padding-right: 10px; }
-  .research-document { min-height: 140px; }
+  .research-document { min-height: 0; }
   .prompt-templates { padding-top: 4px; padding-bottom: 4px; }
   .prompt-templates button { padding-top: 5px; padding-bottom: 5px; }
   .conversation-label { padding-top: 6px; padding-bottom: 4px; }

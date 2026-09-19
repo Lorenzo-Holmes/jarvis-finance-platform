@@ -41,9 +41,14 @@ test('market overview uses the aggregated global pulse endpoint and horizontal c
   assert.match(board, /emit\('select'/)
 })
 
-test('market home watchlist supports import and promotes a selected instrument to research context', () => {
+test('market home watchlist supports direct code add, file import and research-context promotion', () => {
   const board = read('components/market/MarketWatchlistBoard.vue')
 
+  assert.match(board, /aria-label="输入股票代码"/)
+  assert.match(board, /placeholder="输入代码：600519 \/ AAPL \/ BTCUSDT"/)
+  assert.match(board, /async function addCode\(\)/)
+  assert.match(board, /api\.resolveMarketInstrument\(market, symbol\)/)
+  assert.match(board, /从文件导入/)
   assert.match(board, /accept="\.json,\.csv,\.txt/)
   assert.match(board, /function parseImport\(text\)/)
   assert.match(board, /api\.resolveMarketInstrument\(row\.market, row\.symbol\)/)
@@ -74,10 +79,21 @@ test('market news accepts the Java daily-news payload shape instead of dropping 
 test('market news is a dedicated section below the watchlist', () => {
   const board = read('components/market/MarketNewsBoard.vue')
 
-  assert.match(board, /api\.newsDaily\(12, force\)/)
+  assert.match(board, /NEWS_FETCH_LIMIT = 40/)
+  assert.match(board, /PAGE_SIZE = 8/)
+  assert.match(board, /api\.newsDaily\(NEWS_FETCH_LIMIT, force\)/)
+  assert.match(board, /api\.newsTranslate\(titles\)/)
+  assert.match(board, /translationSequence/)
+  assert.match(board, /正在中文化标题/)
   assert.match(board, /pickNewsItems/)
   assert.match(board, /MARKET BRIEFING/)
   assert.match(board, /市场要闻/)
+  assert.match(board, /visibleItems/)
+  assert.match(board, /上一页/)
+  assert.match(board, /下一页/)
+  assert.match(board, /showOriginal = ref\(false\)/)
+  assert.match(board, /显示原文/)
+  assert.match(board, /显示中文/)
 })
 
 test('market news links are external-safe and guarded by the normalized linkable flag', () => {
@@ -91,12 +107,13 @@ test('market news links are external-safe and guarded by the normalized linkable
   assert.doesNotMatch(board, /<a\s+:href="item\.url"(?![^>]*v-if)/)
 })
 
-test('api client exposes the daily news endpoint', () => {
+test('api client exposes daily news and non-blocking title translation endpoints', () => {
   const client = read('api/client.js')
 
   assert.match(client, /newsDaily: \(limit = 12, force = false\) => get\(API_BASE, '\/api\/news\/daily'/)
   // 必须带 refresh/force，否则后端不会触发抓取，前端"抓取"按钮会假成功
   assert.match(client, /refresh: true, force/)
+  assert.match(client, /newsTranslate: \(titles\) => post\(API_BASE, '\/api\/news\/translate'/)
 })
 
 test('cross-market instrument CRUD and selection are wired to persisted preferences', () => {
@@ -115,6 +132,8 @@ test('cross-market instrument CRUD and selection are wired to persisted preferen
   assert.match(view, /async function selectInstrument\(symbol\)/)
   assert.match(view, /latestDataRequest\.invalidate\(\)/)
   assert.match(view, /await nextTick\(\)[\s\S]*await loadData\(\)/)
+  assert.match(view, /async function reconcileSelection\(\)/)
+  assert.match(view, /await reconcileSelection\(\)/)
   assert.doesNotMatch(view, /watch\(\[selectedSymbol, interval\]/)
   assert.match(view, /market\.value !== requestMarket[\s\S]*selectedSymbol\.value !== requestSymbol/)
 })

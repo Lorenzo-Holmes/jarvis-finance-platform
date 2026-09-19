@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """AI 路由: 统一挂载到主应用 /api/ai/*"""
-from typing import List, Dict, Optional, Any, Literal
+from typing import Annotated, List, Dict, Optional, Any, Literal
 import hmac
 import json
 import os
@@ -50,6 +50,10 @@ class ChatReq(BaseModel):
 class ReportReq(BaseModel):
     content: str = Field(default="", max_length=50_000)
     text: Optional[str] = Field(default="", max_length=50_000)
+
+
+class NewsTranslateReq(BaseModel):
+    titles: List[Annotated[str, Field(min_length=1, max_length=500)]] = Field(min_length=1, max_length=64)
 
 
 class SentimentReq(BaseModel):
@@ -188,6 +192,11 @@ def chat_stream(req: ChatReq):
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.post("/news/translate")
+def news_translate(req: NewsTranslateReq):
+    return {"code": 200, "message": "ok", "data": _guard(ai_service.translate_news_titles, titles=req.titles)}
 
 
 @router.post("/financial/report")

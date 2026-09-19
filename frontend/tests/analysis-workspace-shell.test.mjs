@@ -242,6 +242,20 @@ test('workspace navigation popovers escape the horizontal nav stacking context',
   assert.doesNotMatch(system, /\.workspace-function-menu[^}]*z-index:/)
 })
 
+test('research assistant accepts local documents and keeps the research document expanded', () => {
+  const ai = read('components/AiCenter.vue')
+
+  assert.match(ai, /extractFinancialDocument/)
+  assert.match(ai, /aria-label="上传研究文件"/)
+  assert.match(ai, /上传文件/)
+  assert.match(ai, /researchAttachments/)
+  assert.match(ai, /buildAttachmentContext/)
+  assert.match(ai, /hiddenContent \|\| content/)
+  assert.match(ai, /\.research-document\s*\{[\s\S]{0,180}?flex:\s*0 0 auto/)
+  assert.match(ai, /\.research-document\s*\{[\s\S]{0,220}?overflow:\s*visible/)
+  assert.match(ai, /\.research-canvas\s*\{[\s\S]{0,220}?overflow-y:\s*auto/)
+})
+
 test('strategy inputs and research quick peek share the fluid interaction system', () => {
   const strategy = read('pages/StrategyPage.vue')
   const choice = read('components/common/ChoicePopover.vue')

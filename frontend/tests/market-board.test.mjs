@@ -67,10 +67,12 @@ test('涨跌方向：0 与非法值都算平盘，不能误标上涨', () => {
   assert.equal(quoteClass(0), '')
 })
 
-test('资讯规范化：只有 http(s) 才可跳转', () => {
-  const ok = normalizeNewsItem({ title: '央行降准', url: 'https://www.example.com/a?b=1', source: 'example', published: '2026-09-17T08:30:00+08:00' })
+test('资讯规范化：保留中英双标题，且只有 http(s) 才可跳转', () => {
+  const ok = normalizeNewsItem({ title: 'Fed sends a signal', title_original: 'Fed sends a signal', title_zh: '美联储释放信号', url: 'https://www.example.com/a?b=1', source: 'example', published: '2026-09-17T08:30:00+08:00' })
   assert.equal(ok.linkable, true)
   assert.equal(ok.host, 'example.com')
+  assert.equal(ok.titleOriginal, 'Fed sends a signal')
+  assert.equal(ok.titleZh, '美联储释放信号')
 
   const js = normalizeNewsItem({ title: 'x', url: 'javascript:alert(1)' })
   assert.equal(js.linkable, false)

@@ -66,7 +66,9 @@ export function quoteClass(value) {
  * RSS 里出现过 javascript:、相对路径、空链接，直接塞进 <a href> 是注入风险。
  */
 export function normalizeNewsItem(raw, index = 0) {
-  const title = String(raw?.title || '').trim()
+  const titleOriginal = String(raw?.title_original || raw?.title || '').trim()
+  const titleZh = String(raw?.title_zh || raw?.title || titleOriginal).trim()
+  const title = titleOriginal || titleZh
   const url = String(raw?.url || raw?.link || '').trim()
   const source = String(raw?.source || raw?.source_name || raw?.source_id || '').trim()
   const published = String(raw?.published || raw?.published_at || raw?.added_at || '').trim()
@@ -74,6 +76,8 @@ export function normalizeNewsItem(raw, index = 0) {
   return {
     id: `${index}:${url || title}`,
     title,
+    titleOriginal: titleOriginal || title,
+    titleZh: titleZh || title,
     url,
     source,
     published,

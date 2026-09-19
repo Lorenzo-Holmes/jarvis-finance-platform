@@ -216,6 +216,48 @@ def chat(messages: List[Dict[str, str]], temperature: float = 0.7,
     return _chat_request(full, temperature=temperature)
 
 
+def translate_news_titles(titles: List[str]) -> Dict[str, Any]:
+    """把一批财经新闻标题翻译成简洁中文，顺序和数量必须保持不变。
+
+    RSS 抓取本身不依赖 AI；翻译失败时由 Java 层回退原文，所以这里可以严格拒绝
+    非数组/数量错位的模型输出，避免“第 N 条译文套到第 N+1 条新闻”这种静默错配。
+    """
+    cleaned = [str(title or "").strip() for title in titles]
+    if not cleaned:
+        return {"translations": [], "model": AI_MODEL}
+    if len(cleaned) > 64:
+        raise RuntimeError("单次最多翻译64条新闻标题")
+
+    prompt = (
+        "把下面的财经新闻标题翻译为简体中文。要求：\n"
+        "1. 只返回 JSON 字符串数组，不要 Markdown、解释或编号；\n"
+        "2. 数组长度和输入完全一致，逐项对应，绝不能合并或重排；\n"
+        "3. 公司名、机构名、股票代码、数字和专有名词尽量保留准确；\n"
+        "4. 标题已经是中文时原样返回；不要添加原文没有的判断。\n"
+        "输入：" + json.dumps(cleaned, ensure_ascii=False)
+    )
+    result = _chat_request([
+        {"role": "system", "content": "你是财经新闻标题翻译器，只做忠实翻译。"},
+        {"role": "user", "content": prompt},
+    ], temperature=0.0, max_tokens=min(2400, max(256, len(cleaned) * 48)))
+
+    raw = str(result.get("content") or "").strip()
+    fenced = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=re.IGNORECASE | re.DOTALL).strip()
+    start, end = fenced.find("["), fenced.rfind("]")
+    if start < 0 or end < start:
+        raise RuntimeError("新闻标题翻译返回格式异常")
+    try:
+        parsed = json.loads(fenced[start:end + 1])
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("新闻标题翻译返回无法解析") from exc
+    if not isinstance(parsed, list) or len(parsed) != len(cleaned):
+        raise RuntimeError("新闻标题翻译数量不匹配")
+    translations = [str(item or "").strip() for item in parsed]
+    if any(not item for item in translations):
+        raise RuntimeError("新闻标题翻译存在空结果")
+    return {"translations": translations, "model": result.get("model") or AI_MODEL}
+
+
 def research_report(task: Dict[str, Any], metrics: Optional[Dict[str, Any]] = None,
                     quote: Optional[Dict[str, Any]] = None,
                     warnings: Optional[List[str]] = None) -> Dict[str, Any]:

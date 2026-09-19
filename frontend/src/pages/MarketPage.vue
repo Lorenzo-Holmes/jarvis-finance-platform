@@ -192,7 +192,6 @@ const focusedResearchContext = computed(() => {
     sourceModule: 'market',
   }
 })
-const focusedQuoteStale = computed(() => Boolean(focusedQuote.value?.stale))
 const focusedIntervals = computed(() => marketFocus.value === 'jd'
   ? [{ v: '1', label: '1分' }, { v: '5', label: '5分' }, { v: '15', label: '15分' }, { v: '30', label: '30分' }, { v: '60', label: '1小时' }]
   : intervals)
@@ -377,9 +376,9 @@ watch([marketFocus, () => jdKlineCfg.market], () => {
           </span>
         </div>
       </div>
-      <span class="section-status" :class="{ stale: freshness.stale || focusedQuoteStale }">
-        <i :class="{ ok: connected && !freshness.stale && !focusedQuoteStale, warn: freshness.stale || focusedQuoteStale }"></i>
-        {{ !connected ? '正在连接行情' : focusedQuoteStale || freshness.stale ? '行情更新延迟' : `实时 · ${freshness.label}` }}
+      <span class="section-status">
+        <i :class="{ ok: connected }"></i>
+        {{ !connected ? '正在连接行情' : `最近更新 · ${freshness.label}` }}
       </span>
     </div>
 
@@ -441,7 +440,7 @@ watch([marketFocus, () => jdKlineCfg.market], () => {
 
       <aside class="market-rail market-inspector" :class="{ 'inspector-collapsed': !inspectorOpen }" aria-label="行情检查器">
         <header class="rail-head">
-          <div class="inspector-detail"><b>行情数据</b><small>{{ connected && !freshness.stale && !focusedQuoteStale ? '实时' : '延迟' }}</small></div>
+          <div class="inspector-detail"><b>行情数据</b><small>{{ connected ? '已连接' : '连接中' }}</small></div>
           <button type="button" class="inspector-toggle" :aria-expanded="inspectorOpen" :aria-label="inspectorOpen ? '收起行情详情' : '展开行情详情'" @click="toggleInspector">{{ inspectorOpen ? '›' : '‹' }}</button>
         </header>
         <section class="quote-detail inspector-detail">
@@ -470,7 +469,7 @@ watch([marketFocus, () => jdKlineCfg.market], () => {
         </dl>
         <section class="data-health inspector-detail">
           <div class="rail-section-head"><b>数据状态</b></div>
-          <div class="health-row"><span><i :class="{ ok: connected && !freshness.stale && !focusedQuoteStale, warn: freshness.stale || focusedQuoteStale }"></i>行情</span><b>{{ !connected ? '连接中' : focusedQuoteStale || freshness.stale ? '更新延迟' : '正常' }}</b></div>
+          <div class="health-row"><span><i :class="{ ok: connected }"></i>行情</span><b>{{ connected ? '已连接' : '连接中' }}</b></div>
           <div class="health-row"><span>数据源</span><b>{{ focusedQuote?.source || (marketFocus === 'jd' ? '京东积存金' : '行情接口') }}</b></div>
           <div class="health-row"><span>行情时间</span><b>{{ focusedQuote?.quote_time || focusedQuote?.time || '实时刷新' }}</b></div>
           <div class="health-row"><span>更新频率</span><b>1 秒</b></div>
@@ -500,7 +499,6 @@ watch([marketFocus, () => jdKlineCfg.market], () => {
 .section-status i, .health-row i { width: 6px; height: 6px; border-radius: 50%; background: var(--bad); }
 .section-status i.ok, .health-row i.ok { background: var(--ok); }
 .section-status i.warn, .health-row i.warn { background: var(--warn); }
-.section-status.stale { color: var(--warn); }
 
 .market-primary-layout {
   display: grid;

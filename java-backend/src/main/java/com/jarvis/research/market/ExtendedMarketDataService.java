@@ -55,7 +55,10 @@ public class ExtendedMarketDataService {
     private static final DateTimeFormatter INTRADAY_DATE = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
     private static final Pattern HTML_ROW_PATTERN = Pattern.compile("<tr[^>]*>(.*?)</tr>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
     private static final Pattern HTML_CELL_PATTERN = Pattern.compile("<td[^>]*>(.*?)</td>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+    private static final String EASTMONEY_AU9999_URL = "https://push2.eastmoney.com/api/qt/stock/get?secid=118.AU9999&fields=f43,f44,f45,f46,f47,f48,f58,f60,f86,f152";
+    private static final String SINA_AU9999_URL = "https://hq.sinajs.cn/list=gds_AU9999";
     private static final String SGE_DAILY_URL = "https://www.sge.com.cn/sjzx/quotation_daily_new";
+    private static final Pattern SINA_AU9999_PATTERN = Pattern.compile("hq_str_gds_AU9999=\\\"([^\\\"]*)\\\"");
 
     private record OverviewInstrument(String key, String name, String market, String symbol,
                                       String currency, String region) {}
@@ -205,7 +208,7 @@ public class ExtendedMarketDataService {
             try {
                 Map<String, Object> quote;
                 if ("sge_gold".equals(item.market())) {
-                    if (sgeGold == null) sgeGold = sgeAu9999Quote();
+                    if (sgeGold == null) sgeGold = au9999Quote();
                     quote = sgeGold;
                 } else {
                     quote = quote(item.market(), item.symbol());
@@ -231,6 +234,113 @@ public class ExtendedMarketDataService {
         return source.stream()
                 .map(item -> (Map<String, Object>) new LinkedHashMap<String, Object>(item))
                 .toList();
+    }
+
+    /**
+     * 黄金9999（Au99.99/AU9999）按同一标的做三级降级：东方财富 → 新浪 → 上金所。
+     * 不用伦敦金/XAU 冒充国内 Au99.99；任何备用源都必须仍然是黄金9999本身。
+     */
+    private Map<String, Object> au9999Quote() {
+        try {
+            return eastMoneyAu9999Quote();
+        } catch (Exception e) {
+            log.info("黄金9999东方财富源不可用，尝试新浪: {}", e.getMessage());
+        }
+        try {
+            return sinaAu9999Quote();
+        } catch (Exception e) {
+            log.info("黄金9999新浪源不可用，尝试上金所: {}", e.getMessage());
+        }
+        return sgeAu9999Quote();
+    }
+
+    private Map<String, Object> eastMoneyAu9999Quote() throws Exception {
+        String json = webClient.get()
+                .uri(EASTMONEY_AU9999_URL)
+                .headers(headers -> headers.set("User-Agent", "Mozilla/5.0 (compatible; JARVIS-Market/1.0)"))
+                .retrieve()
+                .bodyToMono(String.class)
+                .block();
+        if (json == null || json.isBlank()) throw upstream("东方财富黄金9999行情为空");
+
+        JsonNode data = objectMapper.readTree(json).path("data");
+        if (!data.isObject() || !data.hasNonNull("f43")) throw upstream("东方财富黄金9999返回缺少报价");
+        int scaleDigits = data.path("f152").asInt(2);
+        double scale = Math.pow(10.0, Math.max(0, Math.min(scaleDigits, 6)));
+        double price = data.path("f43").asDouble() / scale;
+        double prevClose = data.path("f60").asDouble() / scale;
+        if (price <= 0 || prevClose <= 0) throw upstream("东方财富黄金9999报价无效");
+        double change = price - prevClose;
+
+        long epochSeconds = data.path("f86").asLong(0L);
+        LocalDateTime quoteTime = epochSeconds > 0
+                ? LocalDateTime.ofInstant(Instant.ofEpochSecond(epochSeconds), SHANGHAI_ZONE)
+                : LocalDateTime.now(SHANGHAI_ZONE);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("market", "sge_gold");
+        out.put("symbol", "Au99.99");
+        out.put("price", price);
+        out.put("prev_close", prevClose);
+        out.put("change", change);
+        out.put("change_pct", change / prevClose * 100.0);
+        putScaledAuField(out, "high", data, "f44", scale);
+        putScaledAuField(out, "low", data, "f45", scale);
+        putScaledAuField(out, "open", data, "f46", scale);
+        out.put("quote_time", quoteTime.format(INTRADAY_DATE));
+        out.put("source", "东方财富（AU9999）");
+        out.put("stale", quoteTime.toLocalDate().isBefore(LocalDate.now(SHANGHAI_ZONE)));
+        return out;
+    }
+
+    private void putScaledAuField(Map<String, Object> out, String key, JsonNode data, String field, double scale) {
+        if (!data.hasNonNull(field)) return;
+        double value = data.path(field).asDouble() / scale;
+        if (value > 0) out.put(key, value);
+    }
+
+    private Map<String, Object> sinaAu9999Quote() {
+        byte[] bytes = webClient.get()
+                .uri(SINA_AU9999_URL)
+                .headers(headers -> {
+                    headers.set("User-Agent", "Mozilla/5.0 (compatible; JARVIS-Market/1.0)");
+                    headers.set("Referer", "https://finance.sina.com.cn/");
+                })
+                .retrieve()
+                .bodyToMono(byte[].class)
+                .block();
+        if (bytes == null || bytes.length == 0) throw upstream("新浪黄金9999行情为空");
+        String body = new String(bytes, GBK);
+        Matcher matcher = SINA_AU9999_PATTERN.matcher(body);
+        if (!matcher.find()) throw upstream("新浪黄金9999返回格式异常");
+        String[] fields = matcher.group(1).split(",", -1);
+        if (fields.length < 13) throw upstream("新浪黄金9999字段不足");
+
+        Double price = parseMarketNumber(fields[0]);
+        Double high = parseMarketNumber(fields[3]);
+        Double low = parseMarketNumber(fields[5]);
+        Double prevClose = parseMarketNumber(fields[7]);
+        Double open = parseMarketNumber(fields[8]);
+        if (price == null || price <= 0 || prevClose == null || prevClose <= 0) {
+            throw upstream("新浪黄金9999报价无效");
+        }
+        double change = price - prevClose;
+        String quoteDate = fields[12].trim();
+        String quoteTime = fields[6].trim();
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("market", "sge_gold");
+        out.put("symbol", "Au99.99");
+        out.put("price", price);
+        out.put("prev_close", prevClose);
+        out.put("change", change);
+        out.put("change_pct", change / prevClose * 100.0);
+        if (open != null && open > 0) out.put("open", open);
+        if (high != null && high > 0) out.put("high", high);
+        if (low != null && low > 0) out.put("low", low);
+        out.put("quote_time", (quoteDate + " " + quoteTime).trim());
+        out.put("source", "新浪财经（AU9999）");
+        out.put("stale", !LocalDate.now(SHANGHAI_ZONE).toString().equals(quoteDate));
+        return out;
     }
 
     private Map<String, Object> sgeAu9999Quote() {

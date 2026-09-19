@@ -247,8 +247,8 @@ onMounted(loadTasks)
 </template>
 
 <style scoped>
-.rt { display: flex; flex-direction: column; gap: 0; border: 1px solid var(--line); }
-.rt-form, .rt-list, .rt-detail { padding: 13px; background: rgba(239,235,227,.52); border-bottom: 1px solid var(--line); }
+.rt { display: flex; flex-direction: column; gap: 0; border: 1px solid var(--line); background: var(--workspace-panel-wash, var(--panel)); color: var(--text); }
+.rt-form, .rt-list, .rt-detail { padding: 13px; background: var(--workspace-panel-wash, var(--panel)); border-bottom: 1px solid var(--line); }
 .rt-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
 .rt-head b { color: var(--text); font: 650 9px/1 ui-monospace, monospace; letter-spacing: .09em; }
 .rt-head span { display: block; margin-top: 6px; color: var(--subtle); font-size: 9px; }
@@ -256,9 +256,11 @@ onMounted(loadTasks)
 .rt-grid label { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .rt-grid label.wide { grid-column: 1 / -1; }
 .rt-grid span { color: var(--subtle); font: 600 7px/1 ui-monospace, monospace; letter-spacing: .08em; }
-.rt-grid input, .rt-grid select, .rt-grid textarea { width: 100%; min-height: 30px; padding: 5px 8px; border: 1px solid var(--line); background: rgba(255,255,255,.5); color: var(--text); font: 400 11px/1.4 inherit; }
+.rt-grid input, .rt-grid select, .rt-grid textarea { width: 100%; min-height: 30px; padding: 5px 8px; border: 1px solid var(--line); background: var(--workspace-control-bg, var(--surface)); color: var(--text); font: 400 11px/1.4 inherit; }
+.rt-grid input:focus, .rt-grid select:focus, .rt-grid textarea:focus { outline: none; border-color: var(--workspace-focus, var(--accent)); }
+.rt-grid select option { background: var(--surface-2); color: var(--text); }
 .rt-grid textarea { resize: vertical; }
-.rt-primary { min-height: 30px; padding: 0 14px; border: 1px solid var(--line-strong); background: var(--text); color: var(--bg, #f5f2ec); cursor: pointer; font: 650 8px/1 ui-monospace, monospace; letter-spacing: .07em; }
+.rt-primary { min-height: 30px; padding: 0 14px; border: 1px solid var(--workspace-action-border, var(--line-strong)); background: var(--workspace-action-bg, var(--text)); color: var(--workspace-action-text, var(--bg)); cursor: pointer; font: 650 8px/1 ui-monospace, monospace; letter-spacing: .07em; }
 .rt-primary:disabled { opacity: .5; cursor: default; }
 .rt-text, .rt-run { min-height: 26px; padding: 0 10px; border: 1px solid var(--line-strong); background: transparent; color: var(--text); cursor: pointer; font: 650 7px/1 ui-monospace, monospace; letter-spacing: .07em; }
 .rt-run:disabled { opacity: .5; cursor: default; }
@@ -270,7 +272,7 @@ onMounted(loadTasks)
 .rt-items { display: flex; flex-direction: column; gap: 0; margin: 0; padding: 0; list-style: none; }
 .rt-items li { display: flex; align-items: stretch; gap: 6px; border-top: 1px solid var(--line); }
 .rt-item { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; padding: 9px 8px; border: 0; background: transparent; text-align: left; cursor: pointer; }
-.rt-item.on { background: rgba(161,132,88,.09); }
+.rt-item.on { background: var(--workspace-accent-wash); }
 .rt-item b { color: var(--text); font: 650 10px/1.3 inherit; }
 .rt-item span { color: var(--muted); font-size: 9px; }
 .rt-item small { color: var(--subtle); font: 400 8px/1 ui-monospace, monospace; }
@@ -282,7 +284,7 @@ onMounted(loadTasks)
 .rt-detail-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .rt-detail-head b { color: var(--text); font: 650 12px/1.3 inherit; }
 .rt-detail-head span { display: block; margin-top: 5px; color: var(--subtle); font-size: 9px; }
-.rt-question { margin: 11px 0 0; padding: 9px 10px; border-left: 2px solid var(--line-strong); background: rgba(161,132,88,.05); color: var(--text); font-size: 11px; }
+.rt-question { margin: 11px 0 0; padding: 9px 10px; border-left: 2px solid var(--line-strong); background: var(--workspace-accent-wash); color: var(--text); font-size: 11px; }
 .rt-gaps { margin-top: 11px; padding: 9px 10px; border: 1px dashed var(--line-strong); }
 .rt-gaps b { color: var(--warn, #b8860b); font: 650 8px/1 ui-monospace, monospace; letter-spacing: .08em; }
 .rt-gaps ul { margin: 7px 0 0; padding-left: 16px; }
