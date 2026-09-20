@@ -17,9 +17,16 @@
 ## 自动化验证结果
 
 - Java：全量 Maven 测试通过；包含 Flyway/Hibernate schema contract、回测、交易回滚故障注入、PostgreSQL 锁策略等测试。报告为 0 failures / 0 errors，PostgreSQL 未配置时仅保留既有跳过项。
-- Python：`python -m pytest -p no:asyncio -q`，251 passed。普通 `pytest` 受本机 `pytest-asyncio` 与当前 pytest 版本兼容问题影响，代码测试本身不受影响。
+- Python：release 构建使用 `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q`，237 passed。工作区额外使用 `python -m pytest -p no:asyncio -q` 验证为 251 passed；普通 `pytest` 受本机 `pytest-asyncio` 与当前 pytest 版本兼容问题影响，代码测试本身不受影响。
 - 前端：`npm run test:p0`，127 passed；`npm run build` 通过。
 - 本地浏览器：预览模式可进入回测、财报解析页面；因预览模式无真实认证、行情和 Java/Python 联调数据，没有伪造结果执行真实回测或 Agent SSE。
+
+## 生产发布验收（2026-09-20）
+
+- GitHub Pages 工作流 `Deploy Frontend to GitHub Pages` 运行 `35509402177` 成功；正式域名 `https://f.shengxia.me/version.json` 返回 SHA `6481c68381c5f520f43e636670afc9020ebe53c1`。
+- 后端 release `20260920-6481c68381c5-final` 已通过远端 `SHA256SUMS` 校验并原子切换；`/opt/jarvis/current` 指向该 release，旧版本 `20260920-30107f4` 保留用于回滚。
+- 远端 `jarvis-ai.service`、`jarvis-java.service`、`postgresql` 均为 active；Java readiness、Python 内部 token readiness 和公网 Java readiness 均返回 200。
+- 公网数据库健康接口返回 401（该接口受认证保护），属于预期安全行为。
 
 ## 仍未完成或需要真实环境验收
 
@@ -27,8 +34,7 @@
 
 1. 用真实 PostgreSQL、JWT、行情源和 Python AI 服务完成一次 Agent Run 的 SSE 实流验收：计划、工具调用、失败/取消、断线后从 PostgreSQL 重放与重新订阅。
 2. 用真实登录会话执行首页技术指标、回测高级指标、财报结构化返回和管理员 OAuth/审计查询的端到端验收。
-3. 将前端生产构建发布到 GitHub Pages，并通过正式域名确认版本 SHA；将后端构建和 V13 迁移发布到远程服务器，再做 readiness/smoke 验收。
-4. 财报导入页的组件级 replace/append、失败导入保留旧文本、选择文件不发分析请求等交互测试仍主要依靠源码回归，需要补充浏览器组件测试。
+3. 财报导入页的组件级 replace/append、失败导入保留旧文本、选择文件不发分析请求等交互测试仍主要依靠源码回归，需要补充浏览器组件测试。
 
 ### P1/P2
 
@@ -39,4 +45,4 @@
 
 ## 结论
 
-核心业务功能缺口已经补齐并通过本地自动化测试；当前不能宣称“全部需求已生产验收完成”。剩余工作集中在真实环境联调、发布门禁、组件级浏览器测试和视觉人工确认，不应通过伪造数据或跳过认证来标记完成。
+核心业务功能缺口已经补齐并完成本次前后端生产发布；当前不能宣称“全部需求已生产验收完成”。剩余工作集中在真实账号下的 Agent SSE/断线恢复和业务端到端验收、财报导入组件级浏览器测试、监控告警导入以及视觉人工确认，不应通过伪造数据或跳过认证来标记完成。
