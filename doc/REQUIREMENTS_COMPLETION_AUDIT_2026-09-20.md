@@ -13,13 +13,19 @@
 - 回测返回夏普比率、已闭合交易胜率、盈亏比、平均持仓天数、逐点回撤曲线；前端增加指标卡和回撤图。
 - 财报解析返回 `financial-report-v1` 结构化 JSON，固定包含核心结论、营收利润、盈利质量、资产负债、现金流、风险点、投资观点和待核验事项；缺失小节会标记 `needs_review`，不伪造数据。
 - 前端财报页展示结构化摘要，并保留原始 Markdown 渲染结果。
+- Agent 运行服务补齐 pending/running 孤儿运行恢复、终态运行内存清理、SSE 重连终态竞态保护和超大 payload 有界降级；新增生命周期/恢复边界回归测试。
 
 ## 自动化验证结果
 
-- Java：全量 Maven 测试通过；包含 Flyway/Hibernate schema contract、回测、交易回滚故障注入、PostgreSQL 锁策略等测试。报告为 0 failures / 0 errors，PostgreSQL 未配置时仅保留既有跳过项。
+- Java：全量 Maven 测试通过，539 tests / 0 failures / 0 errors / 5 skipped；包含 Flyway/Hibernate schema contract、回测、交易回滚故障注入、PostgreSQL 锁策略、Agent 生命周期恢复等测试。PostgreSQL 未配置时仅保留既有跳过项。
 - Python：release 构建使用 `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q`，237 passed。工作区额外使用 `python -m pytest -p no:asyncio -q` 验证为 251 passed；普通 `pytest` 受本机 `pytest-asyncio` 与当前 pytest 版本兼容问题影响，代码测试本身不受影响。
 - 前端：`npm run test:p0`，127 passed；`npm run build` 通过。
-- 本地浏览器：预览模式可进入回测、财报解析页面；因预览模式无真实认证、行情和 Java/Python 联调数据，没有伪造结果执行真实回测或 Agent SSE。
+- 本地浏览器：已在预览模式实际验证夜间多市场图表画布、财报 Markdown 文件导入替换/追加、失败导入保留原文，以及选择文件不会提前请求分析接口；显式分析因本地 Java 未启动，在 CSRF 阶段按预期失败。未伪造真实回测或 Agent SSE 结果。
+
+## Gitee PR 审核（2026-09-20）
+
+- Gitee 当前没有 open PR；最新 PR#15（`feat: 补 DAILY_DIGEST 执行器，定时任务 4 个类型全部可用`）已处于 merged 状态，提交 `3db902a` 已包含日报执行器、参数边界、来源不可用降级和 wiring 测试，本轮没有可再次修改或合并的待审 PR。
+- 本地当前分支已同步 Gitee `main`；后续新增 PR 应继续先做 diff/测试审查，再合并到 `main`。
 
 ## 生产发布验收（2026-09-20）
 
@@ -32,9 +38,9 @@
 
 ### P0 发布门禁
 
-1. 用真实 PostgreSQL、JWT、行情源和 Python AI 服务完成一次 Agent Run 的 SSE 实流验收：计划、工具调用、失败/取消、断线后从 PostgreSQL 重放与重新订阅。
+1. 用真实 PostgreSQL、JWT、行情源和 Python AI 服务完成一次 Agent Run 的 SSE 实流验收：计划、工具调用、失败/取消、断线后从 PostgreSQL 重放与重新订阅。代码级恢复、重放、孤儿运行和取消边界已经覆盖，仍缺真实账号/上游联调证据。
 2. 用真实登录会话执行首页技术指标、回测高级指标、财报结构化返回和管理员 OAuth/审计查询的端到端验收。
-3. 财报导入页的组件级 replace/append、失败导入保留旧文本、选择文件不发分析请求等交互测试仍主要依靠源码回归，需要补充浏览器组件测试。
+3. 财报导入页已有本地浏览器手工验收和提取器回归；仍缺纳入 CI 的组件级浏览器测试（当前仓库未安装 Vue Test Utils/Playwright，不能把本地手工验收冒充 CI 门禁）。
 
 ### P1/P2
 

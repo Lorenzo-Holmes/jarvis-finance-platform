@@ -35,6 +35,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class AgentRunService {
 
     private static final int MAX_EVENTS = 120;
+    private static final int MAX_PAYLOAD_JSON_LENGTH = 38_000;
 
     private final AgentOrchestrator orchestrator;
     private final AsyncTaskExecutor agentTaskExecutor;
@@ -43,10 +44,15 @@ public class AgentRunService {
     private final ObjectMapper objectMapper;
     private final Map<String, RunState> activeRuns = new ConcurrentHashMap<>();
 
-    /** 进程异常退出后，RUNNING 不应在历史抽屉里永久显示为运行中。 */
+    /** 进程异常退出后，未完成运行不应在历史抽屉里永久显示为运行中。 */
     @PostConstruct
     void reconcileOrphanedRuns() {
-        for (AgentRunEntity run : runRepository.findByStatus("running")) {
+        reconcileStatus("pending");
+        reconcileStatus("running");
+    }
+
+    private void reconcileStatus(String status) {
+        for (AgentRunEntity run : runRepository.findByStatus(status)) {
             run.setStatus("failed");
             run.setFinishedAt(LocalDateTime.now());
             run.setErrorMessage("服务重启时运行未完成，可从已保存事件恢复查看");
@@ -88,14 +94,17 @@ public class AgentRunService {
     }
 
     public SseEmitter openStream(Long userId, String runId) {
-        AgentRunEntity entity = ownedRun(userId, runId);
-        List<AgentEvent> history = eventsFor(runId);
+        ownedRun(userId, runId);
         SseEmitter emitter = new SseEmitter(120_000L);
         RunState state = activeRuns.get(runId);
         synchronized (state == null ? this : state) {
             try {
+                // 在订阅锁内重新读取，避免“历史已重放但终态事件恰好在此时落库”
+                // 导致订阅器被加入后永远收不到 completion 的竞态。
+                AgentRunEntity current = ownedRun(userId, runId);
+                List<AgentEvent> history = eventsFor(runId);
                 for (AgentEvent event : history) send(emitter, event);
-                if (isTerminal(entity.getStatus()) || state == null) {
+                if (isTerminal(current.getStatus()) || state == null) {
                     emitter.complete();
                     return emitter;
                 }
@@ -162,7 +171,12 @@ public class AgentRunService {
                     emitter.completeWithError(error);
                 }
             }
-            if (isTerminalEvent(event)) completeSubscribers(state);
+            if (isTerminalEvent(event)) {
+                completeSubscribers(state);
+                // 终态事件已经完整写入 PostgreSQL；不再保留取消句柄和订阅器，
+                // 后续重连会直接从历史重放，避免长时间运行进程的内存增长。
+                activeRuns.remove(state.runId, state);
+            }
         }
     }
 
@@ -265,7 +279,13 @@ public class AgentRunService {
 
     private String writePayload(Map<String, Object> payload) {
         try {
-            return objectMapper.writeValueAsString(payload == null ? Map.of() : payload);
+            String json = objectMapper.writeValueAsString(payload == null ? Map.of() : payload);
+            if (json.length() <= MAX_PAYLOAD_JSON_LENGTH) return json;
+            return objectMapper.writeValueAsString(Map.of(
+                    "available", false,
+                    "reason", "payload_too_large",
+                    "truncated", true,
+                    "characters", json.length()));
         } catch (JsonProcessingException error) {
             return "{\"available\":false,\"reason\":\"payload_serialization_failed\"}";
         }
