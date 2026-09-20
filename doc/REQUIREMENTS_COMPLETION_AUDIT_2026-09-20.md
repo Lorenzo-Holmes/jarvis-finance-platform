@@ -24,7 +24,7 @@
 
 ## 自动化验证结果
 
-- Java：全量 Maven 测试通过，552 tests / 0 failures / 0 errors / 5 skipped；包含 RSS AI 分析/日报产物/重要资讯提醒测试，以及既有 V15 Flyway/Hibernate schema contract、用户组配额/权限继承、回测、交易回滚故障注入、PostgreSQL 锁策略、Agent 生命周期恢复等测试。PostgreSQL 未配置时仅保留既有跳过项。
+- Java：全量 Maven 测试通过，554 tests / 0 failures / 0 errors / 5 skipped；包含 RSS AI 分析/日报产物/重要资讯提醒测试，以及既有 V15 Flyway/Hibernate schema contract、用户组配额/权限继承、回测、交易回滚故障注入、PostgreSQL 锁策略、Agent 生命周期恢复、SSE 断线取消竞态等测试。PostgreSQL 未配置时仅保留既有跳过项。
 - Python：`PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q`，259 passed。普通 `pytest` 仍受本机 `pytest-asyncio` 与当前 pytest 版本兼容问题影响，代码测试本身不受影响。
 - 前端：`npm run test:p0`，130 passed；`npm run build` 通过。
 - 浏览器：Playwright `financial-import` 项目通过，验证财报 Markdown 文件导入替换/追加、失败导入保留原文，以及选择文件不会提前请求分析接口；预览模式下夜间多市场图表和财报输入面板也已实际检查。显式分析因本地 Java 未启动，在 CSRF 阶段按预期失败。未伪造真实回测或 Agent SSE 结果。
@@ -35,21 +35,22 @@
 - Gitee 当前没有 open PR；最新 PR#15（`feat: 补 DAILY_DIGEST 执行器，定时任务 4 个类型全部可用`）已处于 merged 状态，提交 `3db902a` 已包含日报执行器、参数边界、来源不可用降级和 wiring 测试。本轮已复核 PR 详情、文件差异和评论，没有可再次修改或合并的待审 PR。
 - Gitee 当前没有 open PR；本地补齐的 RSS 持久化、AI 分析、通知、测试 Agent、监控模板和 RSS 超时修复已同步到 Gitee `main`，最新相关提交为 `44321ce`（烟测脚本）及其前置提交。后续新增 PR 应继续先做 diff/测试审查，再合并到 `main`。
 
-## 生产发布验收（2026-09-20）
+## 生产发布验收（2026-09-21 更新）
 
 - GitHub Pages 工作流 `Deploy Frontend to GitHub Pages` 运行 `35519407536` 成功；正式域名 `https://f.shengxia.me/version.json` 返回 SHA `44321ced1bc0751b57c182b947ed933fffdb1ffa`。
-- 后端 release `20260920-a840497` 已通过远端原子切换；`/opt/jarvis/current` 指向该 release，旧版本 `20260920-b8723c8` 保留用于回滚。
+- 后端 release `20260920-cedb9de` 已通过远端原子切换；`/opt/jarvis/current` 指向该 release，旧版本 `20260920-dd78102` 保留用于回滚。发布包中的 Java/Python/前端资源 SHA256 校验全部通过。
 - 远端 `jarvis-ai.service`、`jarvis-java.service`、`postgresql` 均为 active；Java readiness、Python 内部 token readiness、Flyway v14 和公网 Java readiness 均返回成功。
 - 公网数据库健康接口返回 401（该接口受认证保护），属于预期安全行为。
 - 使用真实生产烟测账号完成：登录、数据库详情、行情、1Hz 行情 SSE、日 K、模拟盘、AI capabilities、Agent SSE、Agent PostgreSQL 事件回放、可复现回测和退出登录均通过；Agent SSE 的代理连接关闭码已按事件终态校验处理，不影响业务事件完整性。
+- 2026-09-21 00:02 运行 `CHECK_AGENT_STREAM=1 CHECK_AGENT_RECOVERY=1` 专项烟测：Agent 真实工作流产生 `tool_call`，客户端断线后取消同一 `runId` 返回 HTTP 200，重新订阅同一 `runId` 返回 HTTP 200 并回放 `run_cancelled`，随后回测双请求和退出登录均为 HTTP 200；此前可复现的断线取消 409 已不再出现。
 - 使用真实生产会话对 `/api/news/analyze` 提交一条资讯联调通过，返回 `code=200`、1 条结构化分析并带有模型标识；未输出模型正文或任何凭据。
 
 ## 仍未完成或需要真实环境验收
 
 ### P0 发布门禁
 
-1. Agent Run 的真实 SSE、JWT、PostgreSQL 事件回放已通过；仍需补一次真实工具调用、主动取消以及客户端断线后的重新订阅验收，当前烟测只覆盖无工具问题、终态和回放。
-2. 用真实登录会话执行首页技术指标、回测高级指标、财报结构化返回和管理员 OAuth/审计查询的端到端验收。
+1. Agent Run 的真实 SSE、JWT、工具调用、主动取消、客户端断线后的重新订阅以及 PostgreSQL 事件回放已通过生产专项烟测；取消竞态修复已发布。仍需补真实登录会话下的浏览器 Trace/停止按钮验收。
+2. 首页技术指标、回测高级指标和财报结构化返回已用真实登录会话完成 API 级生产联调；管理员 OAuth/审计查询仍缺真实管理员凭据下的端到端验收。
 3. Agent 中心的真实 Trace、停止、失败提示、Markdown 结论仍缺真实登录会话下的浏览器验收；当前 Playwright 门禁已覆盖财报导入，但尚未覆盖真实 Agent SSE。
 
 ### P1/P2
@@ -63,4 +64,4 @@
 
 ## 结论
 
-核心业务功能已持续补齐，RSS AI/资讯链路和 Agent 成功流已发布并完成生产烟测；当前仍不能宣称“全部需求已生产验收完成”。剩余工作集中在真实账号下的 Agent 工具调用/取消/断线重订阅、指标/回测/财报/管理员 OAuth 的完整端到端验收、RSS 通知与 usage 的真实业务触发、测试 Agent 专项用例、监控告警导入以及视觉人工确认，不应通过伪造数据或跳过认证来标记完成。
+核心业务功能已持续补齐，RSS AI/资讯链路和 Agent 的真实工具调用、取消、断线重订阅成功流已发布并完成生产烟测；当前仍不能宣称“全部需求已生产验收完成”。剩余工作集中在真实账号下的 Agent 浏览器 Trace/停止/失败/Markdown 交互、管理员 OAuth/审计完整验收、RSS 通知与 usage 的真实业务触发、测试 Agent 专项账号用例、监控告警导入以及视觉人工确认，不应通过伪造数据或跳过认证来标记完成。
