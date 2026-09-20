@@ -140,6 +140,10 @@ def open_chat_stream(messages: List[Dict[str, str]], temperature: float = 0.7,
         "messages": full,
         "temperature": temperature,
         "stream": True,
+        # OpenAI-compatible providers that support it append an authoritative
+        # usage chunk after the final text delta.  Keep it optional at the
+        # consumer boundary: providers that ignore this field still stream.
+        "stream_options": {"include_usage": True},
     }
     try:
         resp = requests.post(
@@ -183,6 +187,12 @@ def open_chat_stream(messages: List[Dict[str, str]], temperature: float = 0.7,
                     logger.warning("忽略无法解析的 AI SSE 行: %s", payload_text[:200])
                     continue
                 model = chunk.get("model") or model
+                usage = chunk.get("usage")
+                if isinstance(usage, dict):
+                    # Usage is emitted as a separate SSE event so the Java
+                    # quota boundary can record it without exposing the
+                    # provider response wholesale to the browser.
+                    yield {"type": "usage", "usage": usage}
                 choices = chunk.get("choices") or []
                 if not choices:
                     continue

@@ -36,7 +36,7 @@
 
 - [x] 7. 自动化测试与契约校验
   - 覆盖后端运行生命周期、工具失败、取消、脱敏和权限。
-  - 已通过 Flyway/Hibernate schema 契约、Agent 编排测试、前端 127 项 P0 测试与生产构建；浏览器实流验收仍需在可用浏览器工具中执行。
+  - 已通过 Flyway/Hibernate schema 契约、Agent 编排测试、前端 128 项 P0 测试、Playwright 财报导入门禁与生产构建；真实 Agent SSE 浏览器验收仍需真实账号和上游服务。
   - _Requirement: 1–10_
 
 - [ ] 8. 浏览器验收与发布门禁

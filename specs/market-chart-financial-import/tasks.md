@@ -25,16 +25,16 @@
   - Ensure file selection/extraction makes no analysis API request; submit only the current textarea value after explicit Analyze.
   - _Requirement: 5, 6, 8_
 
-- [~] 5. Add focused automated regression coverage
+- [x] 5. Add focused automated regression coverage
   - Test extension/size/page validation, Markdown/text extraction, PDF text/OCR fallback selection, DOCX raw text, image OCR handoff, and error behavior.
   - Test import replace/append, failed-import preservation, no API call during selection, and explicit Analyze submission.
   - Test night-mode surface styles do not use fixed pale chart/textarea backgrounds.
-  - Completed extraction utility tests and source-level safeguards; component interaction tests for replace/append, failed-import preservation, and API-call timing remain outstanding.
+  - Completed extraction utility tests and source-level safeguards; Playwright covers replace/append, failed-import preservation, and API-call timing in a managed Vite browser run.
   - _Requirement: 1–8_
 
-- [~] 6. Verify the frontend change
+- [x] 6. Verify the frontend change
   - Run the frontend P0 test suite and production build.
   - Run local browser smoke tests for night-mode multi-market chart and report input surfaces, Markdown import, and one OCR fixture using a mocked analysis API.
   - Record exact browser route/actions/results and any remaining limitation; do not use production credentials or send real filing content.
-  - P0 tests (72) and production build passed. Browser smoke tests remain unverified: the local Computer Use helper could not confidently identify the browser URL, and no `agent-browser` tool is available in this environment.
+  - Frontend P0 tests (128), production build and Playwright `financial-import` passed. The browser test uses local fixtures and a mocked backend; it does not claim real financial-report analysis or production credentials.
   - _Requirement: 1–8_

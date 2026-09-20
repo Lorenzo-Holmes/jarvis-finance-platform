@@ -15,16 +15,13 @@ OUT="${RELEASE_OUT:-$ROOT/dist/releases/$RELEASE_ID}"
 rm -rf "$OUT"
 mkdir -p "$OUT/java-backend" "$OUT/backend"
 
-echo "[1/4] Java tests + production app jar"
+echo "[1/5] Java tests"
 (
   cd java-backend
-  "$MVN" clean test package
+  "$MVN" clean test
 )
-APP_JAR="$(find java-backend/target -maxdepth 1 -type f -name 'gold-research-backend-*.jar' ! -name '*migration*' ! -name '*.original' | head -1)"
-[ -n "$APP_JAR" ] || { echo "ERROR: app jar not found" >&2; exit 1; }
-cp "$APP_JAR" "$OUT/java-backend/app.jar"
 
-echo "[2/4] Standalone H2 -> PostgreSQL migration jar"
+echo "[2/5] Standalone H2 -> PostgreSQL migration jar"
 (
   cd java-backend
   "$MVN" -Pmigration-tool -DskipTests package
@@ -33,7 +30,18 @@ MIGRATION_JAR="$(find java-backend/target -maxdepth 1 -type f -name '*-migration
 [ -n "$MIGRATION_JAR" ] || { echo "ERROR: migration jar not found" >&2; exit 1; }
 cp "$MIGRATION_JAR" "$OUT/java-backend/migration.jar"
 
-echo "[3/4] Python AI tests"
+echo "[3/5] Repackage executable Spring Boot app jar"
+(
+  cd java-backend
+  # The migration profile deliberately disables Spring Boot repackage. Run it
+  # last so app.jar always contains JarLauncher and can be started by systemd.
+  "$MVN" -DskipTests package spring-boot:repackage
+)
+APP_JAR="$(find java-backend/target -maxdepth 1 -type f -name 'gold-research-backend-*.jar' ! -name '*migration*' ! -name '*.original' | head -1)"
+[ -n "$APP_JAR" ] || { echo "ERROR: app jar not found" >&2; exit 1; }
+cp "$APP_JAR" "$OUT/java-backend/app.jar"
+
+echo "[4/5] Python AI tests"
 (
   cd backend
   PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 "$PYTHON" -m pytest -q
@@ -43,7 +51,7 @@ cp backend/requirements.txt "$OUT/backend/requirements.txt"
 find "$OUT/backend" -type d -name '__pycache__' -prune -exec rm -rf {} +
 find "$OUT/backend" -type f -name '*.pyc' -delete
 
-echo "[4/5] Frontend production build"
+echo "[5/6] Frontend production build"
 (
   cd frontend
   npm ci --ignore-scripts
@@ -52,7 +60,7 @@ echo "[4/5] Frontend production build"
 mkdir -p "$OUT/frontend-dist"
 cp -a frontend/dist/. "$OUT/frontend-dist/"
 
-echo "[5/5] Checksums + metadata"
+echo "[6/6] Checksums + metadata"
 printf 'release_id=%s\ngit_sha=%s\nbuilt_at=%s\n' \
   "$RELEASE_ID" "$SHA" "$(date -Iseconds)" > "$OUT/RELEASE"
 (

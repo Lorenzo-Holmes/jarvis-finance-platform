@@ -124,6 +124,10 @@ class FlywaySchemaContractTest {
                 "user_notification",
                 "agent_run",
                 "agent_event",
+                "user_group",
+                "user_group_member",
+                "group_ai_quota",
+                "group_feature_permission",
                 "flyway_schema_history"));
 
         assertEquals(expected, tableNames(), "迁移产出的表集合");
@@ -227,6 +231,30 @@ class FlywaySchemaContractTest {
                         "tool", "input_summary", "output_summary", "payload_json", "started_at",
                         "finished_at", "duration_ms", "error_code")),
                 "agent_event 的列与实体不符，现有: " + eventColumns);
+    }
+
+    @Test
+    void theUserGroupTablesHaveEveryColumnAndConstraintSurface() throws Exception {
+        Set<String> groupColumns = columnNames("user_group");
+        assertTrue(groupColumns.containsAll(List.of(
+                        "id", "name", "description", "enabled", "created_at", "updated_at")),
+                "user_group 的列与 UserGroup 实体不符，现有: " + groupColumns);
+
+        Set<String> memberColumns = columnNames("user_group_member");
+        assertTrue(memberColumns.containsAll(List.of("id", "group_id", "user_id", "created_at")),
+                "user_group_member 的列与 UserGroupMember 实体不符，现有: " + memberColumns);
+
+        Set<String> quotaColumns = columnNames("group_ai_quota");
+        assertTrue(quotaColumns.containsAll(List.of(
+                        "id", "group_id", "daily_request_limit", "daily_request_used",
+                        "monthly_token_limit", "monthly_token_used", "reset_date",
+                        "period_month", "updated_at")),
+                "group_ai_quota 的列与 GroupAiQuota 实体不符，现有: " + quotaColumns);
+
+        Set<String> permissionColumns = columnNames("group_feature_permission");
+        assertTrue(permissionColumns.containsAll(List.of(
+                        "id", "group_id", "feature_key", "enabled", "created_at", "updated_at")),
+                "group_feature_permission 的列与 GroupFeaturePermission 实体不符，现有: " + permissionColumns);
     }
 
     // ==================== 夹具 ====================

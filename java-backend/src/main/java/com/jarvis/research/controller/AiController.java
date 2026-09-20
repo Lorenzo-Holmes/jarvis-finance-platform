@@ -1,5 +1,7 @@
 package com.jarvis.research.controller;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jarvis.research.ai.DeterministicContext;
 import com.jarvis.research.ai.MarketTrend;
 import com.jarvis.research.ai.QuoteMetrics;
@@ -41,6 +43,7 @@ public class AiController {
     private final FeaturePermissionService featurePermissionService;
     private final MarketDataService marketDataService;
     private final SimTradeService simTradeService;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Autowired
     public AiController(AiProxyService aiProxyService, AiRateLimitService aiRateLimitService,
@@ -87,6 +90,7 @@ public class AiController {
         Disposable disposable = aiProxyService.stream("/api/ai/chat/stream", enrichChatBody(body)).subscribe(
                 event -> {
                     try {
+                        recordStreamingUsage(event.data());
                         SseEmitter.SseEventBuilder builder = SseEmitter.event();
                         if (event.event() != null && !event.event().isBlank()) {
                             builder.name(event.event());
@@ -110,6 +114,26 @@ public class AiController {
         });
         emitter.onError(error -> disposable.dispose());
         return emitter;
+    }
+
+    /**
+     * 兼容 OpenAI stream_options.include_usage 产生的最终 usage chunk。
+     * 流式正文仍透明转发；只有明确的 usage 事件进入持久化配额计数。
+     */
+    private void recordStreamingUsage(String data) {
+        if (data == null || data.isBlank()) return;
+        try {
+            Map<String, Object> event = objectMapper.readValue(data, new TypeReference<>() { });
+            if (!"usage".equals(String.valueOf(event.get("type")))) return;
+            Object usage = event.get("usage");
+            if (usage instanceof Map<?, ?> usageMap) {
+                Map<String, Object> envelope = new LinkedHashMap<>();
+                envelope.put("usage", usageMap);
+                aiRateLimitService.recordTokens(CurrentUser.id(), envelope);
+            }
+        } catch (Exception ignored) {
+            // 某些兼容模型不返回标准 usage；不能让正文流因为统计失败中断。
+        }
     }
 
     @PostMapping("/financial/report")

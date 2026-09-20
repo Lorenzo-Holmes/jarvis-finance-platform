@@ -349,6 +349,24 @@ export const api = {
   adminUpdatePermissions: (userId, body) => request(API_BASE, `/api/admin/users/${userId}/permissions`, {
     method: 'PUT', body: JSON.stringify(body),
   }),
+  adminGroups: () => get(API_BASE, '/api/admin/groups'),
+  adminGroup: (groupId) => get(API_BASE, `/api/admin/groups/${groupId}`),
+  adminCreateGroup: (body) => request(API_BASE, '/api/admin/groups', {
+    method: 'POST', body: JSON.stringify(body),
+  }),
+  adminUpdateGroup: (groupId, body) => request(API_BASE, `/api/admin/groups/${groupId}`, {
+    method: 'PATCH', body: JSON.stringify(body),
+  }),
+  adminDeleteGroup: (groupId) => request(API_BASE, `/api/admin/groups/${groupId}`, { method: 'DELETE' }),
+  adminUpdateGroupMembers: (groupId, body) => request(API_BASE, `/api/admin/groups/${groupId}/members`, {
+    method: 'PUT', body: JSON.stringify(body),
+  }),
+  adminUpdateGroupQuota: (groupId, body) => request(API_BASE, `/api/admin/groups/${groupId}/quota`, {
+    method: 'PUT', body: JSON.stringify(body),
+  }),
+  adminUpdateGroupPermissions: (groupId, body) => request(API_BASE, `/api/admin/groups/${groupId}/permissions`, {
+    method: 'PUT', body: JSON.stringify(body),
+  }),
 
   // ===== 京东积存金：Java 定时采集 + Java 数据库 =====
   jdPrices: () => get(API_BASE, '/api/market/jd/prices'),

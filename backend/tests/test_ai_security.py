@@ -82,6 +82,37 @@ def test_streaming_chat_yields_delta_and_done(monkeypatch):
     assert response.closed is True
 
 
+def test_streaming_chat_emits_authoritative_usage_event(monkeypatch):
+    class FakeResponse:
+        status_code = 200
+        text = ""
+        encoding = "utf-8"
+
+        def iter_lines(self, decode_unicode=False):
+            assert decode_unicode is True
+            return iter([
+                'data: {"model":"test-model","choices":[{"delta":{"content":"完成"},"finish_reason":null}]}',
+                'data: {"model":"test-model","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":6,"total_tokens":16}}',
+                'data: [DONE]',
+            ])
+
+        def close(self):
+            pass
+
+    captured = {}
+    monkeypatch.setattr(ai_service, "AI_API_KEY", "test-key")
+    monkeypatch.setattr(ai_service.requests, "post", lambda *args, **kwargs: captured.update(kwargs) or FakeResponse())
+
+    events = list(ai_service.open_chat_stream([{"role": "user", "content": "hi"}]))
+
+    assert events == [
+        {"type": "delta", "content": "完成"},
+        {"type": "usage", "usage": {"prompt_tokens": 10, "completion_tokens": 6, "total_tokens": 16}},
+        {"type": "done", "model": "test-model"},
+    ]
+    assert captured["json"]["stream_options"] == {"include_usage": True}
+
+
 def test_streaming_chat_rejects_upstream_http_error_before_sse(monkeypatch):
     class FakeResponse:
         status_code = 401

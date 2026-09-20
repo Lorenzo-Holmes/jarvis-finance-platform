@@ -51,6 +51,21 @@ test('admin backend is surfaced as an ADMIN-only SYSTEM workspace instead of a l
   assert.doesNotMatch(shell, /旧版后台/)
 })
 
+test('admin workspace exposes persisted group quota and permission management', () => {
+  const client = read('api/client.js')
+  const admin = read('components/AdminView.vue')
+
+  assert.match(client, /adminGroups:/)
+  assert.match(client, /adminCreateGroup:/)
+  assert.match(client, /adminUpdateGroupMembers:/)
+  assert.match(client, /adminUpdateGroupQuota:/)
+  assert.match(client, /adminUpdateGroupPermissions:/)
+  assert.match(admin, /用户组策略/)
+  assert.match(admin, /保存成员/)
+  assert.match(admin, /保存组配额/)
+  assert.match(admin, /保存组权限/)
+})
+
 test('backend notifications are surfaced in the workspace header', () => {
   const client = read('api/client.js')
   const center = read('components/common/NotificationCenter.vue')

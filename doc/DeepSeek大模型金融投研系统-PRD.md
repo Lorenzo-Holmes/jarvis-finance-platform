@@ -324,7 +324,7 @@
 - 已落地认证基础：邮箱密码登录、HttpOnly JWT Cookie、CSRF、防登录/注册入口限流。
 - 已落地邮箱验证码流程：Resend 发送、验证码 BCrypt 摘要存储、有效期、单次消费、错误次数限制；生产通过 `AUTH_REQUIRE_EMAIL_VERIFICATION=true` 强制注册前验证。
 - 已落地 GitHub OAuth 服务端回调骨架：一次性 `state`、已验证邮箱读取、首次登录自动建户、同邮箱绑定、OAuth 密钥只读环境变量。
-- 已落地管理员账户、AI 日请求配额、AI 功能白名单权限拦截和非流式 AI 响应的月度 Token usage 统计；流式响应的精确 Token 计量仍需等待上游稳定返回 usage 事件。
+- 已落地管理员账户、按用户/用户组配置的 AI 日请求与月度 Token 配额、AI 功能白名单权限拦截，以及非流式和支持 usage chunk 的流式 AI 响应 Token usage 统计；不返回 usage 的兼容上游仍只能保留请求次数统计。
 - 已落地 A 股/美股/加密货币公开行情与 K 线查看，以及多市场前端分析入口。
 
 | 阶段 | 时间 | 重点 |

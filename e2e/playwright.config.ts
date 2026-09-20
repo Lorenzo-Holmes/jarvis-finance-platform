@@ -70,6 +70,11 @@ export default defineConfig({
       testMatch: /auth\.spec\.ts$/,
       use: { ...devices['Desktop Chrome'] },
     },
+    {
+      name: 'financial-import',
+      testMatch: /financial-import\.spec\.ts$/,
+      use: { ...devices['Desktop Chrome'] },
+    },
     visualProject('visual-1600', 1600, 900),
     visualProject('visual-1280', 1280, 800),
     visualProject('visual-1024', 1024, 768),

@@ -90,6 +90,8 @@ class AiControllerTest {
                 .thenReturn(Flux.just(
                         ServerSentEvent.builder("{\"type\":\"delta\",\"content\":\"ok\"}")
                                 .event("delta").build(),
+                        ServerSentEvent.builder("{\"type\":\"usage\",\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":6,\"total_tokens\":16}}")
+                                .event("usage").build(),
                         ServerSentEvent.builder("{\"type\":\"done\"}")
                                 .event("done").build()
                 ));
@@ -108,6 +110,7 @@ class AiControllerTest {
         assertEquals("no-cache, no-transform", response.getHeader("Cache-Control"));
         assertEquals("no", response.getHeader("X-Accel-Buffering"));
         verify(rateLimit).consume(42L);
+        verify(rateLimit).recordTokens(eq(42L), any());
         verify(proxy).stream(eq("/api/ai/chat/stream"), any());
     }
 

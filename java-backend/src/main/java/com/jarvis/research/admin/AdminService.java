@@ -10,6 +10,14 @@ import com.jarvis.research.user.OAuthAccountRepository;
 import com.jarvis.research.user.UserFeaturePermission;
 import com.jarvis.research.user.UserFeaturePermissionRepository;
 import com.jarvis.research.user.UserRepository;
+import com.jarvis.research.user.GroupAiQuota;
+import com.jarvis.research.user.GroupAiQuotaRepository;
+import com.jarvis.research.user.GroupFeaturePermission;
+import com.jarvis.research.user.GroupFeaturePermissionRepository;
+import com.jarvis.research.user.UserGroup;
+import com.jarvis.research.user.UserGroupMember;
+import com.jarvis.research.user.UserGroupMemberRepository;
+import com.jarvis.research.user.UserGroupRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -24,6 +32,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import static com.jarvis.research.admin.AdminDtos.*;
 
@@ -37,6 +46,10 @@ public class AdminService {
     private final UserFeaturePermissionRepository permissionRepository;
     private final AuditService auditService;
     private final OAuthAccountRepository oauthAccountRepository;
+    private final UserGroupRepository groupRepository;
+    private final UserGroupMemberRepository groupMemberRepository;
+    private final GroupAiQuotaRepository groupQuotaRepository;
+    private final GroupFeaturePermissionRepository groupPermissionRepository;
 
     @Transactional(readOnly = true)
     public Map<String, Object> listUsers(String query, int limit) {
@@ -136,12 +149,138 @@ public class AdminService {
         return fullUserView(user);
     }
 
+    @Transactional(readOnly = true)
+    public Map<String, Object> listGroups() {
+        List<Map<String, Object>> groups = groupRepository.findAllByOrderByCreatedAtDesc().stream()
+                .map(this::groupView)
+                .toList();
+        return Map.of("items", groups, "count", groups.size());
+    }
+
+    @Transactional(readOnly = true)
+    public Map<String, Object> groupDetails(Long groupId) {
+        return groupView(requireGroup(groupId));
+    }
+
+    @Transactional
+    public Map<String, Object> createGroup(Long actorId, GroupRequest request, String clientIp) {
+        String name = normalizeGroupName(request.getName());
+        if (groupRepository.findByNameIgnoreCase(name).isPresent()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "用户组名称已存在");
+        }
+        UserGroup group = groupRepository.save(UserGroup.builder()
+                .name(name)
+                .description(trimToNull(request.getDescription()))
+                .enabled(true)
+                .build());
+        auditService.record(actorId, "ADMIN_GROUP_CREATE", "group:" + group.getId(), clientIp,
+                "name=" + group.getName());
+        return groupView(group);
+    }
+
+    @Transactional
+    public Map<String, Object> updateGroup(Long actorId, Long groupId,
+                                           GroupRequest request, String clientIp) {
+        UserGroup group = requireGroup(groupId);
+        String name = normalizeGroupName(request.getName());
+        groupRepository.findByNameIgnoreCase(name).ifPresent(existing -> {
+            if (!Objects.equals(existing.getId(), groupId)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "用户组名称已存在");
+            }
+        });
+        group.setName(name);
+        group.setDescription(trimToNull(request.getDescription()));
+        groupRepository.save(group);
+        auditService.record(actorId, "ADMIN_GROUP_UPDATE", "group:" + groupId, clientIp,
+                "name=" + name);
+        return groupView(group);
+    }
+
+    @Transactional
+    public void deleteGroup(Long actorId, Long groupId, String clientIp) {
+        UserGroup group = requireGroup(groupId);
+        auditService.record(actorId, "ADMIN_GROUP_DELETE", "group:" + groupId, clientIp,
+                "name=" + group.getName());
+        groupRepository.delete(group);
+    }
+
+    @Transactional
+    public Map<String, Object> updateGroupMembers(Long actorId, Long groupId,
+                                                  GroupMembersRequest request, String clientIp) {
+        UserGroup group = requireGroup(groupId);
+        List<Long> userIds = request.getUserIds() == null ? List.of() : request.getUserIds().stream()
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        for (Long userId : userIds) requireUser(userId);
+        // 一个用户只允许一个策略组；重新分配时从旧组移出，避免多个共享配额叠加。
+        groupMemberRepository.deleteByGroupId(groupId);
+        for (Long userId : userIds) {
+            groupMemberRepository.deleteByUserId(userId);
+            groupMemberRepository.save(UserGroupMember.builder()
+                    .groupId(groupId)
+                    .userId(userId)
+                    .createdAt(LocalDateTime.now())
+                    .build());
+        }
+        auditService.record(actorId, "ADMIN_GROUP_MEMBERS", "group:" + groupId, clientIp,
+                "userCount=" + userIds.size() + "; reason=" + request.getReason());
+        return groupView(group);
+    }
+
+    @Transactional
+    public Map<String, Object> updateGroupQuota(Long actorId, Long groupId,
+                                                GroupQuotaRequest request, String clientIp) {
+        UserGroup group = requireGroup(groupId);
+        GroupAiQuota quota = groupQuotaRepository.findByGroupId(groupId).orElseGet(() ->
+                groupQuotaRepository.save(GroupAiQuota.builder().groupId(groupId).build()));
+        quota.setDailyRequestLimit(request.getDailyRequestLimit());
+        quota.setMonthlyTokenLimit(request.getMonthlyTokenLimit());
+        quota.setUpdatedAt(LocalDateTime.now());
+        groupQuotaRepository.save(quota);
+        auditService.record(actorId, "ADMIN_GROUP_QUOTA", "group:" + groupId, clientIp,
+                "dailyRequestLimit=" + request.getDailyRequestLimit()
+                        + "; monthlyTokenLimit=" + request.getMonthlyTokenLimit()
+                        + "; reason=" + request.getReason());
+        return groupView(group);
+    }
+
+    @Transactional
+    public Map<String, Object> updateGroupPermissions(Long actorId, Long groupId,
+                                                      GroupPermissionsRequest request,
+                                                      String clientIp) {
+        UserGroup group = requireGroup(groupId);
+        List<String> features = request.getFeatures() == null ? List.of() : request.getFeatures().stream()
+                .map(String::trim)
+                .filter(value -> !value.isBlank())
+                .distinct()
+                .limit(100)
+                .toList();
+        groupPermissionRepository.deleteByGroupId(groupId);
+        LocalDateTime now = LocalDateTime.now();
+        List<GroupFeaturePermission> entities = features.stream()
+                .map(feature -> GroupFeaturePermission.builder()
+                        .groupId(groupId)
+                        .featureKey(feature)
+                        .enabled(true)
+                        .createdAt(now)
+                        .updatedAt(now)
+                        .build())
+                .toList();
+        groupPermissionRepository.saveAll(entities);
+        auditService.record(actorId, "ADMIN_GROUP_PERMISSIONS", "group:" + groupId, clientIp,
+                "features=" + String.join(",", features) + "; reason=" + request.getReason());
+        return groupView(group);
+    }
+
     private Map<String, Object> fullUserView(User user) {
         Map<String, Object> out = new LinkedHashMap<>(basicUserView(user));
-        AiQuota quota = quotaService.getOrCreateForAdmin(user.getId());
-        out.put("quota", quotaView(user, quota).get("quota"));
+        out.put("quota", quotaService.findForAdmin(user.getId())
+                .map(quota -> quotaView(user, quota).get("quota"))
+                .orElse(null));
         out.put("permissions", permissionRepository.findByUserIdOrderByFeatureKey(user.getId()).stream()
                 .map(UserFeaturePermission::getFeatureKey).toList());
+        out.put("group", userGroupView(user.getId()));
         return out;
     }
 
@@ -165,6 +304,7 @@ public class AdminService {
         out.put("enabled", user.isEnabled());
         out.put("createdAt", user.getCreatedAt());
         out.put("lastLoginAt", user.getLastLoginAt());
+        out.put("group", userGroupView(user.getId()));
         List<Map<String, Object>> oauth = oauthAccountRepository.findByUserIdOrderByProviderAsc(user.getId()).stream()
                 .map(this::oauthView).toList();
         out.put("oauthAccounts", oauth);
@@ -185,5 +325,74 @@ public class AdminService {
     private User requireUser(Long userId) {
         return userRepository.findById(userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "用户不存在"));
+    }
+
+    private UserGroup requireGroup(Long groupId) {
+        return groupRepository.findById(groupId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "用户组不存在"));
+    }
+
+    private Map<String, Object> userGroupView(Long userId) {
+        return groupMemberRepository.findByUserId(userId)
+                .map(member -> groupRepository.findById(member.getGroupId())
+                        .map(group -> {
+                            Map<String, Object> out = new LinkedHashMap<>();
+                            out.put("id", group.getId());
+                            out.put("name", group.getName());
+                            out.put("enabled", group.isEnabled());
+                            out.put("quota", groupQuotaRepository.findByGroupId(group.getId())
+                                    .map(this::groupQuotaView).orElse(null));
+                            out.put("permissions", groupPermissionRepository
+                                    .findByGroupIdOrderByFeatureKey(group.getId()).stream()
+                                    .filter(GroupFeaturePermission::isEnabled)
+                                    .map(GroupFeaturePermission::getFeatureKey)
+                                    .toList());
+                            return out;
+                        })
+                        .orElse(null))
+                .orElse(null);
+    }
+
+    private Map<String, Object> groupView(UserGroup group) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("id", group.getId());
+        out.put("name", group.getName());
+        out.put("description", group.getDescription());
+        out.put("enabled", group.isEnabled());
+        out.put("createdAt", group.getCreatedAt());
+        out.put("updatedAt", group.getUpdatedAt());
+        out.put("memberCount", groupMemberRepository.countByGroupId(group.getId()));
+        out.put("members", groupMemberRepository.findByGroupIdOrderByCreatedAtAsc(group.getId()).stream()
+                .map(member -> userRepository.findById(member.getUserId()).map(this::basicUserView).orElse(null))
+                .filter(Objects::nonNull)
+                .toList());
+        out.put("quota", groupQuotaRepository.findByGroupId(group.getId()).map(this::groupQuotaView).orElse(null));
+        out.put("permissions", groupPermissionRepository.findByGroupIdOrderByFeatureKey(group.getId()).stream()
+                .filter(GroupFeaturePermission::isEnabled)
+                .map(GroupFeaturePermission::getFeatureKey)
+                .toList());
+        return out;
+    }
+
+    private Map<String, Object> groupQuotaView(GroupAiQuota quota) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("dailyRequestLimit", quota.getDailyRequestLimit());
+        out.put("dailyRequestUsed", quota.getDailyRequestUsed());
+        out.put("monthlyTokenLimit", quota.getMonthlyTokenLimit());
+        out.put("monthlyTokenUsed", quota.getMonthlyTokenUsed());
+        out.put("resetDate", quota.getResetDate());
+        out.put("periodMonth", quota.getPeriodMonth());
+        return out;
+    }
+
+    private String normalizeGroupName(String value) {
+        String name = value == null ? "" : value.trim();
+        if (name.isBlank()) throw new IllegalArgumentException("组名不能为空");
+        return name;
+    }
+
+    private String trimToNull(String value) {
+        if (value == null || value.isBlank()) return null;
+        return value.trim();
     }
 }

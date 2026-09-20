@@ -4,7 +4,9 @@ import { api } from '../api/client'
 import DataState from './common/DataState.vue'
 
 const users = ref([])
+const groups = ref([])
 const selected = ref(null)
+const selectedGroup = ref(null)
 const query = ref('')
 const loading = ref(false)
 const initialLoading = ref(true)
@@ -12,9 +14,28 @@ const selectedLoading = ref(false)
 const message = ref('')
 const error = ref('')
 const usersError = ref('')
+const groupsError = ref('')
 const audit = ref([])
 const quota = reactive({ dailyRequestLimit: 100, monthlyTokenLimit: 0, reason: '' })
 const permissions = ref('')
+const groupName = ref('')
+const groupDescription = ref('')
+const groupMembers = ref([])
+const groupPermissions = ref('')
+const groupQuota = reactive({ dailyRequestLimit: 100, monthlyTokenLimit: 0, reason: '' })
+const groupPermissionReason = ref('')
+const groupLoading = ref(false)
+const groupSaving = ref(false)
+
+function startNewGroup() {
+  selectedGroup.value = null
+  groupName.value = ''
+  groupDescription.value = ''
+  groupMembers.value = []
+  groupPermissions.value = ''
+  Object.assign(groupQuota, { dailyRequestLimit: 100, monthlyTokenLimit: 0, reason: '' })
+  groupPermissionReason.value = ''
+}
 const adminCount = computed(() => users.value.filter(user => user.role === 'ADMIN').length)
 const enabledCount = computed(() => users.value.filter(user => user.enabled).length)
 
@@ -40,6 +61,139 @@ async function loadUsers() {
     loading.value = false
     initialLoading.value = false
   }
+}
+
+async function loadGroups() {
+  groupsError.value = ''
+  try {
+    const response = await api.adminGroups()
+    if (response.code !== 200) throw new Error(response.message || '用户组加载失败')
+    groups.value = response.data?.items || []
+    if (selectedGroup.value && !groups.value.some(group => group.id === selectedGroup.value.id)) {
+      selectedGroup.value = null
+    }
+  } catch (e) {
+    groupsError.value = e?.message || String(e)
+  }
+}
+
+async function selectGroup(group) {
+  groupLoading.value = true
+  try {
+    const response = await api.adminGroup(group.id)
+    if (response.code !== 200) throw new Error(response.message || '用户组详情加载失败')
+    selectedGroup.value = response.data
+    groupName.value = response.data.name || ''
+    groupDescription.value = response.data.description || ''
+    groupMembers.value = (response.data.members || []).map(member => member.id)
+    groupPermissions.value = (response.data.permissions || []).join(', ')
+    Object.assign(groupQuota, {
+      dailyRequestLimit: response.data.quota?.dailyRequestLimit ?? 100,
+      monthlyTokenLimit: response.data.quota?.monthlyTokenLimit ?? 0,
+      reason: '',
+    })
+    groupPermissionReason.value = ''
+  } catch (e) { showError(e) }
+  finally { groupLoading.value = false }
+}
+
+async function createGroup() {
+  if (!groupName.value.trim()) {
+    showError('请填写用户组名称')
+    return
+  }
+  groupSaving.value = true
+  try {
+    const response = await api.adminCreateGroup({
+      name: groupName.value.trim(), description: groupDescription.value.trim(),
+    })
+    if (response.code !== 200) throw new Error(response.message || '创建用户组失败')
+    await loadGroups()
+    await selectGroup(response.data)
+    message.value = '用户组已创建'
+  } catch (e) { showError(e) }
+  finally { groupSaving.value = false }
+}
+
+async function updateGroup() {
+  if (!selectedGroup.value || !groupName.value.trim()) return
+  groupSaving.value = true
+  try {
+    const response = await api.adminUpdateGroup(selectedGroup.value.id, {
+      name: groupName.value.trim(), description: groupDescription.value.trim(),
+    })
+    if (response.code !== 200) throw new Error(response.message || '用户组更新失败')
+    await loadGroups()
+    await selectGroup(response.data)
+    message.value = '用户组信息已更新'
+  } catch (e) { showError(e) }
+  finally { groupSaving.value = false }
+}
+
+async function saveGroupMembers() {
+  if (!selectedGroup.value) return
+  groupSaving.value = true
+  try {
+    const response = await api.adminUpdateGroupMembers(selectedGroup.value.id, {
+      userIds: groupMembers.value.map(Number), reason: '管理员后台调整用户组成员',
+    })
+    if (response.code !== 200) throw new Error(response.message || '组成员更新失败')
+    await loadGroups()
+    await selectGroup(response.data)
+    message.value = '用户组成员已更新'
+  } catch (e) { showError(e) }
+  finally { groupSaving.value = false }
+}
+
+async function updateGroupQuota() {
+  if (!selectedGroup.value || !groupQuota.reason.trim()) {
+    showError('请填写用户组配额调整原因')
+    return
+  }
+  groupSaving.value = true
+  try {
+    const response = await api.adminUpdateGroupQuota(selectedGroup.value.id, {
+      dailyRequestLimit: Number(groupQuota.dailyRequestLimit),
+      monthlyTokenLimit: Number(groupQuota.monthlyTokenLimit), reason: groupQuota.reason.trim(),
+    })
+    if (response.code !== 200) throw new Error(response.message || '用户组配额更新失败')
+    await loadGroups()
+    await selectGroup(response.data)
+    message.value = '用户组配额已更新'
+  } catch (e) { showError(e) }
+  finally { groupSaving.value = false }
+}
+
+async function updateGroupPermissions() {
+  if (!selectedGroup.value || !groupPermissionReason.value.trim()) {
+    showError('请填写用户组权限调整原因')
+    return
+  }
+  groupSaving.value = true
+  try {
+    const response = await api.adminUpdateGroupPermissions(selectedGroup.value.id, {
+      features: groupPermissions.value.split(',').map(v => v.trim()).filter(Boolean),
+      reason: groupPermissionReason.value.trim(),
+    })
+    if (response.code !== 200) throw new Error(response.message || '用户组权限更新失败')
+    await loadGroups()
+    await selectGroup(response.data)
+    message.value = '用户组权限已更新'
+  } catch (e) { showError(e) }
+  finally { groupSaving.value = false }
+}
+
+async function deleteGroup() {
+  if (!selectedGroup.value || !window.confirm(`确认删除用户组“${selectedGroup.value.name}”？`)) return
+  groupSaving.value = true
+  try {
+    const response = await api.adminDeleteGroup(selectedGroup.value.id)
+    if (response.code !== 200) throw new Error(response.message || '用户组删除失败')
+    startNewGroup()
+    await loadGroups()
+    message.value = '用户组已删除'
+  } catch (e) { showError(e) }
+  finally { groupSaving.value = false }
 }
 
 async function selectUser(user) {
@@ -117,7 +271,9 @@ async function updatePermissions() {
   } catch (e) { showError(e) }
 }
 
-onMounted(loadUsers)
+onMounted(async () => {
+  await Promise.all([loadUsers(), loadGroups()])
+})
 </script>
 
 <template>
@@ -182,6 +338,7 @@ onMounted(loadUsers)
             <div><span>最近登录</span><b>{{ selected.lastLoginAt?.replace('T', ' ').slice(0, 19) || '从未登录' }}</b></div>
             <div><span>登录方式</span><b>{{ selected.authProviders?.join(' / ') || '邮箱' }}</b></div>
             <div><span>功能权限</span><b>{{ selected.permissions?.length || 0 }} 项</b></div>
+            <div><span>用户组</span><b>{{ selected.group?.name || '未分组' }}</b></div>
           </div>
 
           <label class="role-control">
@@ -197,8 +354,8 @@ onMounted(loadUsers)
           <section class="detail-panel">
             <div class="section-title"><div><b>研究配额</b><span>限制研究服务的资源使用</span></div></div>
             <div class="quota-usage">
-              <div><span>今日请求</span><b>{{ selected.quota?.dailyRequestUsed ?? 0 }} / {{ selected.quota?.dailyRequestLimit ?? quota.dailyRequestLimit }}</b></div>
-              <div><span>本月 Token</span><b>{{ selected.quota?.monthlyTokenUsed ?? 0 }} / {{ selected.quota?.monthlyTokenLimit ?? quota.monthlyTokenLimit }}</b></div>
+              <div><span>今日请求</span><b>{{ selected.quota?.dailyRequestUsed ?? selected.group?.quota?.dailyRequestUsed ?? 0 }} / {{ selected.quota?.dailyRequestLimit ?? selected.group?.quota?.dailyRequestLimit ?? quota.dailyRequestLimit }}</b></div>
+              <div><span>本月 Token</span><b>{{ selected.quota?.monthlyTokenUsed ?? selected.group?.quota?.monthlyTokenUsed ?? 0 }} / {{ selected.quota?.monthlyTokenLimit ?? selected.group?.quota?.monthlyTokenLimit ?? quota.monthlyTokenLimit }}</b></div>
             </div>
             <div class="form-grid">
               <label><span>每日请求上限</span><input v-model.number="quota.dailyRequestLimit" class="num" type="number" min="0" /></label>
@@ -237,6 +394,72 @@ onMounted(loadUsers)
         <span>从左侧目录选择账户以查看角色、配额和功能权限。</span>
       </div>
     </div>
+
+    <section class="group-workspace">
+      <div class="group-directory detail-panel">
+        <div class="section-title"><div><b>用户组策略</b><span>组策略是未设置用户级覆盖时的默认额度与权限</span></div><div class="group-head-actions"><span>{{ groups.length }} 组</span><button type="button" class="btn" @click="startNewGroup">新建</button></div></div>
+        <div v-if="groupsError" class="group-error">{{ groupsError }}</div>
+        <div class="group-create-form">
+          <input v-model="groupName" class="input" aria-label="用户组名称" placeholder="新用户组名称" />
+          <input v-model="groupDescription" class="input" aria-label="用户组描述" placeholder="描述（可选）" />
+          <button v-if="!selectedGroup" type="button" class="btn primary" :disabled="groupSaving" @click="createGroup">创建用户组</button>
+          <button v-else type="button" class="btn" :disabled="groupSaving" @click="updateGroup">保存组信息</button>
+        </div>
+        <div class="group-list" role="listbox" aria-label="用户组目录">
+          <button v-for="group in groups" :key="group.id" type="button" class="group-row"
+                  role="option" :aria-selected="selectedGroup?.id === group.id"
+                  :class="{ active: selectedGroup?.id === group.id }" @click="selectGroup(group)">
+            <span><b>{{ group.name }}</b><small>{{ group.description || '未填写描述' }}</small></span>
+            <em>{{ group.memberCount || 0 }} 人</em>
+          </button>
+          <span v-if="!groups.length" class="group-empty">暂无用户组，可在上方创建。</span>
+        </div>
+      </div>
+
+      <div v-if="selectedGroup" class="group-detail detail-panel" :aria-busy="groupLoading || groupSaving">
+        <div class="detail-head">
+          <div><h3>{{ selectedGroup.name }}</h3><span>组级策略 · 用户级覆盖优先</span></div>
+          <button type="button" class="btn danger" :disabled="groupSaving" @click="deleteGroup">删除用户组</button>
+        </div>
+        <div class="group-controls">
+          <section class="group-card">
+            <div class="section-title"><div><b>成员分配</b><span>一个用户同一时间只属于一个策略组</span></div></div>
+            <div class="member-checks">
+              <label v-for="user in users" :key="user.id" class="member-check">
+                <input v-model="groupMembers" type="checkbox" :value="user.id" />
+                <span>{{ user.displayName || user.email }}</span>
+              </label>
+            </div>
+            <button type="button" class="btn primary" :disabled="groupSaving" @click="saveGroupMembers">保存成员</button>
+          </section>
+
+          <section class="group-card">
+            <div class="section-title"><div><b>共享 AI 配额</b><span>组内成员共享计数；用户级配额优先</span></div></div>
+            <div class="quota-usage">
+              <div><span>今日请求</span><b>{{ selectedGroup.quota?.dailyRequestUsed ?? 0 }} / {{ selectedGroup.quota?.dailyRequestLimit ?? groupQuota.dailyRequestLimit }}</b></div>
+              <div><span>本月 Token</span><b>{{ selectedGroup.quota?.monthlyTokenUsed ?? 0 }} / {{ selectedGroup.quota?.monthlyTokenLimit ?? groupQuota.monthlyTokenLimit }}</b></div>
+            </div>
+            <div class="form-grid">
+              <label><span>每日请求上限</span><input v-model.number="groupQuota.dailyRequestLimit" class="num" type="number" min="0" /></label>
+              <label><span>月 Token 上限</span><input v-model.number="groupQuota.monthlyTokenLimit" class="num" type="number" min="0" /></label>
+            </div>
+            <input v-model="groupQuota.reason" class="input full" aria-label="用户组配额调整原因" placeholder="调整原因（必填，用于审计）" />
+            <button type="button" class="btn primary" :disabled="groupSaving" @click="updateGroupQuota">保存组配额</button>
+          </section>
+
+          <section class="group-card">
+            <div class="section-title"><div><b>组级功能权限</b><span>没有用户级覆盖时生效</span></div></div>
+            <div class="permission-preview">
+              <span v-for="feature in selectedGroup.permissions || []" :key="feature">{{ feature }}</span>
+              <em v-if="!selectedGroup.permissions?.length">当前未配置组级权限</em>
+            </div>
+            <textarea v-model="groupPermissions" class="permission-input" aria-label="用户组功能权限列表" placeholder="AI_REPORT, AI_RISK"></textarea>
+            <input v-model="groupPermissionReason" class="input full" aria-label="用户组权限调整原因" placeholder="调整原因（必填，用于审计）" />
+            <button type="button" class="btn primary" :disabled="groupSaving" @click="updateGroupPermissions">保存组权限</button>
+          </section>
+        </div>
+      </div>
+    </section>
   </div>
 </template>
 
@@ -326,6 +549,29 @@ onMounted(loadUsers)
 .empty-mark { width: 42px; height: 42px; display: grid; place-items: center; border: 1px solid #4d4434; border-radius: 50%; color: var(--accent-strong); background: rgba(201,166,95,.04); font-size: 9px; font-weight: 700; }
 .empty-detail b { margin-top: 11px; color: var(--text); font-size: 10px; }
 .empty-detail span { max-width: 290px; margin-top: 5px; color: var(--subtle); font-size: 9px; line-height: 1.55; }
+.group-workspace { display: grid; grid-template-columns: minmax(250px, 300px) minmax(0, 1fr); gap: 10px; align-items: start; }
+.group-directory, .group-detail { min-width: 0; }
+.group-head-actions { display: flex; align-items: center; gap: 8px; }
+.group-create-form { display: grid; gap: 7px; margin-top: 10px; }
+.group-create-form .input { width: 100%; height: 30px; padding: 0 8px; font-size: 9px; }
+.group-list { display: grid; gap: 3px; max-height: 300px; overflow: auto; margin-top: 10px; }
+.group-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; padding: 8px; border: 1px solid transparent; background: transparent; color: var(--text); border-radius: 3px; text-align: left; cursor: pointer; }
+.group-row:hover { background: #1a1d20; }
+.group-row.active { border-color: #5f523a; background: rgba(201,166,95,.065); }
+.group-row span { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.group-row b { color: var(--text); font-size: 10px; font-weight: 600; }
+.group-row small { overflow: hidden; color: var(--subtle); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.group-row em { flex: 0 0 auto; color: var(--accent-strong); font-size: 8px; font-style: normal; }
+.group-empty, .group-error { display: block; margin-top: 10px; color: var(--subtle); font-size: 9px; }
+.group-error { color: #e47d79; }
+.group-detail { display: flex; flex-direction: column; gap: 12px; }
+.group-controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.group-card { min-width: 0; padding: 11px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--panel); }
+.member-checks { display: grid; gap: 5px; max-height: 170px; overflow: auto; margin: 10px 0; }
+.member-check { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 8px; }
+.member-check input { accent-color: var(--accent); }
+@media (max-width: 1050px) { .group-controls { grid-template-columns: 1fr 1fr; } .group-card:last-child { grid-column: 1 / -1; } }
+@media (max-width: 720px) { .group-workspace { grid-template-columns: 1fr; } .group-controls { grid-template-columns: 1fr; } .group-card:last-child { grid-column: auto; } }
 @media (max-width: 950px) { .admin-layout { grid-template-columns: 220px minmax(0, 1fr); } .control-grid { grid-template-columns: 1fr; } .account-meta { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 720px) { .admin-head { align-items: flex-start; flex-direction: column; } .admin-layout { grid-template-columns: 1fr; } .directory-panel { max-height: 260px; } .user-list { max-height: 195px; } .account-actions { align-items: flex-end; flex-direction: column; } }
 @media (max-width: 500px) { .admin-stats { width: 100%; justify-content: space-between; } .detail-head { align-items: flex-start; flex-direction: column; } .account-actions { align-items: flex-start; } .form-grid, .quota-usage { grid-template-columns: 1fr; } }
