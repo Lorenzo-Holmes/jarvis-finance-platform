@@ -12,15 +12,23 @@
 """
 from datetime import datetime
 from email.utils import parsedate_to_datetime
+from concurrent.futures import ThreadPoolExecutor
 from hashlib import sha256
+import os
 import re
 from typing import Dict, List, Optional
 from urllib.parse import urlparse
 
 import feedparser
+import requests
 
 #: 允许的资讯源协议。仅 http(s)，避免 file:// 等被当作抓取目标。
 _ALLOWED_SCHEMES = ("http", "https")
+_RSS_TIMEOUT = (
+    float(os.getenv("RSS_CONNECT_TIMEOUT_SECONDS", "3")),
+    float(os.getenv("RSS_READ_TIMEOUT_SECONDS", "6")),
+)
+_RSS_USER_AGENT = "JARVIS-Finance-Research/1.0 (+https://f.shengxia.me)"
 
 #: 预置财经资讯源。让"每日要闻"开箱可用，而不必先手工登记源。
 #:
@@ -117,6 +125,17 @@ def _clean_text(value: object) -> str:
     if value is None:
         return ""
     return str(value).strip()
+
+
+def _fetch_feed(url: str):
+    """在有限时限内下载并解析 RSS，避免单个外部源拖住整条新闻接口。"""
+    response = requests.get(
+        url,
+        headers={"User-Agent": _RSS_USER_AGENT, "Accept": "application/rss+xml, application/atom+xml, text/xml"},
+        timeout=_RSS_TIMEOUT,
+    )
+    response.raise_for_status()
+    return feedparser.parse(response.content)
 
 
 def _published_timestamp(value: object) -> Optional[float]:
@@ -309,8 +328,18 @@ class RSSStore:
         """
         source = self.get_source(source_id)
 
-        # feedparser 不抛异常：网络/解析失败体现在 bozo 与 entries 上，需显式读取。
-        feed = feedparser.parse(source["url"])
+        # 网络失败必须被收敛成单源错误；不能让一个 RSS 源阻塞 /daily。
+        try:
+            feed = _fetch_feed(source["url"])
+        except Exception as exc:  # requests/解析库的异常都按单源降级
+            return {
+                "source_id": source["id"],
+                "ok": False,
+                "fetched": 0,
+                "added": [],
+                "skipped": 0,
+                "error": f"抓取失败: {_clean_text(exc) or exc.__class__.__name__}",
+            }
         entries = list(getattr(feed, "entries", []) or [])
         error = self._feed_error(feed)
 
@@ -406,6 +435,7 @@ class RSSStore:
         now = datetime.now()
         statuses: List[Dict] = []
         enabled_sources = [source for source in self.list_sources() if source.get("enabled", True)]
+        due_sources: List[Dict] = []
         for source in enabled_sources:
             source_id = source["id"]
             name = source.get("name") or source_id
@@ -423,24 +453,23 @@ class RSSStore:
                     "fetched": 0, "added": 0, "error": None,
                 })
                 continue
-            try:
-                result = self.crawl(source_id)
-            except (RSSSourceNotFound, RSSValidationError) as exc:
+            due_sources.append(source)
+
+        # 外部源彼此独立，并行抓取；单源超时只影响该源，不把十个源的等待时间相加。
+        if due_sources:
+            workers = min(8, len(due_sources))
+            with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="rss") as pool:
+                results = list(pool.map(self.crawl, [source["id"] for source in due_sources]))
+            for source, result in zip(due_sources, results):
+                source_id = source["id"]
+                self._last_crawled[source_id] = now
                 statuses.append({
-                    "source_id": source_id, "name": name,
+                    "source_id": source_id, "name": source.get("name") or source_id,
                     "category": source.get("category", "general"),
-                    "ok": False, "crawled": False,
-                    "fetched": 0, "added": 0, "error": str(exc),
+                    "ok": bool(result["ok"]), "crawled": True,
+                    "fetched": result["fetched"], "added": len(result["added"]),
+                    "error": result["error"],
                 })
-                continue
-            self._last_crawled[source_id] = now
-            statuses.append({
-                "source_id": source_id, "name": name,
-                "category": source.get("category", "general"),
-                "ok": bool(result["ok"]), "crawled": True,
-                "fetched": result["fetched"], "added": len(result["added"]),
-                "error": result["error"],
-            })
 
         articles = self.list_articles()
         articles.sort(key=_article_sort_key, reverse=True)

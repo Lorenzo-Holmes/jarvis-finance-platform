@@ -1,6 +1,6 @@
 """每日要闻（RSS digest）测试。
 
-全部用例都不触网：`feedparser.parse` 一律被替换为假实现。
+全部用例都不触网：`rss._fetch_feed` 一律被替换为假实现。
 覆盖四条容易出错的语义：
   1. 预置资讯源开箱可用，且不覆盖已登记的同 id 源；
   2. digest 合并多源、按发布时间倒序，单源失败不拖垮整体；
@@ -37,14 +37,14 @@ def _entry(title, link, published=""):
 
 
 def _patch_feed(monkeypatch, feed):
-    """把 feedparser.parse 换成固定返回，并记录每次请求的 URL。"""
+    """把 RSS 下载器换成固定返回，并记录每次请求的 URL。"""
     seen = []
 
     def fake_parse(url):
         seen.append(url)
         return feed
 
-    monkeypatch.setattr(rss_module.feedparser, "parse", fake_parse)
+    monkeypatch.setattr(rss_module, "_fetch_feed", fake_parse)
     return seen
 
 
@@ -101,7 +101,7 @@ def test_digest_merges_sources_and_sorts_by_published(monkeypatch):
     def fake_parse(url):
         return feeds[url]
 
-    monkeypatch.setattr(rss_module.feedparser, "parse", fake_parse)
+    monkeypatch.setattr(rss_module, "_fetch_feed", fake_parse)
 
     digest = store.digest(force=True)
 
@@ -126,7 +126,7 @@ def test_digest_survives_single_source_failure(monkeypatch):
             return _fake_feed([], bozo=1, exc=ValueError("connection reset"))
         return _fake_feed([_entry("正常新闻", "https://ok.example.com/1", "Wed, 17 Sep 2026 09:00:00 +0800")])
 
-    monkeypatch.setattr(rss_module.feedparser, "parse", fake_parse)
+    monkeypatch.setattr(rss_module, "_fetch_feed", fake_parse)
 
     digest = store.digest(force=True)
 
@@ -178,7 +178,7 @@ def test_digest_deduplicates_across_sources(monkeypatch):
         "https://a.example.com/rss": _fake_feed([same]),
         "https://b.example.com/rss": _fake_feed([same]),
     }
-    monkeypatch.setattr(rss_module.feedparser, "parse", lambda url: feeds[url])
+    monkeypatch.setattr(rss_module, "_fetch_feed", lambda url: feeds[url])
 
     digest = store.digest(force=True)
 

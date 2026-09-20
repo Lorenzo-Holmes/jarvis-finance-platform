@@ -10,7 +10,7 @@
   - HTTP 语义：领域异常映射为 400 / 404，不泄漏成 500
   - 安全：所有 /internal/rss/* 端点都必须挂着内部服务令牌依赖
 
-全部用例均不触网：`feedparser.parse` 一律被替换为假实现。
+全部用例均不触网：`rss._fetch_feed` 一律被替换为假实现。
 """
 import asyncio
 import os
@@ -45,14 +45,14 @@ def _fake_feed(entries=(), bozo=0, bozo_exception=None):
 
 
 def _patch_feed(monkeypatch, feed):
-    """把 feedparser.parse 替换为固定返回，并记录被请求的 URL。"""
+    """把 RSS 下载器替换为固定返回，并记录被请求的 URL。"""
     requested = []
 
     def fake_parse(url):
         requested.append(url)
         return feed
 
-    monkeypatch.setattr(rss_module.feedparser, "parse", fake_parse)
+    monkeypatch.setattr(rss_module, "_fetch_feed", fake_parse)
     return requested
 
 
@@ -231,6 +231,23 @@ def test_crawl_reports_failure_instead_of_empty_list(monkeypatch):
     assert result["fetched"] == 0
     assert result["added"] == []
     assert store.list_articles() == []
+
+
+def test_crawl_converts_network_timeout_to_source_error(monkeypatch):
+    store = RSSStore()
+    store.add_source({"id": "s1", "url": "https://example.com/rss"})
+
+    def fail_fetch(_url):
+        raise TimeoutError("read timeout")
+
+    monkeypatch.setattr(rss_module, "_fetch_feed", fail_fetch)
+
+    result = store.crawl("s1")
+
+    assert result["ok"] is False
+    assert result["fetched"] == 0
+    assert result["added"] == []
+    assert "read timeout" in result["error"]
 
 
 def test_crawl_marks_ok_false_but_keeps_articles_on_partial_parse(monkeypatch):
