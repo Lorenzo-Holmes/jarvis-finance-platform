@@ -9,7 +9,6 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -24,7 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p>⚠️ 下面的"支持类型集合"断言是<strong>刻意的维护成本</strong>，与
  * {@code FlywaySchemaContractTest} 里那份写死的表清单同一个道理：
  * 新增/移除执行器时必须显式改一次这里，逼你确认那是有意为之。
- * 队友的 {@code DAILY_DIGEST} 执行器落地后，这条会红 —— 那时把它加进集合即可。</p>
+ * {@code DAILY_DIGEST} 执行器落地时这条如期变红，已按约定把它加进集合。</p>
  */
 @SpringBootTest(properties = {
         "spring.datasource.url=jdbc:h2:mem:sched-wiring;MODE=MySQL;DB_CLOSE_DELAY=-1",
@@ -49,16 +48,22 @@ class ScheduledTaskExecutorWiringTest {
     void theSupportedTypeSetIsExactlyWhatHasBeenImplemented() {
         assertEquals(Set.of(ScheduledTaskType.MARKET_SCAN,
                         ScheduledTaskType.BACKTEST,
-                        ScheduledTaskType.RISK_CHECK),
+                        ScheduledTaskType.RISK_CHECK,
+                        ScheduledTaskType.DAILY_DIGEST),
                 runner.supportedTypes());
     }
 
     @Test
-    void theTypeWithoutAnExecutorStaysUnsupported() {
-        // DAILY_DIGEST 的执行器归信息中心（RSS）那条线，尚未注册 —— 所以它现在建不出来，
-        // 这正是想要的：建出来也只会每次失败、5 次后被自动暂停。
-        assertFalse(runner.supports(ScheduledTaskType.DAILY_DIGEST),
-                "若这里变成 true，说明队友的资讯日报执行器已落地，请同步更新本断言与 README");
+    void everyDeclaredTypeNowHasAnExecutor() {
+        // 这条不是"实现细节"而是"产品承诺"：ScheduledTaskType 里声明的每一个类型
+        // 都应当能被创建。以前 DAILY_DIGEST 是刻意的例外（未注册 → 创建接口 400），
+        // 现在四个执行器齐了，就不该再留任何"建不出来"的类型 —— 否则前端把它列出来、
+        // 用户一建就 400，而错误信息只说"该类型尚未开放"。
+        for (ScheduledTaskType type : ScheduledTaskType.values()) {
+            assertTrue(runner.supports(type),
+                    "类型 " + type + " 没有任何执行器认领，创建接口会直接 400");
+        }
+        assertEquals(ScheduledTaskType.values().length, runner.supportedTypes().size());
     }
 
     @Test
