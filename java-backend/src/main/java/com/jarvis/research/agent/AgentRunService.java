@@ -105,12 +105,12 @@ public class AgentRunService {
                 List<AgentEvent> history = eventsFor(runId);
                 for (AgentEvent event : history) send(emitter, event);
                 if (isTerminal(current.getStatus()) || state == null) {
-                    emitter.complete();
+                    safeComplete(emitter);
                     return emitter;
                 }
                 state.subscribers.add(emitter);
             } catch (Exception error) {
-                emitter.completeWithError(error);
+                safeComplete(emitter);
                 return emitter;
             }
         }
@@ -168,7 +168,10 @@ public class AgentRunService {
                     send(emitter, event);
                 } catch (Exception error) {
                     state.subscribers.remove(emitter);
-                    emitter.completeWithError(error);
+                    // 客户端断线后 emitter 可能已经进入容器 error state。
+                    // 再调用 completeWithError 会把异步容器异常冒泡成后续请求的 409，
+                    // 取消同一 runId 也会因此失败；断线只需移除订阅器并安全关闭。
+                    safeComplete(emitter);
                 }
             }
             if (isTerminalEvent(event)) {
@@ -258,8 +261,16 @@ public class AgentRunService {
     }
 
     private void completeSubscribers(RunState state) {
-        for (SseEmitter emitter : state.subscribers) emitter.complete();
+        for (SseEmitter emitter : state.subscribers) safeComplete(emitter);
         state.subscribers.clear();
+    }
+
+    private static void safeComplete(SseEmitter emitter) {
+        try {
+            emitter.complete();
+        } catch (IllegalStateException ignored) {
+            // 客户端断线后容器可能已经完成/失败；订阅器清理仍然是幂等的。
+        }
     }
 
     private static boolean isTerminalEvent(AgentEvent event) {

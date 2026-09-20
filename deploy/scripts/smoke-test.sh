@@ -100,7 +100,7 @@ assert_agent_cancel_and_reconnect() {
   local label="$1"
   local url="$2"
   local csrf="$3"
-  local body_file run_id stream_pid cancel_body reconnect_file reconnect_exit
+  local body_file run_id stream_pid cancel_body cancel_file cancel_code cancel_exit cancel_reason reconnect_file reconnect_exit
   body_file="$(mktemp)"
   # 让运行先落库并发出 run_started，再主动断开客户端连接；后端运行不能因此丢失。
   set +e
@@ -130,10 +130,24 @@ assert_agent_cancel_and_reconnect() {
   # 模拟浏览器断线，之后使用同一个 runId 发送取消请求。
   kill "$stream_pid" 2>/dev/null || true
   wait "$stream_pid" 2>/dev/null || true
-  cancel_body="$(curl "${curl_args[@]}" -X DELETE \
-    -b "$cookie_jar" -c "$cookie_jar" \
+  echo "INFO  Agent recovery run started: canceling persisted run"
+  cancel_file="$(mktemp)"
+  set +e
+  cancel_code="$(curl --silent --show-error --connect-timeout 5 --max-time 20 \
+    -b "$cookie_jar" -c "$cookie_jar" -X DELETE \
     -H "X-XSRF-TOKEN: $csrf" \
+    -o "$cancel_file" -w '%{http_code}' \
     "$SMOKE_API_BASE/api/agent/runs/$run_id")"
+  cancel_exit=$?
+  set -e
+  if [ "$cancel_exit" -ne 0 ] || [ "$cancel_code" != "200" ]; then
+    cancel_reason="$(python3 -c 'import json,pathlib,sys; d=json.loads(pathlib.Path(sys.argv[1]).read_text()); print(str(d.get("message") or d.get("error") or "")[:200])' "$cancel_file" 2>/dev/null || true)"
+    echo "ERROR: Agent cancel failed http=$cancel_code curl=$cancel_exit reason=$cancel_reason" >&2
+    rm -f "$body_file" "$cancel_file"
+    exit 1
+  fi
+  cancel_body="$(python3 -c 'import pathlib,sys; print(pathlib.Path(sys.argv[1]).read_text() if pathlib.Path(sys.argv[1]).exists() else "")' "$cancel_file")"
+  rm -f "$cancel_file"
   printf '%s' "$cancel_body" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("code")==200,d'
   echo "OK  $label cancel request"
 

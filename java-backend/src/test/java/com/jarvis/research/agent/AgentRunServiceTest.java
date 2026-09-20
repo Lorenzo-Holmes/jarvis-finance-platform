@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.task.SimpleAsyncTaskExecutor;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.lang.reflect.Method;
 import java.time.LocalDateTime;
@@ -12,10 +13,12 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -70,6 +73,17 @@ class AgentRunServiceTest {
         assertEquals(true, parsed.get("available"));
         assertEquals(3, parsed.get("count"));
         assertTrue(stored.length() < 100);
+    }
+
+    @Test
+    void brokenSseEmitterCanBeClosedWithoutEscapingToTheRequest() throws Exception {
+        SseEmitter emitter = mock(SseEmitter.class);
+        doThrow(new IllegalStateException("async context already failed"))
+                .when(emitter).complete();
+        Method close = AgentRunService.class.getDeclaredMethod("safeComplete", SseEmitter.class);
+        close.setAccessible(true);
+
+        assertDoesNotThrow(() -> close.invoke(null, emitter));
     }
 
     private AgentRunService service() {
