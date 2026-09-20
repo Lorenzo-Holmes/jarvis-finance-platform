@@ -6,11 +6,15 @@ import org.junit.jupiter.api.Test;
 import org.springframework.core.task.SimpleAsyncTaskExecutor;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -20,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class AgentRunServiceTest {
@@ -84,6 +89,47 @@ class AgentRunServiceTest {
         close.setAccessible(true);
 
         assertDoesNotThrow(() -> close.invoke(null, emitter));
+    }
+
+    @Test
+    void cancellationDetachesSseSubscribersBeforePersistingTerminalEvent() throws Exception {
+        AgentRunService service = service();
+        AgentRunEntity run = AgentRunEntity.builder()
+                .runId("run-active")
+                .userId(7L)
+                .question("检查黄金")
+                .status("running")
+                .createdAt(LocalDateTime.now())
+                .eventCount(1)
+                .lastSequence(1L)
+                .build();
+        when(runRepository.findByRunIdAndUserId("run-active", 7L)).thenReturn(Optional.of(run));
+        when(runRepository.findById("run-active")).thenReturn(Optional.of(run));
+
+        Class<?> stateType = Class.forName("com.jarvis.research.agent.AgentRunService$RunState");
+        Constructor<?> constructor = stateType.getDeclaredConstructor(String.class, Long.class,
+                String.class, Instant.class);
+        constructor.setAccessible(true);
+        Object state = constructor.newInstance("run-active", 7L, "检查黄金", Instant.now());
+        Field subscribers = stateType.getDeclaredField("subscribers");
+        subscribers.setAccessible(true);
+        SseEmitter broken = mock(SseEmitter.class);
+        doThrow(new IllegalStateException("async context already failed"))
+                .when(broken).complete();
+        @SuppressWarnings("unchecked")
+        List<SseEmitter> subscriberList = (List<SseEmitter>) subscribers.get(state);
+        subscriberList.add(broken);
+
+        Field activeRuns = AgentRunService.class.getDeclaredField("activeRuns");
+        activeRuns.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> active = (Map<String, Object>) activeRuns.get(service);
+        active.put("run-active", state);
+
+        service.cancel(7L, "run-active");
+
+        verifyNoInteractions(broken);
+        assertEquals("cancelled", run.getStatus());
     }
 
     private AgentRunService service() {

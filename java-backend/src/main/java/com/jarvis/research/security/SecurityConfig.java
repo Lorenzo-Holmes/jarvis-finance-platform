@@ -20,6 +20,7 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import jakarta.servlet.DispatcherType;
 import java.util.List;
 
 /**
@@ -55,6 +56,8 @@ public class SecurityConfig {
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
+                // SSE 客户端断线后的异步错误分发不应再次触发认证/授权错误页。
+                .dispatcherTypeMatchers(DispatcherType.ASYNC, DispatcherType.ERROR).permitAll()
                 // 公开接口
                 .requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/logout", "/api/auth/csrf",
                         "/api/auth/verification/**", "/api/auth/github/authorize", "/api/auth/github/callback",

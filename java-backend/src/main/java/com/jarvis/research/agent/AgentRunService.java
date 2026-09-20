@@ -149,6 +149,10 @@ public class AgentRunService {
             AgentRunEntity current = ownedRun(userId, runId);
             if (isTerminal(current.getStatus())) return;
             state.cancelled.set(true);
+            // 取消请求可能恰好与客户端断线的异步错误分发并发到达。
+            // 先解除所有 SSE 订阅，再写入终态，避免在已失败的 AsyncContext 上
+            // 调用 send/complete；前端可用本次取消响应或历史 SSE 重放确认终态。
+            state.subscribers.clear();
             publish(state, AgentEvent.create("run_cancelled", "cancelled", "研究运行已停止", null,
                     null, "后续工具调用已停止", Map.of(), Instant.now(), Instant.now(), 0L,
                     "CANCELLED"));
