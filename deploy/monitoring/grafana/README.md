@@ -13,7 +13,9 @@ Prometheus 已抓取 `jarvis-java` 或 `jarvis-backend` job；如果环境使用
 发布前校验：
 
 ```powershell
-Get-Content deploy/monitoring/grafana/dashboards/*.json | ConvertFrom-Json | Out-Null
+Get-ChildItem deploy/monitoring/grafana/dashboards/*.json | ForEach-Object {
+  Get-Content $_.FullName -Raw | ConvertFrom-Json | Out-Null
+}
 ```
 
 生产验收至少打开两个 dashboard，确认时间范围内有数据，并在测试环境制造一次 5xx /
