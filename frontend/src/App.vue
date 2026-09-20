@@ -26,6 +26,7 @@ const workspaceLoaders = Object.freeze({
   '运维': () => import('./components/OpsView.vue'),
   '市场趋势预测': () => import('./pages/TrendPage.vue'),
   '定时任务': () => import('./pages/ScheduledTasksPage.vue'),
+  'RSS资讯': () => import('./pages/NewsCenterPage.vue'),
   '管理后台': () => import('./components/AdminView.vue'),
 })
 const MarketPage = defineAsyncComponent(workspaceLoaders['行情'])
@@ -42,6 +43,7 @@ const QuotePage = defineAsyncComponent(workspaceLoaders['智能报价'])
 const TrendPage = defineAsyncComponent(workspaceLoaders['市场趋势预测'])
 const OpsView = defineAsyncComponent(workspaceLoaders['运维'])
 const ScheduledTasksPage = defineAsyncComponent(workspaceLoaders['定时任务'])
+const NewsCenterPage = defineAsyncComponent(workspaceLoaders['RSS资讯'])
 const AdminView = defineAsyncComponent(workspaceLoaders['管理后台'])
 const workspacePreloads = new Map()
 const preparedWorkspaceRoute = ref('')
@@ -434,6 +436,7 @@ onBeforeUnmount(() => {
       <StrategyPage v-else-if="workspaceRenderRoute === '策略生成'" @send-backtest="sendStrategyToBacktest" />
       <TrendPage v-else-if="workspaceRenderRoute === '市场趋势预测'" />
       <ScheduledTasksPage v-else-if="workspaceRenderRoute === '定时任务'" />
+      <NewsCenterPage v-else-if="workspaceRenderRoute === 'RSS资讯'" />
       <section v-else-if="workspaceRenderRoute === '管理后台'" class="panel-wrap">
         <AdminView />
       </section>

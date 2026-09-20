@@ -66,6 +66,26 @@ test('admin workspace exposes persisted group quota and permission management', 
   assert.match(admin, /保存组权限/)
 })
 
+test('RSS information center exposes persisted subscriptions and admin source management', () => {
+  const client = read('api/client.js')
+  const app = read('App.vue')
+  const modules = read('analysis-os/data/modules.js')
+  const page = read('pages/NewsCenterPage.vue')
+  const admin = read('components/NewsSourceAdminPanel.vue')
+
+  assert.match(client, /newsSources:/)
+  assert.match(client, /newsSubscriptions:/)
+  assert.match(client, /saveNewsSubscriptions:/)
+  assert.match(client, /adminNewsSources:/)
+  assert.match(client, /adminUpdateNewsSource:/)
+  assert.match(app, /workspaceRenderRoute === 'RSS资讯'/)
+  assert.match(modules, /labelZh: 'RSS资讯'/)
+  assert.match(page, /保存订阅/)
+  assert.match(page, /全部来源/)
+  assert.match(admin, /RSS 来源管理/)
+  assert.match(admin, /停用来源/)
+})
+
 test('backend notifications are surfaced in the workspace header', () => {
   const client = read('api/client.js')
   const center = read('components/common/NotificationCenter.vue')

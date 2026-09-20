@@ -367,6 +367,18 @@ export const api = {
   adminUpdateGroupPermissions: (groupId, body) => request(API_BASE, `/api/admin/groups/${groupId}/permissions`, {
     method: 'PUT', body: JSON.stringify(body),
   }),
+  // RSS 信息中心：来源目录与用户订阅由 Java + PostgreSQL 持久化。
+  newsSources: () => get(API_BASE, '/api/news/sources'),
+  newsSubscriptions: () => get(API_BASE, '/api/news/subscriptions'),
+  saveNewsSubscriptions: (body) => request(API_BASE, '/api/news/subscriptions', {
+    method: 'PUT', body: JSON.stringify(body),
+  }),
+  adminNewsSources: () => get(API_BASE, '/api/admin/news/sources'),
+  adminCreateNewsSource: (body) => post(API_BASE, '/api/admin/news/sources', body),
+  adminUpdateNewsSource: (sourceKey, body) => request(
+    API_BASE, `/api/admin/news/sources/${encodeURIComponent(sourceKey)}`,
+    { method: 'PATCH', body: JSON.stringify(body) },
+  ),
 
   // ===== 京东积存金：Java 定时采集 + Java 数据库 =====
   jdPrices: () => get(API_BASE, '/api/market/jd/prices'),

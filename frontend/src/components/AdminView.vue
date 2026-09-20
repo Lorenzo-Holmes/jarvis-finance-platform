@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { api } from '../api/client'
 import DataState from './common/DataState.vue'
+import NewsSourceAdminPanel from './NewsSourceAdminPanel.vue'
 
 const users = ref([])
 const groups = ref([])
@@ -460,6 +461,8 @@ onMounted(async () => {
         </div>
       </div>
     </section>
+
+    <NewsSourceAdminPanel />
   </div>
 </template>
 

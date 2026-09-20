@@ -16,18 +16,19 @@
 - Agent 运行服务补齐 pending/running 孤儿运行恢复、终态运行内存清理、SSE 重连终态竞态保护和超大 payload 有界降级；新增生命周期/恢复边界回归测试。
 - 管理员按用户的额度、权限和审计能力已完成；新增 V14 用户组、成员关系、组级 AI 配额与组级功能权限，组策略作为无用户级覆盖时的共享默认策略，并提供管理员 API、审计事件和前端管理工作区。
 - 流式 AI 请求会请求上游返回 usage chunk，并由 Java 解析 `total_tokens` 后计入用户或用户组月度 Token 配额；未返回 usage 的兼容上游仍保持响应可用。
+- RSS 信息中心首版已补齐：Java/PostgreSQL 持久化 10 个预置来源、管理员新增/编辑/启停/可信度维护、用户来源/主题订阅和服务端订阅过滤；Python 抓取结果补充正文片段、来源分类、标签和可解释的规则影响方向，前端新增 RSS 资讯工作区与管理后台来源面板。该变更尚未发布到生产。
 
 ## 自动化验证结果
 
-- Java：全量 Maven 测试通过，545 tests / 0 failures / 0 errors / 5 skipped；包含 V14 Flyway/Hibernate schema contract、用户组配额/权限继承、回测、交易回滚故障注入、PostgreSQL 锁策略、Agent 生命周期恢复等测试。PostgreSQL 未配置时仅保留既有跳过项。
-- Python：release 构建使用 `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q`，238 passed。普通 `pytest` 仍受本机 `pytest-asyncio` 与当前 pytest 版本兼容问题影响，代码测试本身不受影响。
-- 前端：`npm run test:p0`，128 passed；`npm run build` 通过。
+- Java：全量 Maven 测试通过，548 tests / 0 failures / 0 errors / 5 skipped；新增 RSS 来源/订阅服务层过滤测试，包含 V15 Flyway/Hibernate schema contract、用户组配额/权限继承、回测、交易回滚故障注入、PostgreSQL 锁策略、Agent 生命周期恢复等测试。PostgreSQL 未配置时仅保留既有跳过项。
+- Python：`PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q`，255 passed。普通 `pytest` 仍受本机 `pytest-asyncio` 与当前 pytest 版本兼容问题影响，代码测试本身不受影响。
+- 前端：`npm run test:p0`，129 passed；`npm run build` 通过。
 - 浏览器：Playwright `financial-import` 项目通过，验证财报 Markdown 文件导入替换/追加、失败导入保留原文，以及选择文件不会提前请求分析接口；预览模式下夜间多市场图表和财报输入面板也已实际检查。显式分析因本地 Java 未启动，在 CSRF 阶段按预期失败。未伪造真实回测或 Agent SSE 结果。
 
 ## Gitee PR 审核（2026-09-20）
 
 - Gitee 当前没有 open PR；最新 PR#15（`feat: 补 DAILY_DIGEST 执行器，定时任务 4 个类型全部可用`）已处于 merged 状态，提交 `3db902a` 已包含日报执行器、参数边界、来源不可用降级和 wiring 测试。本轮已复核 PR 详情、文件差异和评论，没有可再次修改或合并的待审 PR。
-- 本地当前分支已同步 Gitee `main`；后续新增 PR 应继续先做 diff/测试审查，再合并到 `main`。
+- 审核时本地分支与 Gitee `main` 一致；随后为本地 RSS 补齐生成提交 `f8abd8c`，该提交尚未推送到 Gitee，也尚未部署。后续新增 PR 应继续先做 diff/测试审查，再合并到 `main`。
 
 ## 生产发布验收（2026-09-20）
 
@@ -47,7 +48,7 @@
 ### P1/P2
 
 - 流式 AI 响应的精确月度 Token usage 仍依赖上游稳定返回 usage 事件；当前非流式统计已完成。
-- PRD V1.2 的 RSS “可配置至少 10 个来源、用户订阅与信息流关联”目前已有 Python 内部 RSS 存储、抓取、去重、日报摘要和 Java 定时任务，但来源管理/订阅的完整用户-facing 页面及生产数据验收仍需补齐。
+- PRD V1.2 的 RSS 信息源管理、10 源配置、用户订阅与服务端信息流关联已在本地代码补齐，但本轮尚未发布；AI 摘要/关键词目前是 RSS 正文/摘要与 feed 标签 + 可解释规则影响方向，尚未接入可审计的模型分析结果；重要事件提醒、与行情/策略模块的深链接及生产每日更新数据仍需验收。
 - PRD V1.2 的“测试 Agent”（从 PRD 生成用例、自动执行浏览器测试并输出缺陷报告）尚未实现；现有 Playwright 是测试脚手架，不等同于测试 Agent。
 - Grafana/Prometheus 的正式面板仍需在生产监控实例导入并验证 5xx、429、502、Hikari、行情源熔断等告警链路；仓库模板和指标基础已存在。
 - 视觉规范文档中关于档案海景深、玻璃层次、长时间循环、移动端逐页像素审阅的 checklist 仍属于人工设计验收，不能用单元测试代替。
@@ -55,4 +56,4 @@
 
 ## 结论
 
-核心业务功能缺口已经补齐并完成本次前后端生产发布；当前不能宣称“全部需求已生产验收完成”。剩余工作集中在真实账号下的 Agent SSE/断线恢复和业务端到端验收、财报导入组件级浏览器测试、监控告警导入以及视觉人工确认，不应通过伪造数据或跳过认证来标记完成。
+核心业务功能已持续补齐，但 RSS 新增代码尚未发布；当前不能宣称“全部需求已生产验收完成”。剩余工作集中在真实账号下的 Agent SSE/断线恢复和业务端到端验收、RSS AI 分析/提醒/业务关联、测试 Agent、监控告警导入以及视觉人工确认，不应通过伪造数据或跳过认证来标记完成。

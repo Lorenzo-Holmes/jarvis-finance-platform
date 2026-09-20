@@ -2,8 +2,8 @@
 
 职责边界（与三栈架构一致）：
   - 本模块只做「资讯源配置 / RSS 抓取 / 文章标准化 / 去重」。
-  - 文章的业务持久化、权限、配额由 Java 主后端负责；本模块的存储是**进程内存**，
-    进程重启即丢失，仅作为抓取与标准化的过渡实现。
+  - 文章的业务持久化、权限、配额由 Java 主后端负责；本模块的文章缓存仍是**进程内存**，
+    资讯源配置由 Java 主后端持久化后，在启动时同步到本模块。
   - AI 分析不在本模块，由后续内部 AI 服务接口完成。
 
 对外错误约定（由 app.main 注册的异常处理器映射为 HTTP 状态码）：
@@ -13,6 +13,7 @@
 from datetime import datetime
 from email.utils import parsedate_to_datetime
 from hashlib import sha256
+import re
 from typing import Dict, List, Optional
 from urllib.parse import urlparse
 
@@ -31,6 +32,8 @@ DEFAULT_SOURCES: List[Dict] = [
         "id": "yahoo_finance",
         "name": "Yahoo Finance",
         "url": "https://finance.yahoo.com/news/rssindex",
+        "category": "global",
+        "credibility": 78,
     },
     {
         "id": "cnbc_finance",
@@ -39,16 +42,64 @@ DEFAULT_SOURCES: List[Dict] = [
             "https://search.cnbc.com/rs/search/combinedcms/view.xml"
             "?partnerId=wrss01&id=100003114"
         ),
+        "category": "global",
+        "credibility": 82,
     },
     {
         "id": "marketwatch_top",
         "name": "MarketWatch",
         "url": "https://feeds.content.dowjones.io/public/rss/mw_topstories",
+        "category": "markets",
+        "credibility": 76,
     },
     {
         "id": "investing_cn",
         "name": "英为财情",
         "url": "https://cn.investing.com/rss/news.rss",
+        "category": "markets",
+        "credibility": 70,
+    },
+    {
+        "id": "wsj_markets",
+        "name": "WSJ Markets",
+        "url": "https://feeds.a.dj.com/rss/RSSMarketsMain.xml",
+        "category": "markets",
+        "credibility": 84,
+    },
+    {
+        "id": "cointelegraph",
+        "name": "Cointelegraph",
+        "url": "https://cointelegraph.com/rss",
+        "category": "crypto",
+        "credibility": 68,
+    },
+    {
+        "id": "coindesk",
+        "name": "CoinDesk",
+        "url": "https://www.coindesk.com/arc/outboundfeeds/rss/",
+        "category": "crypto",
+        "credibility": 72,
+    },
+    {
+        "id": "ft_markets",
+        "name": "Financial Times Markets",
+        "url": "https://www.ft.com/markets?format=rss",
+        "category": "global",
+        "credibility": 88,
+    },
+    {
+        "id": "marketwatch_topstories",
+        "name": "MarketWatch Top Stories",
+        "url": "https://www.marketwatch.com/rss/topstories",
+        "category": "markets",
+        "credibility": 76,
+    },
+    {
+        "id": "nasdaq_market",
+        "name": "Nasdaq Market News",
+        "url": "https://www.nasdaq.com/feed/rssoutbound?category=Markets",
+        "category": "markets",
+        "credibility": 84,
     },
 ]
 
@@ -105,6 +156,51 @@ def _article_sort_key(article: Dict) -> tuple:
     return (published or 0.0, created or 0.0)
 
 
+def _entry_body(item) -> str:
+    """优先取 RSS 正文片段，缺失时退回摘要；不把 HTML 当作可执行内容。"""
+    summary = _clean_text(item.get("summary"))
+    content = item.get("content")
+    if isinstance(content, list):
+        fragments = []
+        for fragment in content:
+            if isinstance(fragment, dict):
+                value = _clean_text(fragment.get("value"))
+                if value:
+                    fragments.append(value)
+        if fragments:
+            return " ".join(fragments)[:8_000]
+    return summary[:8_000]
+
+
+def _entry_tags(item, category: str) -> List[str]:
+    """保留 feed 自带标签，并补充来源分类；标签仅用于筛选展示。"""
+    tags: List[str] = []
+    raw_tags = item.get("tags")
+    if isinstance(raw_tags, list):
+        for raw in raw_tags:
+            if isinstance(raw, dict):
+                value = _clean_text(raw.get("term") or raw.get("label"))
+            else:
+                value = _clean_text(raw)
+            if value and value not in tags:
+                tags.append(value[:40])
+    raw_category = _clean_text(item.get("category"))
+    if raw_category and raw_category not in tags:
+        tags.append(raw_category[:40])
+    if category and category not in tags:
+        tags.append(category)
+    return tags[:8]
+
+
+def _market_impact(title: str, body: str) -> Dict[str, str]:
+    """低成本、可解释的第一层影响方向；明确标注为规则结果，不冒充投资建议。"""
+    text = f"{title} {body}".lower()
+    positive = len(re.findall(r"上涨|上调|增长|改善|突破|利好|降息|回购|beat|surge|rally|upgrade", text))
+    negative = len(re.findall(r"下跌|下调|下降|恶化|跌破|利空|加息|违约|风险|miss|drop|selloff|downgrade", text))
+    direction = "positive" if positive > negative else "negative" if negative > positive else "neutral"
+    return {"direction": direction, "method": "keyword_rule", "disclaimer": "仅供资讯筛选，不构成投资建议"}
+
+
 class RSSStore:
     """内存版资讯源仓库。
 
@@ -153,18 +249,41 @@ class RSSStore:
         if not url:
             raise RSSValidationError("source.url 不能为空")
 
+        if len(source_id) > 80:
+            raise RSSValidationError("source.id 不能超过80个字符")
+        if len(url) > 500:
+            raise RSSValidationError("source.url 不能超过500个字符")
+
         scheme = urlparse(url).scheme.lower()
         if scheme not in _ALLOWED_SCHEMES:
             raise RSSValidationError(
                 f"source.url 仅支持 {'/'.join(_ALLOWED_SCHEMES)}，当前为 '{scheme or '空'}'"
             )
 
+        name = _clean_text(source.get("name")) or source_id
+        category = _clean_text(source.get("category")) or "general"
+        try:
+            credibility = int(source.get("credibility", 50))
+        except (TypeError, ValueError):
+            raise RSSValidationError("source.credibility 必须是整数")
+        if len(name) > 120:
+            raise RSSValidationError("source.name 不能超过120个字符")
+        if len(category) > 40:
+            raise RSSValidationError("source.category 不能超过40个字符")
+        if not 0 <= credibility <= 100:
+            raise RSSValidationError("source.credibility 必须在0-100之间")
+
+        previous = self.sources.get(source_id)
+        now = datetime.now().isoformat()
         stored = {
             "id": source_id,
             "url": url,
-            "name": _clean_text(source.get("name")) or source_id,
+            "name": name,
+            "category": category,
+            "credibility": credibility,
             "enabled": bool(source.get("enabled", True)),
-            "created_at": datetime.now().isoformat(),
+            "created_at": previous.get("created_at", now) if previous else now,
+            "updated_at": now,
         }
         self.sources[source_id] = stored
         return stored
@@ -241,6 +360,7 @@ class RSSStore:
         转载源下列出它。若后续需要「谁转载了这篇」，应改为记录多个来源，
         而不是放宽去重键。
         """
+        source = self.get_source(source_id)
         title = _clean_text(item.get("title"))
         url = _clean_text(item.get("link"))
         if not title and not url:
@@ -252,8 +372,11 @@ class RSSStore:
             "source_id": source_id,
             "title": title,
             "url": url,
-            "summary": _clean_text(item.get("summary")),
+            "summary": _entry_body(item),
             "published": _clean_text(item.get("published")),
+            "category": source.get("category", "general"),
+            "tags": _entry_tags(item, source.get("category", "general")),
+            "analysis": _market_impact(title, _entry_body(item)),
             "created_at": datetime.now().isoformat(),
         }
 
@@ -282,7 +405,8 @@ class RSSStore:
         """
         now = datetime.now()
         statuses: List[Dict] = []
-        for source in self.list_sources():
+        enabled_sources = [source for source in self.list_sources() if source.get("enabled", True)]
+        for source in enabled_sources:
             source_id = source["id"]
             name = source.get("name") or source_id
             last = self._last_crawled.get(source_id)
@@ -293,7 +417,9 @@ class RSSStore:
             )
             if not due:
                 statuses.append({
-                    "source_id": source_id, "name": name, "ok": True, "crawled": False,
+                    "source_id": source_id, "name": name,
+                    "category": source.get("category", "general"),
+                    "ok": True, "crawled": False,
                     "fetched": 0, "added": 0, "error": None,
                 })
                 continue
@@ -301,13 +427,17 @@ class RSSStore:
                 result = self.crawl(source_id)
             except (RSSSourceNotFound, RSSValidationError) as exc:
                 statuses.append({
-                    "source_id": source_id, "name": name, "ok": False, "crawled": False,
+                    "source_id": source_id, "name": name,
+                    "category": source.get("category", "general"),
+                    "ok": False, "crawled": False,
                     "fetched": 0, "added": 0, "error": str(exc),
                 })
                 continue
             self._last_crawled[source_id] = now
             statuses.append({
-                "source_id": source_id, "name": name, "ok": bool(result["ok"]), "crawled": True,
+                "source_id": source_id, "name": name,
+                "category": source.get("category", "general"),
+                "ok": bool(result["ok"]), "crawled": True,
                 "fetched": result["fetched"], "added": len(result["added"]),
                 "error": result["error"],
             })

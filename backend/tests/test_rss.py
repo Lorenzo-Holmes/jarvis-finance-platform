@@ -83,6 +83,28 @@ def test_add_source_keeps_explicit_name_and_enabled():
     assert stored["enabled"] is False
 
 
+def test_defaults_cover_ten_sources_and_keep_category_metadata():
+    store = RSSStore()
+    sources = store.list_sources()
+
+    assert len(sources) >= 10
+    assert all(source["category"] for source in sources)
+    assert all(0 <= source["credibility"] <= 100 for source in sources)
+
+
+def test_disabled_sources_are_not_crawled_by_digest(monkeypatch):
+    store = RSSStore(seed_defaults=False)
+    store.add_source({"id": "on", "url": "https://example.com/on", "category": "markets"})
+    store.add_source({"id": "off", "url": "https://example.com/off", "enabled": False})
+    requested = _patch_feed(monkeypatch, _fake_feed(entries=[_entry()]))
+
+    digest = store.digest(refresh=True, force=True)
+
+    assert requested == ["https://example.com/on"]
+    assert digest["total_sources"] == 1
+    assert digest["sources"][0]["source_id"] == "on"
+
+
 @pytest.mark.parametrize("payload,reason", [
     ({}, "缺 id"),
     ({"id": "s1"}, "缺 url"),
@@ -138,9 +160,29 @@ def test_crawl_normalizes_entries(monkeypatch):
     assert article["title"] == "标题"
     assert article["url"] == "https://example.com/a"
     assert article["summary"] == "摘要"
+    assert article["tags"] == ["general"]
+    assert article["analysis"]["direction"] == "neutral"
     assert article["published"] == "2026-09-16"
     assert len(article["id"]) == 64                      # sha256 十六进制
     assert article["created_at"]
+
+
+def test_crawl_uses_content_tags_and_explainable_impact(monkeypatch):
+    store = RSSStore(seed_defaults=False)
+    store.add_source({"id": "s1", "url": "https://example.com/rss", "category": "gold"})
+    _patch_feed(monkeypatch, _fake_feed(entries=[{
+        "title": "Gold surges after rate cut",
+        "link": "https://example.com/gold",
+        "content": [{"value": "Gold rises on the policy signal."}],
+        "tags": [{"term": "黄金"}, {"term": "宏观"}],
+    }]))
+
+    article = store.crawl("s1")["added"][0]
+
+    assert article["summary"] == "Gold rises on the policy signal."
+    assert article["tags"] == ["黄金", "宏观", "gold"]
+    assert article["analysis"]["direction"] == "positive"
+    assert article["analysis"]["method"] == "keyword_rule"
 
 
 def test_crawl_deduplicates_across_runs(monkeypatch):

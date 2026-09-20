@@ -71,7 +71,12 @@ public final class NewsDigest {
             item.put("url", text(article.get("url")));
             item.put("source", sourceNames.getOrDefault(sourceId, sourceId));
             item.put("source_id", sourceId);
+            item.put("category", text(article.get("category")));
             item.put("published", text(article.get("published")));
+            item.put("summary", text(article.get("summary")));
+            item.put("tags", article.get("tags") instanceof List<?> tags ? tags : List.of());
+            item.put("analysis", article.get("analysis") instanceof Map<?, ?> analysis
+                    ? analysis : Map.of());
             items.add(item);
         }
 

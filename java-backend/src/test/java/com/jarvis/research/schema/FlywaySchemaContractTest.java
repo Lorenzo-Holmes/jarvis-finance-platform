@@ -128,6 +128,8 @@ class FlywaySchemaContractTest {
                 "user_group_member",
                 "group_ai_quota",
                 "group_feature_permission",
+                "news_source",
+                "news_subscription",
                 "flyway_schema_history"));
 
         assertEquals(expected, tableNames(), "迁移产出的表集合");
@@ -255,6 +257,21 @@ class FlywaySchemaContractTest {
         assertTrue(permissionColumns.containsAll(List.of(
                         "id", "group_id", "feature_key", "enabled", "created_at", "updated_at")),
                 "group_feature_permission 的列与 GroupFeaturePermission 实体不符，现有: " + permissionColumns);
+    }
+
+    @Test
+    void theNewsTablesHaveEveryColumnTheEntitiesMap() throws Exception {
+        Set<String> sourceColumns = columnNames("news_source");
+        assertTrue(sourceColumns.containsAll(List.of(
+                        "id", "source_key", "name", "url", "category", "credibility",
+                        "enabled", "created_at", "updated_at")),
+                "news_source 的列与 NewsSource 实体不符，现有: " + sourceColumns);
+
+        Set<String> subscriptionColumns = columnNames("news_subscription");
+        assertTrue(subscriptionColumns.containsAll(List.of(
+                        "id", "user_id", "source_key", "topic", "enabled",
+                        "created_at", "updated_at")),
+                "news_subscription 的列与 NewsSubscription 实体不符，现有: " + subscriptionColumns);
     }
 
     // ==================== 夹具 ====================

@@ -2,6 +2,7 @@ package com.jarvis.research.controller;
 
 import com.jarvis.research.common.ApiResponse;
 import com.jarvis.research.news.NewsDigest;
+import com.jarvis.research.news.NewsSourceService;
 import com.jarvis.research.security.CurrentUser;
 import com.jarvis.research.service.AiProxyService;
 import com.jarvis.research.service.AiRateLimitService;
@@ -39,6 +40,7 @@ public class NewsController {
 
     private final AiProxyService aiProxyService;
     private final AiRateLimitService aiRateLimitService;
+    private final NewsSourceService newsSourceService;
     private final Map<String, String> titleZhCache = Collections.synchronizedMap(
             new LinkedHashMap<>(256, 0.75f, true) {
                 @Override
@@ -48,14 +50,16 @@ public class NewsController {
             });
 
     @Autowired
-    public NewsController(AiProxyService aiProxyService, AiRateLimitService aiRateLimitService) {
+    public NewsController(AiProxyService aiProxyService, AiRateLimitService aiRateLimitService,
+                          NewsSourceService newsSourceService) {
         this.aiProxyService = aiProxyService;
         this.aiRateLimitService = aiRateLimitService;
+        this.newsSourceService = newsSourceService;
     }
 
     /** 兼容不加载 Spring 容器的轻量单元测试。 */
     public NewsController(AiProxyService aiProxyService) {
-        this(aiProxyService, null);
+        this(aiProxyService, null, null);
     }
 
     /**
@@ -73,6 +77,9 @@ public class NewsController {
         try {
             Map<String, Object> digest = aiProxyService.post(path, Map.of());
             Map<String, Object> shaped = NewsDigest.fromDigest(digest, limit);
+            if (newsSourceService != null && CurrentUser.isAuthenticated()) {
+                shaped = newsSourceService.filterDigest(CurrentUser.id(), shaped);
+            }
             return ApiResponse.ok(localizeCachedTitles(shaped));
         } catch (Exception e) {
             return ApiResponse.ok(NewsDigest.unavailable(NewsDigest.REASON_UNAVAILABLE));

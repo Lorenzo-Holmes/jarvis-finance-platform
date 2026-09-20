@@ -53,7 +53,7 @@ export function groupModulesByCategory(modules = JARVIS_MODULES) {
 }
 
 export const ADMIN_WORKSPACE_MODULE = Object.freeze({
-  id: 'module:admin', no: 15, lane: 4, row: 3, key: 'admin',
+  id: 'module:admin', no: 16, lane: 4, row: 3, key: 'admin',
   labelEn: 'ADMIN', labelZh: '管理后台', category: 'SYSTEM', routeKey: '管理后台',
   code: 'SY-15', summary: '管理用户状态、角色、配额与功能权限。',
   capabilities: ['USERS', 'ROLES', 'QUOTAS'], availability: 'ready', adminOnly: true,
@@ -143,6 +143,12 @@ export const JARVIS_MODULES = [
     labelEn: 'AUTOMATION', labelZh: '定时任务', category: 'SYSTEM', routeKey: '定时任务',
     code: 'SY-14', summary: '管理周期任务、立即执行、暂停恢复、执行历史与自动化通知。',
     capabilities: ['SCHEDULE', 'RUN HISTORY', 'NOTIFY'], availability: 'ready',
+  },
+  {
+    id: 'module:rss-news', no: 15, lane: 2, row: 4, key: 'rss-news',
+    labelEn: 'RSS / NEWS', labelZh: 'RSS资讯', category: 'INTELLIGENCE', routeKey: 'RSS资讯',
+    code: 'IN-15', summary: '聚合多来源财经资讯，按来源与主题订阅并保留抓取状态。',
+    capabilities: ['10+ SOURCES', 'SUBSCRIPTIONS', 'DIGEST'], availability: 'ready',
   },
 ]
 
