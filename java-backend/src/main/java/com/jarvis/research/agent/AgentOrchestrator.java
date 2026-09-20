@@ -80,23 +80,28 @@ public class AgentOrchestrator {
 
     private Map<String, Object> executeNewsTool(Consumer<AgentEvent> sink, BooleanSupplier cancelled) {
         Instant started = Instant.now();
-        emit(sink, AgentEvent.create("tool_call", "running", "读取市场新闻", "MarketNewsTool",
-                "daily", "读取已缓存的市场新闻摘要", Map.of(), started, null, null, null));
+        String stepId = beginStep(sink, "读取市场新闻", "MarketNewsTool", "daily", started);
         try {
             checkCancelled(cancelled);
+            emitStepEvent(sink, AgentEvent.create("tool_call", "running", "读取市场新闻", "MarketNewsTool",
+                    "daily", "读取已缓存的市场新闻摘要", Map.of(), started, null, null, null), stepId);
             Map<String, Object> raw = aiProxyService.post("/internal/rss/digest?refresh=false&force=false", Map.of());
             Map<String, Object> news = NewsDigest.fromDigest(raw, 8);
-            emit(sink, AgentEvent.create("tool_result", "completed", "市场新闻读取完成", "MarketNewsTool",
+            emitStepEvent(sink, AgentEvent.create("tool_result", "completed", "市场新闻读取完成", "MarketNewsTool",
                     "daily", "已取得 " + listSize(news.get("items")) + " 条新闻",
                     Map.of("available", news.getOrDefault("available", false),
                             "items", news.getOrDefault("items", List.of()),
                             "generated_at", news.getOrDefault("generated_at", "")),
-                    started, Instant.now(), elapsed(started), null));
+                    started, Instant.now(), elapsed(started), null), stepId);
+            completeStep(sink, stepId, "市场新闻步骤完成", "MarketNewsTool", "已完成新闻工具调用",
+                    started, "completed", null);
             return news;
         } catch (AgentCancelledException cancelledException) {
             throw cancelledException;
         } catch (Exception error) {
-            emitToolFailure(sink, "MarketNewsTool", started, error);
+            emitToolFailure(sink, "MarketNewsTool", stepId, started, error);
+            completeStep(sink, stepId, "市场新闻步骤失败", "MarketNewsTool", safeMessage(error),
+                    started, "failed", "TOOL_FAILED");
             return NewsDigest.unavailable(NewsDigest.REASON_UNAVAILABLE);
         }
     }
@@ -104,13 +109,18 @@ public class AgentOrchestrator {
     private Map<String, Object> executeFinancialReportTool(Consumer<AgentEvent> sink, String question,
                                                              Long userId, BooleanSupplier cancelled) {
         Instant started = Instant.now();
+        String stepId = beginStep(sink, "解析财报材料", "FinancialReportTool", null, started);
         boolean hasFiling = isFinancialDocument(question);
-        emit(sink, AgentEvent.create("tool_call", hasFiling ? "running" : "completed",
+        emitStepEvent(sink, AgentEvent.create("tool_call", hasFiling ? "running" : "completed",
                 hasFiling ? "解析财报材料" : "财报工具待命", "FinancialReportTool", null,
                 hasFiling ? "将用户提供的财报材料交给财务解析器" : "本轮未检测到财报原文，跳过额外解析",
                 Map.of("available", hasFiling), started, hasFiling ? null : Instant.now(),
-                hasFiling ? null : 0L, null));
-        if (!hasFiling) return Map.of("available", false, "reason", "no_filing_context");
+                hasFiling ? null : 0L, null), stepId);
+        if (!hasFiling) {
+            completeStep(sink, stepId, "财报步骤已跳过", "FinancialReportTool", "本轮未提供财报材料",
+                    started, "completed", null);
+            return Map.of("available", false, "reason", "no_filing_context");
+        }
         try {
             checkCancelled(cancelled);
             Map<String, Object> response = aiProxyService.post("/api/ai/financial/report",
@@ -120,56 +130,70 @@ public class AgentOrchestrator {
             Map<String, Object> filing = new LinkedHashMap<>();
             filing.put("available", true);
             filing.put("analysis", content);
-            emit(sink, AgentEvent.create("tool_result", "completed", "财报解析完成", "FinancialReportTool",
+            emitStepEvent(sink, AgentEvent.create("tool_result", "completed", "财报解析完成", "FinancialReportTool",
                     null, "已生成财报结构化摘要", Map.of("available", true, "analysis", trim(content, 6000)),
-                    started, Instant.now(), elapsed(started), null));
+                    started, Instant.now(), elapsed(started), null), stepId);
+            completeStep(sink, stepId, "财报步骤完成", "FinancialReportTool", "已生成财报结构化摘要",
+                    started, "completed", null);
             return filing;
         } catch (AgentCancelledException cancelledException) {
             throw cancelledException;
         } catch (Exception error) {
-            emitToolFailure(sink, "FinancialReportTool", started, error);
+            emitToolFailure(sink, "FinancialReportTool", stepId, started, error);
+            completeStep(sink, stepId, "财报步骤失败", "FinancialReportTool", safeMessage(error),
+                    started, "failed", "TOOL_FAILED");
             return Map.of("available", false, "reason", "financial_report_failed");
         }
     }
 
     private Map<String, Object> executeQuoteTool(Consumer<AgentEvent> sink, BooleanSupplier cancelled) {
         Instant started = Instant.now();
-        emit(sink, AgentEvent.create("tool_call", "running", "读取实时行情", "MarketQuoteTool",
-                MARKET, "正在读取服务端行情快照", Map.of(), started, null, null, null));
+        String stepId = beginStep(sink, "读取实时行情", "MarketQuoteTool", MARKET, started);
+        emitStepEvent(sink, AgentEvent.create("tool_call", "running", "读取实时行情", "MarketQuoteTool",
+                MARKET, "正在读取服务端行情快照", Map.of(), started, null, null, null), stepId);
         try {
             checkCancelled(cancelled);
             Map<String, Object> prices = marketDataService.getLatestPrices();
             Map<String, Object> summary = new LinkedHashMap<>();
             summary.put("markets", prices.keySet());
             summary.put("available", !prices.isEmpty());
-            emit(sink, AgentEvent.create("tool_result", "completed", "行情读取完成", "MarketQuoteTool",
-                    MARKET, "已取得服务端行情快照", summary, started, Instant.now(), elapsed(started), null));
+            emitStepEvent(sink, AgentEvent.create("tool_result", "completed", "行情读取完成", "MarketQuoteTool",
+                    MARKET, "已取得服务端行情快照", summary, started, Instant.now(), elapsed(started), null), stepId);
+            completeStep(sink, stepId, "行情步骤完成", "MarketQuoteTool", "已取得服务端行情快照",
+                    started, "completed", null);
             return prices;
         } catch (AgentCancelledException cancelledException) {
             throw cancelledException;
         } catch (Exception error) {
-            emitToolFailure(sink, "MarketQuoteTool", started, error);
+            emitToolFailure(sink, "MarketQuoteTool", stepId, started, error);
+            completeStep(sink, stepId, "行情步骤失败", "MarketQuoteTool", safeMessage(error),
+                    started, "failed", "TOOL_FAILED");
             return Map.of();
         }
     }
 
     private Map<String, Object> executeKlineTool(Consumer<AgentEvent> sink, BooleanSupplier cancelled) {
         Instant started = Instant.now();
-        emit(sink, AgentEvent.create("tool_call", "running", "读取日 K 线", "MarketKlineTool",
-                MARKET + ":60", "正在读取最近 60 根日 K", Map.of(), started, null, null, null));
+        String stepId = beginStep(sink, "读取日 K 线", "MarketKlineTool", MARKET + ":60", started);
+        emitStepEvent(sink, AgentEvent.create("tool_call", "running", "读取日 K 线", "MarketKlineTool",
+                MARKET + ":60", "正在读取最近 60 根日 K", Map.of(), started, null, null, null), stepId);
         try {
             checkCancelled(cancelled);
             DailyKlineDTO dto = marketDataService.getDailyKline(MARKET, 60);
             Map<String, Object> kline = klineToMap(dto);
-            emit(sink, AgentEvent.create("tool_result", "completed", "日 K 线读取完成", "MarketKlineTool",
+            emitStepEvent(sink, AgentEvent.create("tool_result", "completed", "日 K 线读取完成", "MarketKlineTool",
                     MARKET + ":60", "已取得 " + kline.getOrDefault("count", 0) + " 根日 K",
                     Map.of("market", MARKET, "count", kline.getOrDefault("count", 0)),
-                    started, Instant.now(), elapsed(started), null));
+                    started, Instant.now(), elapsed(started), null), stepId);
+            completeStep(sink, stepId, "日 K 线步骤完成", "MarketKlineTool", "已取得日 K 数据",
+                    started, "completed", null);
             return kline;
         } catch (AgentCancelledException cancelledException) {
             throw cancelledException;
         } catch (Exception error) {
-            emitToolFailure(sink, "MarketKlineTool", started, error);
+            emitToolFailure(sink, "MarketKlineTool", stepId, started, error);
+            completeStep(sink, stepId, "日 K 线步骤失败", "MarketKlineTool", safeMessage(error),
+                    started, "failed", "TOOL_FAILED");
             return Map.of();
         }
     }
@@ -178,18 +202,23 @@ public class AgentOrchestrator {
                                                        Map<String, Object> kline,
                                                        BooleanSupplier cancelled) {
         Instant started = Instant.now();
-        emit(sink, AgentEvent.create("tool_call", "running", "计算技术指标", "TechnicalIndicatorTool",
-                MARKET, "计算 SMA、EMA、RSI 与支撑阻力", Map.of(), started, null, null, null));
+        String stepId = beginStep(sink, "计算技术指标", "TechnicalIndicatorTool", MARKET, started);
+        emitStepEvent(sink, AgentEvent.create("tool_call", "running", "计算技术指标", "TechnicalIndicatorTool",
+                MARKET, "计算 SMA、EMA、RSI 与支撑阻力", Map.of(), started, null, null, null), stepId);
         try {
             checkCancelled(cancelled);
             Map<String, Object> metrics = KlineMetrics.compute(kline);
-            emit(sink, AgentEvent.create("tool_result", "completed", "技术指标计算完成", "TechnicalIndicatorTool",
-                    MARKET, "指标已准备给研究模型引用", metrics, started, Instant.now(), elapsed(started), null));
+            emitStepEvent(sink, AgentEvent.create("tool_result", "completed", "技术指标计算完成", "TechnicalIndicatorTool",
+                    MARKET, "指标已准备给研究模型引用", metrics, started, Instant.now(), elapsed(started), null), stepId);
+            completeStep(sink, stepId, "指标步骤完成", "TechnicalIndicatorTool", "指标已准备给研究模型引用",
+                    started, "completed", null);
             return metrics;
         } catch (AgentCancelledException cancelledException) {
             throw cancelledException;
         } catch (Exception error) {
-            emitToolFailure(sink, "TechnicalIndicatorTool", started, error);
+            emitToolFailure(sink, "TechnicalIndicatorTool", stepId, started, error);
+            completeStep(sink, stepId, "指标步骤失败", "TechnicalIndicatorTool", safeMessage(error),
+                    started, "failed", "TOOL_FAILED");
             return Map.of("available", false, "reason", "indicator_failed");
         }
     }
@@ -197,8 +226,9 @@ public class AgentOrchestrator {
     private Map<String, Object> executeRiskTool(Consumer<AgentEvent> sink, Map<String, Object> kline,
                                                  BooleanSupplier cancelled) {
         Instant started = Instant.now();
-        emit(sink, AgentEvent.create("tool_call", "running", "检查历史风险", "RiskCheckTool",
-                MARKET, "根据服务端日 K 计算 VaR、ES、波动率与最大回撤", Map.of(), started, null, null, null));
+        String stepId = beginStep(sink, "检查历史风险", "RiskCheckTool", MARKET, started);
+        emitStepEvent(sink, AgentEvent.create("tool_call", "running", "检查历史风险", "RiskCheckTool",
+                MARKET, "根据服务端日 K 计算 VaR、ES、波动率与最大回撤", Map.of(), started, null, null, null), stepId);
         try {
             checkCancelled(cancelled);
             List<Object> closes = new ArrayList<>();
@@ -210,14 +240,18 @@ public class AgentOrchestrator {
             }
             Map<String, Object> risk = RiskMetrics.compute(closes, 0.95, null, MARKET).toMap();
             boolean available = Boolean.TRUE.equals(risk.get("available"));
-            emit(sink, AgentEvent.create("tool_result", "completed", "历史风险检查完成", "RiskCheckTool",
+            emitStepEvent(sink, AgentEvent.create("tool_result", "completed", "历史风险检查完成", "RiskCheckTool",
                     MARKET, available ? "已取得 VaR、ES、波动率与回撤" : "风险样本不足，已返回降级结果",
-                    risk, started, Instant.now(), elapsed(started), null));
+                    risk, started, Instant.now(), elapsed(started), null), stepId);
+            completeStep(sink, stepId, "风险步骤完成", "RiskCheckTool", "已完成风险检查",
+                    started, "completed", null);
             return risk;
         } catch (AgentCancelledException cancelledException) {
             throw cancelledException;
         } catch (Exception error) {
-            emitToolFailure(sink, "RiskCheckTool", started, error);
+            emitToolFailure(sink, "RiskCheckTool", stepId, started, error);
+            completeStep(sink, stepId, "风险步骤失败", "RiskCheckTool", safeMessage(error),
+                    started, "failed", "TOOL_FAILED");
             return Map.of("available", false, "reason", "risk_check_failed");
         }
     }
@@ -228,8 +262,9 @@ public class AgentOrchestrator {
                                   Map<String, Object> metrics, Map<String, Object> risk,
                                   BooleanSupplier cancelled) {
         Instant started = Instant.now();
-        emit(sink, AgentEvent.create("tool_call", "running", "生成研究结论", "ResearchSynthesisTool",
-                question, "将服务端行情与指标交给 AI 生成结论", Map.of(), started, null, null, null));
+        String stepId = beginStep(sink, "生成研究结论", "ResearchSynthesisTool", question, started);
+        emitStepEvent(sink, AgentEvent.create("tool_call", "running", "生成研究结论", "ResearchSynthesisTool",
+                question, "将服务端行情与指标交给 AI 生成结论", Map.of(), started, null, null, null), stepId);
         try {
             checkCancelled(cancelled);
             Map<String, Object> context = new LinkedHashMap<>();
@@ -248,15 +283,19 @@ public class AgentOrchestrator {
             Map<String, Object> response = aiProxyService.post("/api/ai/chat", body);
             aiRateLimitService.recordTokens(userId, response);
             String content = extractContent(response);
-            emit(sink, AgentEvent.create("assistant_delta", "completed", "研究结论已生成", "ResearchSynthesisTool",
+            emitStepEvent(sink, AgentEvent.create("assistant_delta", "completed", "研究结论已生成", "ResearchSynthesisTool",
                     null, "Markdown 结论已返回", Map.of("content", content), started,
-                    Instant.now(), elapsed(started), null));
-            emit(sink, AgentEvent.create("tool_result", "completed", "研究汇总完成", "ResearchSynthesisTool",
-                    question, "模型已引用服务端研究上下文", Map.of(), started, Instant.now(), elapsed(started), null));
+                    Instant.now(), elapsed(started), null), stepId);
+            emitStepEvent(sink, AgentEvent.create("tool_result", "completed", "研究汇总完成", "ResearchSynthesisTool",
+                    question, "模型已引用服务端研究上下文", Map.of(), started, Instant.now(), elapsed(started), null), stepId);
+            completeStep(sink, stepId, "研究结论步骤完成", "ResearchSynthesisTool", "模型已引用服务端研究上下文",
+                    started, "completed", null);
         } catch (AgentCancelledException cancelledException) {
             throw cancelledException;
         } catch (Exception error) {
-            emitToolFailure(sink, "ResearchSynthesisTool", started, error);
+            emitToolFailure(sink, "ResearchSynthesisTool", stepId, started, error);
+            completeStep(sink, stepId, "研究结论步骤失败", "ResearchSynthesisTool", safeMessage(error),
+                    started, "failed", "TOOL_FAILED");
             throw error;
         }
     }
@@ -318,9 +357,30 @@ public class AgentOrchestrator {
         return value.length() <= max ? value : value.substring(0, max);
     }
 
-    private void emitToolFailure(Consumer<AgentEvent> sink, String tool, Instant started, Exception error) {
-        emit(sink, AgentEvent.create("tool_result", "failed", tool + " 执行失败", tool,
-                null, safeMessage(error), Map.of(), started, Instant.now(), elapsed(started), "TOOL_FAILED"));
+    private static String beginStep(Consumer<AgentEvent> sink, String title, String tool,
+                                    String inputSummary, Instant started) {
+        AgentEvent event = AgentEvent.create("step_started", "running", title, tool,
+                inputSummary, "步骤已开始", Map.of(), started, null, null, null);
+        emit(sink, event);
+        return event.stepId();
+    }
+
+    private static void emitStepEvent(Consumer<AgentEvent> sink, AgentEvent event, String stepId) {
+        emit(sink, event.withStep(stepId));
+    }
+
+    private static void completeStep(Consumer<AgentEvent> sink, String stepId,
+                                     String title, String tool, String outputSummary,
+                                     Instant started, String status, String errorCode) {
+        emitStepEvent(sink, AgentEvent.create("step_completed", status, title, tool,
+                null, outputSummary, Map.of(), started, Instant.now(), elapsed(started), errorCode), stepId);
+    }
+
+    private static void emitToolFailure(Consumer<AgentEvent> sink, String tool, String stepId,
+                                        Instant started, Exception error) {
+        emitStepEvent(sink, AgentEvent.create("tool_result", "failed", tool + " 执行失败", tool,
+                null, safeMessage(error), Map.of(), started, Instant.now(), elapsed(started), "TOOL_FAILED"),
+                stepId);
     }
 
     private static long elapsed(Instant started) {

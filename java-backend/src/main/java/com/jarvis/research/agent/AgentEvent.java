@@ -41,6 +41,12 @@ public record AgentEvent(
                 inputSummary, outputSummary, payload, startedAt, finishedAt, durationMs, errorCode);
     }
 
+    /** 把同一工具步骤的生命周期事件关联到同一个 stepId。 */
+    public AgentEvent withStep(String nextStepId) {
+        return new AgentEvent(runId, nextStepId, sequence, type, status, title, tool,
+                inputSummary, outputSummary, payload, startedAt, finishedAt, durationMs, errorCode);
+    }
+
     private static Map<String, Object> safePayload(Map<String, Object> payload) {
         if (payload == null || payload.isEmpty()) return Map.of();
         return new LinkedHashMap<>(payload);

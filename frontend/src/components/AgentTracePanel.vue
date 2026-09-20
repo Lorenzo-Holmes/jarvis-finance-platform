@@ -13,8 +13,10 @@ const title = computed(() => props.running ? 'JARVIS Agent 执行中' : 'Agent �
 const typeLabel = {
   run_started: 'RUN',
   plan_created: 'PLAN',
+  step_started: 'START',
   tool_call: 'CALL',
   tool_result: 'RESULT',
+  step_completed: 'STEP',
   assistant_delta: 'ANSWER',
   run_completed: 'DONE',
   run_failed: 'FAILED',
