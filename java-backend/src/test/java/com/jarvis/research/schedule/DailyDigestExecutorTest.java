@@ -149,6 +149,21 @@ class DailyDigestExecutorTest {
     }
 
     @Test
+    void aDigestWhereEverySourceFailedIsUnavailableRatherThanEmpty() {
+        Map<String, Object> unavailable = digest(0);
+        unavailable.put("ok_sources", 0);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> sources = (List<Map<String, Object>>) unavailable.get("sources");
+        sources.forEach(source -> source.put("ok", false));
+        when(aiProxyService.post(anyString(), any())).thenReturn(unavailable);
+
+        String summary = executor.execute(task("{}")).summary();
+
+        assertTrue(summary.contains("未能取到资讯"), summary);
+        assertTrue(summary.contains(NewsDigest.REASON_UNAVAILABLE), summary);
+    }
+
+    @Test
     void articlesWithoutTitlesAreDroppedRatherThanShownAsBlank() {
         // 混进去两条没有标题的：NewsDigest 会丢弃它们（没有标题无法展示），
         // 但剩下的两条仍应正常出现在摘要里，而不是整批被判成"没有资讯"。
@@ -219,11 +234,13 @@ class DailyDigestExecutorTest {
         }
         when(aiProxyService.post(anyString(), any())).thenReturn(raw);
 
-        String artifacts = executor.execute(task("{}")).artifactsJson();
+        String artifacts = executor.execute(task("{\"limit\":20}")).artifactsJson();
 
         assertTrue(artifacts.length() < 4000, "长标题下产物也必须小于列宽，实际 " + artifacts.length());
         // 仍必须是可解析的 JSON（截断过的产物是解析不出来的）。
-        new ObjectMapper().readValue(artifacts, Map.class);
+        Map<String, Object> parsed = new ObjectMapper().readValue(artifacts, Map.class);
+        assertTrue((Boolean) parsed.get("itemsTruncated"));
+        assertTrue(((List<?>) parsed.get("items")).size() < 20);
     }
 
     @Test

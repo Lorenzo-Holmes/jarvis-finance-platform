@@ -52,6 +52,7 @@ public class DailyDigestExecutor implements ScheduledTaskExecutor {
     private static final int MAX_LIMIT = 20;
     private static final int DEFAULT_HEADLINE_COUNT = 3;
     private static final int MAX_HEADLINE_COUNT = 5;
+    private static final int MAX_ARTIFACTS_LENGTH = 3999;
 
     /** 与 {@code scheduled_task} 下 {@code params_json} 的语义一致：留痕里带的参数快照。 */
     private static final String DIGEST_PATH = "/internal/rss/digest?refresh=true&force=false";
@@ -90,10 +91,13 @@ public class DailyDigestExecutor implements ScheduledTaskExecutor {
             shaped = NewsDigest.unavailable(NewsDigest.REASON_UNAVAILABLE);
         }
 
-        if (!Boolean.TRUE.equals(shaped.get("available"))) {
+        if (!Boolean.TRUE.equals(shaped.get("available")) || allSourcesUnavailable(shaped)) {
+            String reason = shaped.get("reason") == null
+                    ? NewsDigest.REASON_UNAVAILABLE
+                    : String.valueOf(shaped.get("reason"));
             return TaskExecutionResult.of(String.format(Locale.ROOT,
                     "每日资讯日报：本次未能取到资讯（原因 %s），已跳过，不影响下次执行",
-                    String.valueOf(shaped.get("reason"))));
+                    reason));
         }
 
         List<Map<String, Object>> items = asItems(shaped.get("items"));
@@ -103,7 +107,7 @@ public class DailyDigestExecutor implements ScheduledTaskExecutor {
         }
 
         String summary = describe(items, shaped, headlineCount, limit);
-        String artifacts = writeJson(artifacts(items, shaped, limit));
+        String artifacts = artifactsJson(items, shaped, limit);
         log.info("每日资讯日报完成。taskId={} 条数={} 可用源={}/{}",
                 task.getId(), items.size(), shaped.get("ok_sources"), shaped.get("total_sources"));
         return new TaskExecutionResult(summary, artifacts);
@@ -150,17 +154,17 @@ public class DailyDigestExecutor implements ScheduledTaskExecutor {
      * {@code itemsTruncated}，让读产物的人知道"这里不是全部"。</p>
      */
     private static Map<String, Object> artifacts(List<Map<String, Object>> items,
-                                                 Map<String, Object> shaped, int limit) {
+                                                 Map<String, Object> shaped, int keepCount) {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("generated_at", shaped.get("generated_at"));
         out.put("ok_sources", shaped.get("ok_sources"));
         out.put("total_sources", shaped.get("total_sources"));
-        out.put("limit", limit);
+        out.put("limit", keepCount);
         out.put("count", items.size());
 
         List<Map<String, Object>> kept = new ArrayList<>();
         for (Map<String, Object> item : items) {
-            if (kept.size() >= limit) {
+            if (kept.size() >= keepCount) {
                 break;
             }
             Map<String, Object> compact = new LinkedHashMap<>();
@@ -173,6 +177,41 @@ public class DailyDigestExecutor implements ScheduledTaskExecutor {
         out.put("items", kept);
         out.put("itemsTruncated", items.size() > kept.size());
         return out;
+    }
+
+    /**
+     * 产物列是 VARCHAR(4000)，不能依赖内核事后截断，否则会留下非法 JSON。
+     * 从当前上限逐条缩减，直到完整 JSON 留在列宽内；即使单条标题异常超长，
+     * 也至少留下可解析的元数据和 itemsTruncated=true。
+     */
+    private String artifactsJson(List<Map<String, Object>> items,
+                                 Map<String, Object> shaped, int limit) {
+        int keepCount = Math.min(items.size(), limit);
+        while (keepCount >= 0) {
+            String json = writeJson(artifacts(items, shaped, keepCount));
+            if (json != null && json.length() <= MAX_ARTIFACTS_LENGTH) {
+                return json;
+            }
+            keepCount--;
+        }
+        return null;
+    }
+
+    private static boolean allSourcesUnavailable(Map<String, Object> shaped) {
+        int totalSources = number(shaped.get("total_sources"));
+        int availableSources = number(shaped.get("ok_sources"));
+        return totalSources > 0 && availableSources == 0;
+    }
+
+    private static int number(Object value) {
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        try {
+            return Integer.parseInt(text(value));
+        } catch (NumberFormatException ignored) {
+            return 0;
+        }
     }
 
     private DailyDigestParams parseParams(String paramsJson) {
