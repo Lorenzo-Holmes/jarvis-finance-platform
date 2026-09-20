@@ -436,7 +436,7 @@ onBeforeUnmount(() => {
       <StrategyPage v-else-if="workspaceRenderRoute === '策略生成'" @send-backtest="sendStrategyToBacktest" />
       <TrendPage v-else-if="workspaceRenderRoute === '市场趋势预测'" />
       <ScheduledTasksPage v-else-if="workspaceRenderRoute === '定时任务'" />
-      <NewsCenterPage v-else-if="workspaceRenderRoute === 'RSS资讯'" />
+      <NewsCenterPage v-else-if="workspaceRenderRoute === 'RSS资讯'" @navigate-module="navigateWorkspace" />
       <section v-else-if="workspaceRenderRoute === '管理后台'" class="panel-wrap">
         <AdminView />
       </section>

@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -46,6 +47,7 @@ class DailyDigestExecutorTest {
 
     /** 与 {@code NewsController} 一致：走代理层打 Python 的 digest 端点。 */
     private static final String DIGEST_PATH = "/internal/rss/digest?refresh=true&force=false";
+    private static final String AI_ANALYSIS_PATH = "/api/ai/analyze/news";
 
     @Mock
     private AiProxyService aiProxyService;
@@ -105,6 +107,29 @@ class DailyDigestExecutorTest {
         assertEquals(3, countInSummary(executor.execute(task("{\"limit\":3}")).summary()));
         // 默认 10 条。
         assertEquals(10, countInSummary(executor.execute(task("{}")).summary()));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void optionalAiAnalysisIsRecordedWithoutReplacingTheRssDigest() throws Exception {
+        when(aiProxyService.post(DIGEST_PATH, Map.of())).thenReturn(digest(2));
+        when(aiProxyService.post(eq(AI_ANALYSIS_PATH), any())).thenReturn(Map.of(
+                "data", Map.of("analyses", List.of(Map.of(
+                        "key", "s0|https://example.com/1",
+                        "summary", "AI摘要：政策变化值得关注",
+                        "keywords", List.of("政策"),
+                        "sentiment", "neutral",
+                        "risk_level", "medium",
+                        "impact_direction", "neutral",
+                        "related_markets", List.of("gold_etf"))))));
+
+        TaskExecutionResult result = executor.execute(task("{\"analyze\":true}"));
+
+        Map<String, Object> artifacts = new ObjectMapper().readValue(result.artifactsJson(), Map.class);
+        Map<String, Object> first = ((List<Map<String, Object>>) artifacts.get("items")).get(0);
+        Map<String, Object> analysis = (Map<String, Object>) first.get("ai_analysis");
+        assertEquals("AI摘要：政策变化值得关注", analysis.get("summary"));
+        assertEquals("medium", analysis.get("risk_level"));
     }
 
     @Test

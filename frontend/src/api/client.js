@@ -387,4 +387,5 @@ export const api = {
   // 每日要闻：Java 代理 Python 的 RSS digest，抓取间隔由 Python 侧限制（默认 300s）。
   newsDaily: (limit = 12, force = false) => get(API_BASE, '/api/news/daily', { limit, refresh: true, force }),
   newsTranslate: (titles) => post(API_BASE, '/api/news/translate', { titles }),
+  newsAnalyze: (items) => post(API_BASE, '/api/news/analyze', { items }),
 }

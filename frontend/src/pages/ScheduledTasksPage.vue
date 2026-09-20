@@ -28,6 +28,9 @@ const form = reactive({
   initialCash: 100000,
   limit: 120,
   asOf: '',
+  digestLimit: 10,
+  headlineCount: 3,
+  analyzeNews: true,
 })
 
 const typeLabels = Object.freeze({
@@ -113,6 +116,9 @@ function resetForm() {
     initialCash: 100000,
     limit: 120,
     asOf: '',
+    digestLimit: 10,
+    headlineCount: 3,
+    analyzeNews: true,
   })
 }
 
@@ -138,6 +144,9 @@ function openEdit(task) {
     initialCash: Number(params.initialCash ?? 100000),
     limit: Number(params.limit ?? 120),
     asOf: params.asOf || '',
+    digestLimit: Number(params.limit ?? 10),
+    headlineCount: Number(params.headlineCount ?? 3),
+    analyzeNews: params.analyze !== false,
   })
   editorOpen.value = true
 }
@@ -160,6 +169,13 @@ function paramsForForm() {
       initialCash: Number(form.initialCash),
       limit: Number(form.limit),
       ...(form.asOf ? { asOf: form.asOf } : {}),
+    }
+  }
+  if (form.taskType === 'DAILY_DIGEST') {
+    return {
+      limit: Number(form.digestLimit),
+      headlineCount: Number(form.headlineCount),
+      analyze: Boolean(form.analyzeNews),
     }
   }
   return {}
@@ -365,6 +381,16 @@ onMounted(load)
             </div>
           </template>
 
+          <template v-else-if="form.taskType === 'DAILY_DIGEST'">
+            <h3>资讯日报参数</h3>
+            <div class="editor-grid">
+              <label class="field"><span>保留资讯条数</span><input v-model.number="form.digestLimit" type="number" min="1" max="20" /></label>
+              <label class="field"><span>摘要标题数</span><input v-model.number="form.headlineCount" type="number" min="1" max="5" /></label>
+            </div>
+            <label class="check-field"><input v-model="form.analyzeNews" type="checkbox" /> <span>运行可审计的 AI 摘要、关键词、情绪和风险分析</span></label>
+            <p class="field-hint">AI 分析失败时仍保留 RSS 原文和规则分析，不会阻断日报任务。</p>
+          </template>
+
           <template v-else>
             <p>该任务类型当前没有可用执行器，因此不可创建。</p>
           </template>
@@ -443,6 +469,9 @@ button.primary { border-color: var(--workspace-action-border); background: var(-
 .type-params h3 { margin: 0 0 12px; color: var(--text); font-size: 10px; }
 .type-params > .field { max-width: 320px; margin-top: 12px; }
 .type-params .editor-grid { padding: 0; }
+.check-field { display: flex; align-items: flex-start; gap: 8px; margin-top: 13px; color: var(--muted); font-size: 9px; line-height: 1.45; cursor: pointer; }
+.check-field input { margin-top: 1px; accent-color: var(--accent); }
+.field-hint { margin-top: 8px !important; color: var(--subtle) !important; }
 .market-checks button.active { color: var(--accent-strong); border-color: var(--accent); background: var(--workspace-accent-wash); }
 .type-params p { margin: 0; color: var(--muted); font-size: 9px; }
 .editor-actions { justify-content: flex-end; padding: 14px 16px 16px; }

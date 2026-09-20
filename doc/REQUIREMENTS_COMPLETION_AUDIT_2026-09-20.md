@@ -16,19 +16,23 @@
 - Agent 运行服务补齐 pending/running 孤儿运行恢复、终态运行内存清理、SSE 重连终态竞态保护和超大 payload 有界降级；新增生命周期/恢复边界回归测试。
 - 管理员按用户的额度、权限和审计能力已完成；新增 V14 用户组、成员关系、组级 AI 配额与组级功能权限，组策略作为无用户级覆盖时的共享默认策略，并提供管理员 API、审计事件和前端管理工作区。
 - 流式 AI 请求会请求上游返回 usage chunk，并由 Java 解析 `total_tokens` 后计入用户或用户组月度 Token 配额；未返回 usage 的兼容上游仍保持响应可用。
-- RSS 信息中心首版已补齐：Java/PostgreSQL 持久化 10 个预置来源、管理员新增/编辑/启停/可信度维护、用户来源/主题订阅和服务端订阅过滤；Python 抓取结果补充正文片段、来源分类、标签和可解释的规则影响方向，前端新增 RSS 资讯工作区与管理后台来源面板。该变更尚未发布到生产。
+- RSS 信息中心已补齐：Java/PostgreSQL 持久化 10 个预置来源、管理员新增/编辑/启停/可信度维护、用户来源/主题订阅和服务端订阅过滤；Python 抓取结果补充正文片段、来源分类、标签和可解释的规则影响方向，前端新增 RSS 资讯工作区与管理后台来源面板。
+- RSS AI 分析闭环已补齐：Java 统一鉴权/配额/usage，Python 返回有界且不含思维链的摘要、关键词、情绪、风险等级、影响方向和关联市场；日报任务支持 `analyze` 参数并把分析写入 PostgreSQL 执行产物，模型失败时保留原 RSS/规则结果；中高风险资讯通过站内通知提醒，前端可跳转多市场。该变更尚未发布到生产。
+- 测试 Agent 首版已补齐：`tools/test-agent/test-agent.mjs` 可读取 PRD 生成结构化验收用例，调用现有 Playwright 项目并输出脱敏缺陷报告；本地 managed Vite 环境的 smoke 运行通过。
+- Grafana 服务健康面板和 Java 5xx/Hikari/目标存活告警模板已补齐；仍需要在生产 Prometheus/Grafana 实例导入后验证数据与 firing 状态。
 
 ## 自动化验证结果
 
-- Java：全量 Maven 测试通过，548 tests / 0 failures / 0 errors / 5 skipped；新增 RSS 来源/订阅服务层过滤测试，包含 V15 Flyway/Hibernate schema contract、用户组配额/权限继承、回测、交易回滚故障注入、PostgreSQL 锁策略、Agent 生命周期恢复等测试。PostgreSQL 未配置时仅保留既有跳过项。
-- Python：`PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q`，255 passed。普通 `pytest` 仍受本机 `pytest-asyncio` 与当前 pytest 版本兼容问题影响，代码测试本身不受影响。
-- 前端：`npm run test:p0`，129 passed；`npm run build` 通过。
+- Java：全量 Maven 测试通过，552 tests / 0 failures / 0 errors / 5 skipped；包含 RSS AI 分析/日报产物/重要资讯提醒测试，以及既有 V15 Flyway/Hibernate schema contract、用户组配额/权限继承、回测、交易回滚故障注入、PostgreSQL 锁策略、Agent 生命周期恢复等测试。PostgreSQL 未配置时仅保留既有跳过项。
+- Python：`PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q`，258 passed。普通 `pytest` 仍受本机 `pytest-asyncio` 与当前 pytest 版本兼容问题影响，代码测试本身不受影响。
+- 前端：`npm run test:p0`，130 passed；`npm run build` 通过。
 - 浏览器：Playwright `financial-import` 项目通过，验证财报 Markdown 文件导入替换/追加、失败导入保留原文，以及选择文件不会提前请求分析接口；预览模式下夜间多市场图表和财报输入面板也已实际检查。显式分析因本地 Java 未启动，在 CSRF 阶段按预期失败。未伪造真实回测或 Agent SSE 结果。
+- 测试 Agent：`node tools/test-agent/test-agent.mjs --run --project smoke` 在本地 managed Vite 环境通过，6 条 smoke 浏览器用例无失败；未把 smoke 结果冒充真实登录、真实 AI 或生产验收。
 
 ## Gitee PR 审核（2026-09-20）
 
 - Gitee 当前没有 open PR；最新 PR#15（`feat: 补 DAILY_DIGEST 执行器，定时任务 4 个类型全部可用`）已处于 merged 状态，提交 `3db902a` 已包含日报执行器、参数边界、来源不可用降级和 wiring 测试。本轮已复核 PR 详情、文件差异和评论，没有可再次修改或合并的待审 PR。
-- 审核时本地分支与 Gitee `main` 一致；随后为本地 RSS 补齐生成提交 `f8abd8c`，该提交尚未推送到 Gitee，也尚未部署。后续新增 PR 应继续先做 diff/测试审查，再合并到 `main`。
+- Gitee 当前没有 open PR；本地已在 Gitee `main` 之上补齐 RSS 持久化、AI 分析、通知、测试 Agent 和监控模板，尚未推送到 Gitee，也尚未部署。后续新增 PR 应继续先做 diff/测试审查，再合并到 `main`。
 
 ## 生产发布验收（2026-09-20）
 
@@ -48,9 +52,9 @@
 ### P1/P2
 
 - 流式 AI 响应的精确月度 Token usage 仍依赖上游稳定返回 usage 事件；当前非流式统计已完成。
-- PRD V1.2 的 RSS 信息源管理、10 源配置、用户订阅与服务端信息流关联已在本地代码补齐，但本轮尚未发布；AI 摘要/关键词目前是 RSS 正文/摘要与 feed 标签 + 可解释规则影响方向，尚未接入可审计的模型分析结果；重要事件提醒、与行情/策略模块的深链接及生产每日更新数据仍需验收。
-- PRD V1.2 的“测试 Agent”（从 PRD 生成用例、自动执行浏览器测试并输出缺陷报告）尚未实现；现有 Playwright 是测试脚手架，不等同于测试 Agent。
-- Grafana/Prometheus 的正式面板仍需在生产监控实例导入并验证 5xx、429、502、Hikari、行情源熔断等告警链路；仓库模板和指标基础已存在。
+- PRD V1.2 的 RSS 信息源管理、10 源配置、用户订阅、AI 分析、重要事件提醒和多市场入口已在本地代码补齐，但本轮尚未发布；生产每日自动更新、通知触发和上游模型返回 usage 仍需真实环境验收。
+- 测试 Agent 已实现首版；仍需在具备真实账号的环境执行 auth/Agent 专项浏览器用例，不能只用无后端 smoke 作为最终门禁。
+- Grafana/Prometheus 的仓库模板已补齐服务健康、5xx、Hikari、JVM、Agent/API 请求面板和目标存活/5xx/连接池告警；仍需在生产监控实例导入并验证 5xx、429/502、Hikari、行情源熔断等告警链路。
 - 视觉规范文档中关于档案海景深、玻璃层次、长时间循环、移动端逐页像素审阅的 checklist 仍属于人工设计验收，不能用单元测试代替。
 - 品牌 PNG 多尺寸资产与真实用户 Edge 的 GPU/无障碍最终人工验收仍需产品确认。
 

@@ -3,12 +3,15 @@ import { computed, onMounted, ref } from 'vue'
 import { api } from '../api/client'
 import DataState from '../components/common/DataState.vue'
 
+const emit = defineEmits(['navigate-module'])
+
 const sources = ref([])
 const articles = ref([])
 const selectedSources = ref([])
 const selectedTopics = ref([])
 const loading = ref(true)
 const refreshing = ref(false)
+const analyzing = ref(false)
 const saving = ref(false)
 const error = ref('')
 const message = ref('')
@@ -106,6 +109,41 @@ function formatTime(value) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN', { hour12: false })
 }
 
+function articleKey(article) {
+  return `${article?.source_id || ''}|${article?.url || ''}`
+}
+
+function articleAnalysis(article) {
+  return article?.aiAnalysis || article?.ai_analysis || null
+}
+
+function openMarket(market) {
+  // 资讯与行情之间保留可观察的工作流入口；当前上下文仍由多市场页负责解析。
+  emit('navigate-module', '多市场')
+}
+
+async function analyzeArticles() {
+  if (!articles.value.length || analyzing.value) return
+  analyzing.value = true
+  error.value = ''
+  message.value = ''
+  try {
+    const response = await api.newsAnalyze(articles.value)
+    responseError(response, 'RSS AI 分析失败')
+    const analyses = response.data?.analyses || []
+    const byKey = new Map(analyses.map(item => [item.key, item]))
+    articles.value = articles.value.map(article => ({
+      ...article,
+      aiAnalysis: byKey.get(articleKey(article)) || article.aiAnalysis || article.ai_analysis,
+    }))
+    message.value = analyses.length ? `已完成 ${analyses.length} 条资讯的 AI 分析` : '模型未返回可用分析'
+  } catch (e) {
+    error.value = e?.message || String(e)
+  } finally {
+    analyzing.value = false
+  }
+}
+
 onMounted(load)
 </script>
 
@@ -160,7 +198,10 @@ onMounted(load)
       <section class="feed-panel panel">
         <div class="panel-title">
           <div><b>每日要闻</b><span>{{ generatedAt ? `更新于 ${formatTime(generatedAt)}` : '等待抓取' }}</span></div>
-          <span class="feed-status" :class="{ muted: !available }">{{ available ? 'RSS READY' : 'RSS UNAVAILABLE' }}</span>
+          <div class="feed-actions">
+            <button class="text-button" type="button" :disabled="analyzing || !articles.length" @click="analyzeArticles">{{ analyzing ? 'AI分析中…' : 'AI分析当前资讯' }}</button>
+            <span class="feed-status" :class="{ muted: !available }">{{ available ? 'RSS READY' : 'RSS UNAVAILABLE' }}</span>
+          </div>
         </div>
         <DataState v-if="!articles.length" state="empty" title="暂无匹配资讯" message="可调整订阅范围或手动刷新。" compact />
         <div v-else class="article-list">
@@ -172,6 +213,13 @@ onMounted(load)
               <p v-if="article.summary">{{ article.summary }}</p>
               <span v-for="tag in article.tags || []" :key="tag" class="tag">{{ tag }}</span>
               <em v-if="article.analysis?.direction" :class="`impact ${article.analysis.direction}`">{{ article.analysis.direction === 'positive' ? '偏正面' : article.analysis.direction === 'negative' ? '偏负面' : '中性' }}</em>
+              <template v-if="articleAnalysis(article)">
+                <p class="ai-summary">{{ articleAnalysis(article).summary }}</p>
+                <span v-for="keyword in articleAnalysis(article).keywords || []" :key="`ai-${keyword}`" class="tag ai-tag">{{ keyword }}</span>
+                <em class="ai-badge">AI · {{ articleAnalysis(article).sentiment || 'neutral' }} · 风险 {{ articleAnalysis(article).risk_level || 'low' }}</em>
+                <small v-if="articleAnalysis(article).rationale" class="ai-rationale">依据：{{ articleAnalysis(article).rationale }}</small>
+                <button v-for="market in articleAnalysis(article).related_markets || []" :key="`market-${market}`" type="button" class="tag market-tag" @click="openMarket(market)">{{ market }} · 行情</button>
+              </template>
             </div>
           </article>
         </div>
@@ -191,6 +239,7 @@ onMounted(load)
 .panel { padding: 13px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
 .panel-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 9px; border-bottom: 1px solid var(--line); }
 .panel-title > div { display: flex; flex-direction: column; gap: 4px; }
+.feed-actions { display: flex; align-items: center; gap: 9px; }
 .panel-title b { color: var(--text); font-size: 12px; }
 .panel-title span { color: var(--subtle); font-size: 9px; }
 .action-button, .text-button { border: 1px solid var(--line-strong); background: var(--surface); color: var(--text); border-radius: var(--radius-sm); padding: 7px 11px; cursor: pointer; font-size: 9px; }
@@ -222,8 +271,13 @@ onMounted(load)
 .article-detail { grid-column: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
 .article-detail small { flex-basis: 100%; color: var(--subtle); font-size: 8px; }
 .article-detail p { flex-basis: 100%; margin: 0; color: var(--muted); font-size: 9px; line-height: 1.55; }
+.article-detail .ai-summary { color: var(--text); border-left: 2px solid var(--accent-strong); padding-left: 7px; }
+.ai-tag { color: var(--accent-strong); }
+.ai-badge { border-color: rgba(201,166,95,.35); color: var(--accent-strong); }
+.ai-rationale { flex-basis: 100%; color: var(--subtle); font-size: 8px; line-height: 1.45; }
+.market-tag { color: var(--ok); border-color: rgba(39,196,107,.24); cursor: pointer; }
 .tag, .impact { border: 1px solid var(--line-strong); border-radius: 3px; padding: 2px 5px; color: var(--subtle); font-size: 8px; font-style: normal; }
 .impact.positive { color: var(--ok); border-color: rgba(39,196,107,.25); }.impact.negative { color: var(--bad); border-color: rgba(239,83,80,.25); }
 @media (max-width: 850px) { .choice-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 600px) { .news-head, .subscription-actions { align-items: flex-start; flex-direction: column; } .article-row { grid-template-columns: 1fr; gap: 5px; } .article-detail { grid-column: auto; } }
+@media (max-width: 600px) { .news-head, .subscription-actions { align-items: flex-start; flex-direction: column; } .feed-actions { align-items: flex-start; flex-direction: column; } .article-row { grid-template-columns: 1fr; gap: 5px; } .article-detail { grid-column: auto; } }
 </style>

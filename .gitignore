@@ -36,6 +36,7 @@ mobile/web-build/
 .coverage.*
 htmlcov/
 .ipynb_checkpoints/
+.test-agent/
 frontend/.playwright-cli/
 frontend/output/
 

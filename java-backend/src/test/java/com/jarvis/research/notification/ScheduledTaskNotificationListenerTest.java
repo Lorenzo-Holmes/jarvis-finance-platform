@@ -163,6 +163,29 @@ class ScheduledTaskNotificationListenerTest {
     }
 
     @Test
+    void anImportantNewsDigestRaisesAWarningWithTheArticleSummary() {
+        listener.onRunFinished(runFinished(TaskRunStatus.SUCCESS, ScheduledTaskType.DAILY_DIGEST,
+                "每日资讯日报：共 2 条", null,
+                "{\"items\":[{\"title\":\"黄金市场波动\",\"ai_analysis\":{\"summary\":\"短期波动风险上升\",\"risk_level\":\"medium\"}}]}"));
+
+        ArgumentCaptor<String> title = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
+        verify(notificationService).raise(eq(USER), eq(NotificationType.NEWS_ALERT), eq(NotificationLevel.WARN),
+                title.capture(), body.capture(), eq("SCHEDULED_TASK"), eq(TASK_ID));
+        assertTrue(title.getValue().contains("黄金市场波动"));
+        assertTrue(body.getValue().contains("短期波动风险上升"));
+    }
+
+    @Test
+    void aLowRiskNewsDigestDoesNotCreateNotificationNoise() {
+        listener.onRunFinished(runFinished(TaskRunStatus.SUCCESS, ScheduledTaskType.DAILY_DIGEST,
+                "每日资讯日报：共 1 条", null,
+                "{\"items\":[{\"title\":\"平稳市场\",\"ai_analysis\":{\"summary\":\"暂无明显风险\",\"risk_level\":\"low\"}}]}"));
+
+        verify(notificationService, never()).raise(any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
     void unparsableArtifactsAreSkippedInsteadOfCrashing() {
         assertDoesNotThrow(() -> listener.onRunFinished(runFinished(TaskRunStatus.SUCCESS,
                 ScheduledTaskType.RISK_CHECK, "风险检测完成", null, "{不是 JSON")));

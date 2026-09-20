@@ -87,6 +87,63 @@ public class NewsController {
     }
 
     /**
+     * 对当前资讯批量生成可审计的摘要、关键词、情绪和市场影响。
+     *
+     * <p>RSS 抓取与规则方向仍然独立可用；模型分析是增强步骤，配额与 usage
+     * 统一在 Java 边界处理，浏览器不能直接访问 Python。</p>
+     */
+    @PostMapping("/analyze")
+    public ApiResponse<Object> analyze(@RequestBody(required = false) Map<String, Object> body) {
+        Object rawItems = body == null ? null : body.getOrDefault("items", body.get("articles"));
+        if (!(rawItems instanceof List<?> list) || list.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "至少选择一条资讯进行分析");
+        }
+
+        List<Map<String, Object>> articles = new ArrayList<>();
+        for (Object raw : list) {
+            if (!(raw instanceof Map<?, ?> source)) continue;
+            String title = text(source.get("title"));
+            if (title.isBlank()) continue;
+            String sourceId = text(source.get("source_id"));
+            String url = text(source.get("url"));
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("key", sourceId + "|" + url);
+            item.put("title", trim(title, 500));
+            Object bodyValue = source.get("body");
+            if (bodyValue == null) bodyValue = source.get("summary");
+            Object sourceValue = source.get("source");
+            if (sourceValue == null) sourceValue = sourceId;
+            item.put("body", trim(text(bodyValue), 2_000));
+            item.put("source", trim(text(sourceValue), 120));
+            item.put("url", trim(url, 500));
+            articles.add(item);
+            if (articles.size() >= 12) break;
+        }
+        if (articles.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "没有可分析的资讯标题");
+        }
+
+        Long userId = null;
+        try {
+            if (aiRateLimitService != null) {
+                userId = CurrentUser.id();
+                aiRateLimitService.consume(userId);
+            }
+            Map<String, Object> response = aiProxyService.post(
+                    "/api/ai/analyze/news", Map.of("articles", articles));
+            if (aiRateLimitService != null && userId != null) {
+                aiRateLimitService.recordTokens(userId, response);
+            }
+            Object data = response == null ? null : response.get("data");
+            return ApiResponse.ok(data == null ? Map.of("analyses", List.of()) : data);
+        } catch (RuntimeException error) {
+            // 配额已消费时由配额服务保持既有语义；模型失败直接返回可理解错误，
+            // 前端继续展示已经抓到的 RSS 与规则分析，不把资讯流清空。
+            throw error;
+        }
+    }
+
+    /**
      * 标题翻译是独立增强请求，不阻塞 /daily。前端先拿到 RSS，再异步请求中文标题。
      * 请求与返回严格逐项对应；翻译失败时回退原文。
      */
@@ -170,5 +227,13 @@ public class NewsController {
         Map<String, Object> out = new LinkedHashMap<>(shaped);
         out.put("items", items);
         return out;
+    }
+
+    private static String text(Object value) {
+        return value == null ? "" : String.valueOf(value).trim();
+    }
+
+    private static String trim(String value, int max) {
+        return value == null || value.length() <= max ? value : value.substring(0, max);
     }
 }

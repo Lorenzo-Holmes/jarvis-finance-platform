@@ -19,10 +19,13 @@ def require_internal_service(
     x_internal_service_token: Optional[str] = Header(default=None, alias=INTERNAL_TOKEN_HEADER),
 ):
     """AI 接口仅允许 Java 主后端通过内部服务令牌调用。"""
-    if not PYTHON_SERVICE_TOKEN:
+    # 每次校验读取当前进程配置，既支持启动时注入，也避免测试/嵌入式运行在
+    # 模块导入顺序变化时错误地沿用空 token；生产进程不会动态接受请求头中的 token。
+    configured_token = os.getenv("PYTHON_SERVICE_TOKEN", PYTHON_SERVICE_TOKEN)
+    if not configured_token:
         raise HTTPException(status_code=503, detail="PYTHON_SERVICE_TOKEN 未配置")
     if not x_internal_service_token or not hmac.compare_digest(
-        x_internal_service_token, PYTHON_SERVICE_TOKEN
+        x_internal_service_token, configured_token
     ):
         raise HTTPException(status_code=401, detail="invalid internal service token")
 
@@ -54,6 +57,11 @@ class ReportReq(BaseModel):
 
 class NewsTranslateReq(BaseModel):
     titles: List[Annotated[str, Field(min_length=1, max_length=500)]] = Field(min_length=1, max_length=64)
+
+
+class NewsAnalysisReq(BaseModel):
+    """RSS 文章的可审计分析输入；正文只允许作为有限上下文进入模型。"""
+    articles: List[Dict[str, Any]] = Field(min_length=1, max_length=12)
 
 
 class SentimentReq(BaseModel):
@@ -197,6 +205,15 @@ def chat_stream(req: ChatReq):
 @router.post("/news/translate")
 def news_translate(req: NewsTranslateReq):
     return {"code": 200, "message": "ok", "data": _guard(ai_service.translate_news_titles, titles=req.titles)}
+
+
+@router.post("/analyze/news")
+def analyze_news(req: NewsAnalysisReq):
+    if sum(len(str(item.get("title") or "")) + len(str(item.get("body") or item.get("summary") or ""))
+           for item in req.articles) > 30_000:
+        raise HTTPException(status_code=413, detail="RSS 分析上下文不能超过30000字符")
+    return {"code": 200, "message": "ok", "data": _guard(
+        ai_service.analyze_news_articles, articles=req.articles)}
 
 
 @router.post("/financial/report")

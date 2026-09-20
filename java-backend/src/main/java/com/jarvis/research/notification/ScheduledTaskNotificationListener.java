@@ -93,8 +93,12 @@ public class ScheduledTaskNotificationListener {
             return;
         }
 
-        if (event.status() == TaskRunStatus.SUCCESS && event.taskType() == ScheduledTaskType.RISK_CHECK) {
-            raiseRiskAlertIfHit(event);
+        if (event.status() == TaskRunStatus.SUCCESS) {
+            if (event.taskType() == ScheduledTaskType.RISK_CHECK) {
+                raiseRiskAlertIfHit(event);
+            } else if (event.taskType() == ScheduledTaskType.DAILY_DIGEST) {
+                raiseNewsAlertIfImportant(event);
+            }
         }
         // 其余成功一律不通知：每天一条"任务成功"只会把真正重要的通知淹掉。
     }
@@ -135,6 +139,36 @@ public class ScheduledTaskNotificationListener {
         notificationService.raise(event.userId(), NotificationType.RISK_ALERT, level,
                 "风险检测命中：" + name(event.taskName()) + "（维持担保比例 " + pct(maintMarginPct) + "）",
                 event.resultSummary(),
+                LINK_SCHEDULED_TASK, event.taskId());
+    }
+
+    /**
+     * 日报只对模型明确标成 high/medium 的资讯发提醒；普通日报成功不发通知，避免噪音。
+     * 产物只保留摘要字段，因此这里不会把模型的隐藏推理或原文全文写进通知。
+     */
+    private void raiseNewsAlertIfImportant(ScheduledTaskRunFinishedEvent event) {
+        Map<String, Object> artifacts = readMap(event.artifactsJson());
+        if (artifacts == null || !(artifacts.get("items") instanceof Iterable<?> items)) {
+            return;
+        }
+        String title = null;
+        String summary = null;
+        NotificationLevel level = null;
+        for (Object item : items) {
+            if (!(item instanceof Map<?, ?> article)) continue;
+            if (!(article.get("ai_analysis") instanceof Map<?, ?> analysis)) continue;
+            String risk = asText(analysis.get("risk_level"));
+            if ("high".equalsIgnoreCase(risk) || "medium".equalsIgnoreCase(risk)) {
+                title = asText(article.get("title"));
+                summary = asText(analysis.get("summary"));
+                level = "high".equalsIgnoreCase(risk) ? NotificationLevel.RISK : NotificationLevel.WARN;
+                break;
+            }
+        }
+        if (level == null) return;
+        notificationService.raise(event.userId(), NotificationType.NEWS_ALERT, level,
+                "资讯重要事件：" + (title == null || title.isBlank() ? name(event.taskName()) : title),
+                summary == null || summary.isBlank() ? "AI 分析标记了需要关注的市场资讯，请查看日报详情。" : summary,
                 LINK_SCHEDULED_TASK, event.taskId());
     }
 

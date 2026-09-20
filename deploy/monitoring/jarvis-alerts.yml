@@ -110,3 +110,33 @@ groups:
         annotations:
           summary: "JARVIS simulated account liquidation occurred"
           description: "At least one paper-trading account was force-liquidated in the last 5 minutes."
+
+  - name: jarvis-runtime
+    interval: 30s
+    rules:
+      - alert: JarvisJavaTargetDown
+        expr: up{job=~"jarvis-java|jarvis-backend"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "JARVIS Java backend scrape target is down"
+          description: "The Java backend is not reachable by Prometheus for more than 2 minutes."
+
+      - alert: JarvisHttp5xxElevated
+        expr: sum(rate(http_server_requests_seconds_count{status=~"5.."}[5m])) > 0.5
+        for: 3m
+        labels:
+          severity: critical
+        annotations:
+          summary: "JARVIS HTTP 5xx rate is elevated"
+          description: "The Java backend is returning more than 0.5 server errors per second for 3 minutes."
+
+      - alert: JarvisDatabasePoolPending
+        expr: max(hikaricp_connections_pending) > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "JARVIS database pool has waiting requests"
+          description: "At least one Hikari connection request has been waiting for 2 minutes."

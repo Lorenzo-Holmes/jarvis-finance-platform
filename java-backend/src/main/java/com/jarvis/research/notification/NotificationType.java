@@ -26,5 +26,8 @@ public enum NotificationType {
     TASK_AUTO_PAUSED,
 
     /** 风险检测命中（维持担保比例低于警戒线）。 */
-    RISK_ALERT
+    RISK_ALERT,
+
+    /** AI 分析识别出的高风险/重要资讯事件。 */
+    NEWS_ALERT
 }

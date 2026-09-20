@@ -268,6 +268,107 @@ def translate_news_titles(titles: List[str]) -> Dict[str, Any]:
     return {"translations": translations, "model": result.get("model") or AI_MODEL}
 
 
+def analyze_news_articles(articles: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """对一批 RSS 文章做可审计的摘要、标签和影响分析。
+
+    这里明确要求模型只返回可验证的结构化字段，不展示隐式思维链。Java 侧会把
+    返回的 usage 计入用户配额；解析失败直接报错，由上层保留原 RSS/规则结果。
+    """
+    cleaned: List[Dict[str, str]] = []
+    for index, article in enumerate(articles[:12]):
+        if not isinstance(article, dict):
+            continue
+        title = str(article.get("title") or "").strip()[:500]
+        if not title:
+            continue
+        body = str(article.get("body") or article.get("summary") or "").strip()[:2_000]
+        key = str(article.get("key") or f"{article.get('source_id', '')}|{article.get('url', '')}").strip()
+        cleaned.append({
+            "index": str(index),
+            "key": key[:700],
+            "title": title,
+            "body": body,
+            "source": str(article.get("source") or article.get("source_id") or "").strip()[:120],
+        })
+    if not cleaned:
+        return {"analyses": [], "model": AI_MODEL, "usage": None}
+
+    prompt = (
+        "请分析下面的财经 RSS 文章，只返回 JSON 数组，不要 Markdown、解释或思维过程。\n"
+        "每项必须包含：key、summary（不超过180字）、keywords（1-8个短词）、"
+        "sentiment（positive/negative/neutral）、risk_level（high/medium/low）、"
+        "impact_direction（positive/negative/neutral）、rationale（不超过120字）、"
+        "related_markets（可选，使用 gold_etf、a_share、us_stock、crypto、macro 等标识）。\n"
+        "只能根据标题和正文，无法判断时使用 neutral/low，不得编造价格、公司数据或投资建议。\n"
+        "输入：" + json.dumps(cleaned, ensure_ascii=False, separators=(",", ":"))
+    )
+    response = _chat_request([
+        {"role": "system", "content": "你是金融资讯结构化分析器，只输出事实型 JSON。"},
+        {"role": "user", "content": prompt},
+    ], temperature=0.0, max_tokens=min(5_000, max(900, len(cleaned) * 360)))
+    raw = str(response.get("content") or "").strip()
+    fenced = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw,
+                    flags=re.IGNORECASE | re.DOTALL).strip()
+    start, end = fenced.find("["), fenced.rfind("]")
+    if start < 0 or end < start:
+        raise RuntimeError("RSS AI 分析返回格式异常")
+    try:
+        parsed = json.loads(fenced[start:end + 1])
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("RSS AI 分析返回无法解析") from exc
+    if not isinstance(parsed, list):
+        raise RuntimeError("RSS AI 分析必须返回数组")
+
+    by_key = {}
+    for value in parsed:
+        if not isinstance(value, dict):
+            continue
+        key = str(value.get("key") or "").strip()
+        if key:
+            by_key[key] = value
+
+    analyses: List[Dict[str, Any]] = []
+    for article in cleaned:
+        value = by_key.get(article["key"])
+        if not value:
+            # 兼容模型忘记回传 key 的情况：只有当数组顺序唯一对应时才使用位置映射。
+            position = len(analyses)
+            value = parsed[position] if position < len(parsed) and isinstance(parsed[position], dict) else {}
+        sentiment = str(value.get("sentiment") or "neutral").lower()
+        risk = str(value.get("risk_level") or "low").lower()
+        impact = str(value.get("impact_direction") or "neutral").lower()
+        if sentiment not in {"positive", "negative", "neutral"}:
+            sentiment = "neutral"
+        if risk not in {"high", "medium", "low"}:
+            risk = "low"
+        if impact not in {"positive", "negative", "neutral"}:
+            impact = "neutral"
+        keywords = value.get("keywords")
+        if not isinstance(keywords, list):
+            keywords = []
+        keywords = [str(item).strip()[:40] for item in keywords if str(item).strip()][:8]
+        related = value.get("related_markets")
+        if not isinstance(related, list):
+            related = []
+        related = [str(item).strip()[:40] for item in related if str(item).strip()][:8]
+        analyses.append({
+            "key": article["key"],
+            "summary": str(value.get("summary") or article["body"] or article["title"]).strip()[:180],
+            "keywords": keywords,
+            "sentiment": sentiment,
+            "risk_level": risk,
+            "impact_direction": impact,
+            "rationale": str(value.get("rationale") or "模型未提供额外依据").strip()[:120],
+            "related_markets": related,
+            "analysis_source": "model",
+        })
+    return {
+        "analyses": analyses,
+        "model": response.get("model") or AI_MODEL,
+        "usage": response.get("usage"),
+    }
+
+
 def research_report(task: Dict[str, Any], metrics: Optional[Dict[str, Any]] = None,
                     quote: Optional[Dict[str, Any]] = None,
                     warnings: Optional[List[str]] = None) -> Dict[str, Any]:

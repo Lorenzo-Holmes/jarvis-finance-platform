@@ -13,6 +13,7 @@ SMOKE_API_BASE="${SMOKE_API_BASE:-https://agent.shengxia.me}"
 LOCAL_API_BASE="${LOCAL_API_BASE:-http://127.0.0.1:8200}"
 LOCAL_METRICS_URL="${LOCAL_METRICS_URL:-http://127.0.0.1:8201/actuator/prometheus}"
 CHECK_PY_BLOCK="${CHECK_PY_BLOCK:-1}"
+CHECK_AGENT_STREAM="${CHECK_AGENT_STREAM:-0}"
 : "${SMOKE_EMAIL:?SMOKE_EMAIL is required}"
 : "${SMOKE_PASSWORD:?SMOKE_PASSWORD is required}"
 
@@ -63,6 +64,27 @@ assert_reproducible_backtest() {
   second="$(curl "${curl_args[@]}" -b "$cookie_jar" -c "$cookie_jar" "$url")"
   FIRST="$first" SECOND="$second" python3 -c 'import json,os; a=json.loads(os.environ["FIRST"]); b=json.loads(os.environ["SECOND"]); assert a.get("code")==200 and b.get("code")==200,(a,b); x=a["data"]; y=b["data"]; assert x.get("strategy_version")=="double-ma-v1",x; fp=x.get("data_fingerprint",""); assert fp.startswith("sha256:") and len(fp)==71,fp; assert x.get("as_of"),x; assert fp==y.get("data_fingerprint"),(fp,y.get("data_fingerprint")); assert x.get("final_equity")==y.get("final_equity"),(x.get("final_equity"),y.get("final_equity"))'
   echo "OK  $label"
+}
+
+assert_agent_stream() {
+  local label="$1"
+  local url="$2"
+  local csrf="$3"
+  local body_file run_id events_body
+  body_file="$(mktemp)"
+  # Agent SSE 可能需要等待上游模型；这里只验证真实事件协议，不把模型内容打印到日志。
+  printf '%s' '{"question":"请用一句话确认 Agent 事件流已连通，不要调用交易工具。"}' | curl \
+    --silent --show-error --no-buffer --connect-timeout 5 --max-time 90 \
+    -b "$cookie_jar" -c "$cookie_jar" \
+    -H 'Content-Type: application/json' \
+    -H "X-XSRF-TOKEN: $csrf" \
+    --data-binary @- "$url" > "$body_file"
+  run_id="$(AGENT_BODY_FILE="$body_file" python3 -c 'import json,os,pathlib; lines=pathlib.Path(os.environ["AGENT_BODY_FILE"]).read_text().splitlines(); events=[json.loads(x[5:].strip()) for x in lines if x.startswith("data:")]; assert events, "no Agent SSE data"; ids={e.get("runId") for e in events}; assert len(ids)==1 and next(iter(ids)), ids; assert any(e.get("type") in {"run_completed","run_failed","run_cancelled"} for e in events), events[-1]; seq=[int(e.get("sequence",0)) for e in events]; assert seq==sorted(seq), seq; print(next(iter(ids)))')"
+  echo "OK  $label"
+  events_body="$(curl "${curl_args[@]}" -b "$cookie_jar" -c "$cookie_jar" "$SMOKE_API_BASE/api/agent/runs/$run_id/events")"
+  AGENT_EVENTS="$events_body" python3 -c 'import json,os; d=json.loads(os.environ["AGENT_EVENTS"]); assert d.get("code")==200 and isinstance(d.get("data"),list) and d["data"], d'
+  echo "OK  Agent PostgreSQL event replay"
+  rm -f "$body_file"
 }
 
 post_wrapped_ok() {
@@ -130,6 +152,10 @@ assert_price_stream "1Hz market SSE" "$SMOKE_API_BASE/api/market/prices/stream"
 assert_wrapped_ok "daily K-line" "$SMOKE_API_BASE/api/market/kline?market=gold_etf&interval=day&limit=5"
 assert_wrapped_ok "sim account" "$SMOKE_API_BASE/api/sim/account"
 assert_json_object "AI capabilities" "$SMOKE_API_BASE/api/ai/capabilities"
+if [ "$CHECK_AGENT_STREAM" = "1" ]; then
+  csrf_token="$(fetch_csrf_token)"
+  assert_agent_stream "Agent SSE stream" "$SMOKE_API_BASE/api/agent/research/stream" "$csrf_token"
+fi
 backtest_as_of="$(python3 -c 'import datetime; print((datetime.date.today()-datetime.timedelta(days=1)).isoformat())')"
 assert_reproducible_backtest "reproducible backtest" "$SMOKE_API_BASE/api/backtest?market=gold_etf&short_ma=5&long_ma=20&initial_cash=100000&limit=60&as_of=$backtest_as_of"
 

@@ -31,6 +31,7 @@ class NewsControllerTest {
         private final List<String> translations;
         private final boolean failTranslation;
         private int translationCalls;
+        private int analysisCalls;
 
         StubProxy(Map<String, Object> digest, List<String> translations, boolean failTranslation) {
             super(new JarvisProperties());
@@ -46,6 +47,12 @@ class NewsControllerTest {
                 translationCalls += 1;
                 if (failTranslation) throw new IllegalStateException("translation unavailable");
                 return Map.of("code", 200, "data", Map.of("translations", translations));
+            }
+            if (path.equals("/api/ai/analyze/news")) {
+                analysisCalls += 1;
+                return Map.of("code", 200, "data", Map.of(
+                        "model", "test-model",
+                        "analyses", List.of(Map.of("key", "wire|https://example.com/1", "sentiment", "positive"))));
             }
             throw new IllegalArgumentException("unexpected path: " + path);
         }
@@ -123,5 +130,23 @@ class NewsControllerTest {
 
         assertEquals(List.of("央行发布最新数据"), translations(translated));
         assertEquals(0, proxy.translationCalls);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void analyzeSanitizesArticlesAndReturnsModelPayload() {
+        StubProxy proxy = new StubProxy(digest("Market closes higher"), List.of(), false);
+        NewsController controller = new NewsController(proxy);
+
+        ApiResponse<Object> response = controller.analyze(Map.of("items", List.of(Map.of(
+                "title", "Market closes higher",
+                "summary", "summary",
+                "url", "https://example.com/1",
+                "source_id", "wire"))));
+
+        Map<String, Object> data = (Map<String, Object>) response.getData();
+        assertEquals("test-model", data.get("model"));
+        assertEquals(1, ((List<?>) data.get("analyses")).size());
+        assertEquals(1, proxy.analysisCalls);
     }
 }

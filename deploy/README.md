@@ -422,6 +422,14 @@ sudo /usr/local/sbin/jarvis-smoke-test
 13. AI capabilities（不消耗生成额度）；
 14. logout。
 
+需要验收真实 Agent 事件流、PostgreSQL 事件落库与重放时，使用：
+
+```bash
+CHECK_AGENT_STREAM=1 /usr/local/sbin/jarvis-smoke-test
+```
+
+该开关会发起一次最小研究问题并只输出事件协议/运行 ID 验证结果，不打印模型正文或认证信息。
+
 生产启用邮箱注册时，还需在 `/etc/jarvis/java.env` 配置 `RESEND_API_KEY`、`RESEND_FROM`，并保持
 `AUTH_REQUIRE_EMAIL_VERIFICATION=true`。认证入口要求 Cookie-CSRF，并通过匿名 HttpOnly `jarvis_device` 做补充设备维度限流；登录按账号/IP/设备，注册按 IP/设备，验证码按邮箱/IP/设备分别限流。
 启用 GitHub 登录时配置 `GITHUB_OAUTH_ENABLED=true`、

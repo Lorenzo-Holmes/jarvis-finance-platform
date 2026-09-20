@@ -20,7 +20,8 @@ import java.util.Map;
  * <pre>
  * {
  *   "limit": 12,        // 可选，摘要与产物里保留的条数；默认 10，上限 20
- *   "headlineCount": 3  // 可选，摘要正文里实际列出的标题条数；默认 3
+ *   "headlineCount": 3, // 可选，摘要正文里实际列出的标题条数；默认 3
+ *   "analyze": true     // 可选，调用 AI 生成可审计的结构化分析；失败时保留 RSS 结果
  * }
  * </pre>
  *
@@ -56,6 +57,7 @@ public class DailyDigestExecutor implements ScheduledTaskExecutor {
 
     /** 与 {@code scheduled_task} 下 {@code params_json} 的语义一致：留痕里带的参数快照。 */
     private static final String DIGEST_PATH = "/internal/rss/digest?refresh=true&force=false";
+    private static final String AI_ANALYSIS_PATH = "/api/ai/analyze/news";
 
     private final AiProxyService aiProxyService;
     private final ObjectMapper objectMapper;
@@ -104,6 +106,11 @@ public class DailyDigestExecutor implements ScheduledTaskExecutor {
         if (items.isEmpty()) {
             // "没有资讯"和"拿不到资讯"是两回事，摘要必须能区分（见 NewsDigest 类注释）。
             return TaskExecutionResult.of("每日资讯日报：本次没有取到任何带标题的资讯（可能所有源都为空）");
+        }
+
+        if (Boolean.TRUE.equals(params.getAnalyze())) {
+            shaped = enrichWithAi(shaped, items);
+            items = asItems(shaped.get("items"));
         }
 
         String summary = describe(items, shaped, headlineCount, limit);
@@ -172,6 +179,17 @@ public class DailyDigestExecutor implements ScheduledTaskExecutor {
             compact.put("source", item.get("source"));
             compact.put("published", item.get("published"));
             compact.put("url", item.get("url"));
+            if (item.get("ai_analysis") instanceof Map<?, ?> analysis) {
+                Map<String, Object> compactAnalysis = new LinkedHashMap<>();
+                compactAnalysis.put("key", analysis.get("key"));
+                compactAnalysis.put("summary", analysis.get("summary"));
+                compactAnalysis.put("keywords", analysis.get("keywords"));
+                compactAnalysis.put("sentiment", analysis.get("sentiment"));
+                compactAnalysis.put("risk_level", analysis.get("risk_level"));
+                compactAnalysis.put("impact_direction", analysis.get("impact_direction"));
+                compactAnalysis.put("related_markets", analysis.get("related_markets"));
+                compact.put("ai_analysis", compactAnalysis);
+            }
             kept.add(compact);
         }
         out.put("items", kept);
@@ -195,6 +213,60 @@ public class DailyDigestExecutor implements ScheduledTaskExecutor {
             keepCount--;
         }
         return null;
+    }
+
+    /**
+     * 日报可选的模型增强：失败时保留 RSS 与规则结果，不能让一条 AI 增强链路
+     * 把每日资讯任务判成失败或抹掉已经抓到的文章。
+     */
+    private Map<String, Object> enrichWithAi(Map<String, Object> shaped,
+                                             List<Map<String, Object>> items) {
+        try {
+            List<Map<String, Object>> requestItems = new ArrayList<>();
+            for (Map<String, Object> item : items) {
+                String sourceId = text(item.get("source_id"));
+                String url = text(item.get("url"));
+                requestItems.add(Map.of(
+                        "key", sourceId + "|" + url,
+                        "title", text(item.get("title")),
+                        "summary", text(item.get("summary")),
+                        "source", text(item.get("source")),
+                        "source_id", sourceId,
+                        "url", url));
+            }
+            Map<String, Object> response = aiProxyService.post(
+                    AI_ANALYSIS_PATH, Map.of("articles", requestItems));
+            Object rawData = response == null ? null : response.get("data");
+            if (!(rawData instanceof Map<?, ?> data)
+                    || !(data.get("analyses") instanceof List<?> analyses)) {
+                return shaped;
+            }
+            Map<String, Map<String, Object>> byKey = new LinkedHashMap<>();
+            for (Object raw : analyses) {
+                if (!(raw instanceof Map<?, ?> map)) continue;
+                String key = text(map.get("key"));
+                if (key.isBlank()) continue;
+                Map<String, Object> normalized = new LinkedHashMap<>();
+                map.forEach((keyObject, value) -> normalized.put(String.valueOf(keyObject), value));
+                byKey.put(key, normalized);
+            }
+            if (byKey.isEmpty()) return shaped;
+
+            List<Map<String, Object>> enriched = new ArrayList<>();
+            for (Map<String, Object> item : items) {
+                Map<String, Object> copy = new LinkedHashMap<>(item);
+                String key = text(item.get("source_id")) + "|" + text(item.get("url"));
+                Map<String, Object> analysis = byKey.get(key);
+                if (analysis != null) copy.put("ai_analysis", analysis);
+                enriched.add(copy);
+            }
+            Map<String, Object> out = new LinkedHashMap<>(shaped);
+            out.put("items", enriched);
+            return out;
+        } catch (Exception error) {
+            log.warn("每日资讯日报 AI 分析失败，保留 RSS 原始结果。", error);
+            return shaped;
+        }
     }
 
     private static boolean allSourcesUnavailable(Map<String, Object> shaped) {
@@ -273,5 +345,6 @@ public class DailyDigestExecutor implements ScheduledTaskExecutor {
     public static class DailyDigestParams {
         private Integer limit;
         private Integer headlineCount;
+        private Boolean analyze;
     }
 }

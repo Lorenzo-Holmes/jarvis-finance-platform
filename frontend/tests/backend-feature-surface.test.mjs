@@ -32,6 +32,8 @@ test('backend scheduled-task capabilities have a visible frontend workspace', ()
   assert.match(page, /恢复/)
   assert.match(page, /执行历史/)
   assert.match(page, /执行器未就绪/)
+  assert.match(page, /DAILY_DIGEST/)
+  assert.match(page, /analyzeNews/)
 })
 
 test('admin backend is surfaced as an ADMIN-only SYSTEM workspace instead of a legacy tab', () => {
@@ -78,12 +80,27 @@ test('RSS information center exposes persisted subscriptions and admin source ma
   assert.match(client, /saveNewsSubscriptions:/)
   assert.match(client, /adminNewsSources:/)
   assert.match(client, /adminUpdateNewsSource:/)
+  assert.match(client, /newsAnalyze:/)
   assert.match(app, /workspaceRenderRoute === 'RSS资讯'/)
   assert.match(modules, /labelZh: 'RSS资讯'/)
   assert.match(page, /保存订阅/)
   assert.match(page, /全部来源/)
+  assert.match(page, /AI分析当前资讯/)
+  assert.match(page, /aiAnalysis/)
+  assert.match(page, /ai_analysis/)
+  assert.match(page, /navigate-module/)
   assert.match(admin, /RSS 来源管理/)
   assert.match(admin, /停用来源/)
+})
+
+test('test agent turns PRD into cases and sanitized browser defect reports', () => {
+  const agent = fs.readFileSync(path.resolve(here, '../../tools/test-agent/test-agent.mjs'), 'utf8')
+  const guide = fs.readFileSync(path.resolve(here, '../../tools/test-agent/README.md'), 'utf8')
+  assert.match(agent, /extractRequirements/)
+  assert.match(agent, /defectsFromRun/)
+  assert.match(agent, /test-cases\.json/)
+  assert.match(agent, /REDACTED/)
+  assert.match(guide, /--run/)
 })
 
 test('backend notifications are surfaced in the workspace header', () => {
