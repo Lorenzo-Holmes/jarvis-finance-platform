@@ -67,7 +67,8 @@ done
 
 systemctl restart jarvis-java.service
 JAVA_OK=0
-for _ in $(seq 1 30); do
+# Java 首次启动会执行 Flyway、建立 JPA 元数据并初始化双端口，生产机冷启动可能超过 30 秒。
+for _ in $(seq 1 90); do
   if curl --silent --show-error --fail \
       http://127.0.0.1:8200/api/health/ready >/dev/null; then
     JAVA_OK=1
