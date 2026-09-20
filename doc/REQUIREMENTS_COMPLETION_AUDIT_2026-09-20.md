@@ -31,9 +31,9 @@
 
 ## 生产发布验收（2026-09-20）
 
-- GitHub Pages 工作流 `Deploy Frontend to GitHub Pages` 运行 `35511233253` 成功；正式域名 `https://f.shengxia.me/version.json` 返回 SHA `6fe8f83a90f271183ec3c8d0949f7af5da89cdd9`。
-- 后端 release `20260920-6fe8f83-final` 已通过远端原子切换；`/opt/jarvis/current` 指向该 release，旧版本 `20260920-6481c68381c5-final` 保留用于回滚。
-- 远端 `jarvis-ai.service`、`jarvis-java.service`、`postgresql` 均为 active；Java readiness、Python 内部 token readiness 和公网 Java readiness 均返回 200。
+- GitHub Pages 工作流 `Deploy Frontend to GitHub Pages` 运行 `35514631730` 成功；正式域名 `https://f.shengxia.me/version.json` 返回 SHA `857635b4ad0548fbf316a8d986d54bd9d7a964b5`。
+- 后端 release `20260920-857635b-final2` 已通过远端原子切换；`/opt/jarvis/current` 指向该 release，旧版本 `20260920-6fe8f83-final` 保留用于回滚。
+- 远端 `jarvis-ai.service`、`jarvis-java.service`、`postgresql` 均为 active；Java readiness、Python 内部 token readiness、Flyway v14 和公网 Java readiness 均返回成功。
 - 公网数据库健康接口返回 401（该接口受认证保护），属于预期安全行为。
 
 ## 仍未完成或需要真实环境验收
