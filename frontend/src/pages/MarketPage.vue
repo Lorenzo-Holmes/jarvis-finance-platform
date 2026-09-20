@@ -29,6 +29,7 @@ const inspectorOpen = ref(false)
 const periodPopoverRef = ref(null)
 const samplePopoverRef = ref(null)
 const marketKlines = reactive({ gold_etf: [], london_gold: [] })
+const technicalAnalysis = reactive({ gold_etf: null, london_gold: null })
 const klineRanges = ref({ gold_etf: null, london_gold: null })
 const jdKlineData = ref([])
 const jdKlineRange = ref(null)
@@ -139,10 +140,21 @@ async function loadOneKline(marketKey, cfg) {
   }
 }
 
+async function loadOneIndicators(marketKey, limit = 120) {
+  try {
+    const response = await api.marketIndicators(marketKey, limit)
+    if (response.code === 200) technicalAnalysis[marketKey] = response.data || null
+  } catch (_) {
+    technicalAnalysis[marketKey] = null
+  }
+}
+
 async function loadKlines() {
   await Promise.all([
     loadOneKline('gold_etf', etfCfg),
     loadOneKline('london_gold', londonCfg),
+    loadOneIndicators('gold_etf', etfCfg.limit),
+    loadOneIndicators('london_gold', londonCfg.limit),
   ])
 }
 
@@ -197,6 +209,7 @@ const focusedIntervals = computed(() => marketFocus.value === 'jd'
   : intervals)
 const focusedData = computed(() => marketFocus.value === 'jd' ? jdKlineData.value : marketKlines[marketFocus.value])
 const focusedError = computed(() => marketFocus.value === 'jd' ? jdKlineError.value : klineErrors[marketFocus.value])
+const focusedTechnical = computed(() => marketFocus.value === 'jd' ? null : technicalAnalysis[marketFocus.value])
 const chartState = computed(() => {
   if (initializing.value && !focusedData.value?.length) return 'loading'
   if (focusedError.value && !focusedData.value?.length) return 'error'
@@ -475,6 +488,13 @@ watch([marketFocus, () => jdKlineCfg.market], () => {
           <div class="health-row"><span>更新频率</span><b>1 秒</b></div>
           <div class="health-row"><span>最近同步</span><b>{{ freshness.label }}</b></div>
         </section>
+        <section v-if="focusedTechnical?.available" class="technical-summary inspector-detail" aria-label="技术指标摘要">
+          <div class="rail-section-head"><b>技术指标</b><small>日K · {{ focusedTechnical.bars }} 根</small></div>
+          <div class="health-row"><span>SMA5 / SMA20</span><b>{{ focusedTechnical.sma5 || '—' }} / {{ focusedTechnical.sma20 || '—' }}</b></div>
+          <div class="health-row"><span>EMA12</span><b>{{ focusedTechnical.ema12 || '—' }}</b></div>
+          <div class="health-row"><span>RSI14</span><b>{{ focusedTechnical.rsi14 || '—' }}</b></div>
+          <div class="health-row"><span>支撑 / 压力</span><b>{{ focusedTechnical.support20 || '—' }} / {{ focusedTechnical.resistance20 || '—' }}</b></div>
+        </section>
       </aside>
     </div>
 
@@ -599,6 +619,8 @@ watch([marketFocus, () => jdKlineCfg.market], () => {
 .data-list dd { margin: 0; color: var(--text); font: 600 8px/1 ui-monospace, monospace; font-variant-numeric: tabular-nums; }
 .data-health { flex: 1; padding: 13px; }
 .rail-section-head { padding-bottom: 8px; }
+.rail-section-head small { color: var(--subtle); font-size: 8px; font-weight: 500; }
+.technical-summary { padding: 13px; border-top: 1px solid color-mix(in srgb, var(--line) 54%, transparent); }
 .health-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 32px; border-bottom: 1px solid color-mix(in srgb, var(--line) 44%, transparent); color: var(--muted); font-size: 10px; }
 .health-row span { display: inline-flex; align-items: center; gap: 6px; }
 .health-row b { max-width: 145px; color: var(--text); font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

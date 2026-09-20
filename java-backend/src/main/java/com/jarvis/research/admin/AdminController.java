@@ -31,6 +31,12 @@ public class AdminController {
         return ApiResponse.ok(adminService.userDetails(userId));
     }
 
+    @GetMapping("/users/{userId}/audit")
+    public ApiResponse<?> userAudit(@PathVariable Long userId,
+                                    @RequestParam(defaultValue = "50") int limit) {
+        return ApiResponse.ok(adminService.userAudit(userId, limit));
+    }
+
     @PatchMapping("/users/{userId}/status")
     public ApiResponse<Map<String, Object>> status(@PathVariable Long userId,
                                                    @Valid @RequestBody StatusRequest body,

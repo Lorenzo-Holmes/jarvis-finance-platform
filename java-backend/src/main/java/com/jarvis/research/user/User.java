@@ -50,6 +50,10 @@ public class User {
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 
+    /** 最近一次成功登录时间；注册时间与登录时间必须分开记录。 */
+    @Column(name = "last_login_at")
+    private LocalDateTime lastLoginAt;
+
     @PrePersist
     void onCreate() {
         if (createdAt == null) createdAt = LocalDateTime.now();

@@ -34,6 +34,11 @@ public class AuditService {
         return repository.findByUserIdOrderByCreatedAtDesc(userId, PageRequest.of(0, limit));
     }
 
+    @Transactional(readOnly = true)
+    public List<AuditEvent> recentForAdmin(Long userId, int limit) {
+        return recentForUser(userId, limit);
+    }
+
     private String trim(String value, int max) {
         if (value == null) return null;
         String v = value.trim();

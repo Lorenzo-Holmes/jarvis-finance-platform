@@ -1,6 +1,7 @@
 package com.jarvis.research.controller;
 
 import com.jarvis.research.common.ApiResponse;
+import com.jarvis.research.ai.KlineMetrics;
 import com.jarvis.research.market.ExtendedMarketDataService;
 import com.jarvis.research.market.MarketDataService;
 import com.jarvis.research.market.MarketPriceStreamService;
@@ -9,6 +10,8 @@ import com.jarvis.research.market.dto.KlineEnvelope;
 import com.jarvis.research.market.dto.MarketStatusDTO;
 import com.jarvis.research.market.dto.MinuteKlineDTO;
 import com.jarvis.research.market.dto.QuoteDTO;
+import com.jarvis.research.market.dto.DailyKlineDTO;
+import com.jarvis.research.market.dto.KlineBarDTO;
 import com.jarvis.research.service.JdGoldService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -19,6 +22,9 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import jakarta.servlet.http.HttpServletRequest;
 
 import java.util.Map;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
 
 
 /**
@@ -122,6 +128,35 @@ public class MarketController {
             throw new IllegalArgumentException("interval 必须为 day/1/5/15/30/60");
         }
         return ApiResponse.ok(marketService.getMinuteKline(market, minutes, limit));
+    }
+
+    /** 首页深度行情使用的统一技术指标摘要；数值由 Java 与回测共用同一套口径计算。 */
+    @GetMapping("/indicators")
+    public ApiResponse<Map<String, Object>> indicators(
+            @RequestParam(defaultValue = "gold_etf") String market,
+            @RequestParam(defaultValue = "120") int limit) {
+        if (!"gold_etf".equals(market) && !"london_gold".equals(market)) {
+            throw new IllegalArgumentException("market 必须为 gold_etf 或 london_gold");
+        }
+        if (limit < 1 || limit > 1000) {
+            throw new IllegalArgumentException("limit 必须在 1~1000 之间");
+        }
+        DailyKlineDTO daily = marketService.getDailyKline(market, limit);
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (KlineBarDTO bar : daily.data()) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("date", bar.date());
+            row.put("open", bar.open());
+            row.put("close", bar.close());
+            row.put("high", bar.high());
+            row.put("low", bar.low());
+            row.put("volume", bar.volume());
+            rows.add(row);
+        }
+        Map<String, Object> analysis = new LinkedHashMap<>(KlineMetrics.compute(Map.of("data", rows)));
+        analysis.put("market", market);
+        analysis.put("interval", "day");
+        return ApiResponse.ok(analysis);
     }
 
     /** 行情首页聚合：A股/美股/港股主要指数与上海金 Au99.99。 */

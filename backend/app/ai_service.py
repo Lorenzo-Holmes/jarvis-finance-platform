@@ -321,13 +321,67 @@ def capabilities() -> Dict[str, Any]:
 
 
 def financial_report(content: str) -> Dict[str, Any]:
-    """财报智能解析"""
+    """财报智能解析，并返回可校验的固定结构。
+
+    模型仍负责语义分析，但结构的存在性由本地解析器保证：缺失的小节明确列入
+    validation.missing_sections，绝不把一段自由文本冒充为完整财报指标。
+    """
     prompt = (
-        "请作为金融分析师解析以下财报内容，输出结构化的分析："
-        "营收/利润变动、毛利率、资产负债、现金流、风险点、投资建议（稳健）。\n\n"
+        "请作为金融分析师解析以下财报内容。必须使用以下固定小节标题，标题必须逐字保留，"
+        "没有证据的项目写‘数据不足’，不得补造数字：\n"
+        "【核心结论】\n【营收与利润】\n【盈利质量与毛利率】\n"
+        "【资产负债】\n【现金流】\n【风险点】\n【投资观点】\n"
+        "最后补充【待核验事项】，列出需要回到原始披露或下一期财报交叉验证的项目。\n\n"
         f"财报内容:\n{content}"
     )
-    return _chat_request([{"role": "user", "content": prompt}], temperature=0.3, max_tokens=1500)
+    response = _chat_request([{"role": "user", "content": prompt}], temperature=0.3, max_tokens=1800)
+    raw = str(response.get("content") or "").strip()
+    response["content"] = raw
+    response["structured"] = parse_financial_report(raw, len(content or ""))
+    return response
+
+
+_FINANCIAL_SECTIONS = {
+    "核心结论": "conclusion",
+    "营收与利润": "revenue_profit",
+    "盈利质量与毛利率": "profit_quality",
+    "资产负债": "balance_sheet",
+    "现金流": "cash_flow",
+    "风险点": "risks",
+    "投资观点": "investment_view",
+    "待核验事项": "verification",
+}
+_FINANCIAL_SECTION_PATTERN = re.compile(r"【\s*([^】]{1,24}?)\s*】")
+
+
+def parse_financial_report(content: Any, source_length: int = 0) -> Dict[str, Any]:
+    """将模型输出切成稳定 JSON；该函数不推断数字，只记录原文小节。"""
+    raw = str(content or "").strip()
+    matches = list(_FINANCIAL_SECTION_PATTERN.finditer(raw))
+    sections: Dict[str, str] = {key: "" for key in _FINANCIAL_SECTIONS.values()}
+    present = []
+    for index, match in enumerate(matches):
+        title = match.group(1).strip()
+        key = _FINANCIAL_SECTIONS.get(title)
+        if not key:
+            continue
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(raw)
+        sections[key] = raw[match.end():end].strip()[:5000]
+        present.append(key)
+    missing = [key for key in _FINANCIAL_SECTIONS.values() if not sections[key]]
+    verification_lines = [line.strip(" -*•·\t") for line in sections["verification"].splitlines() if line.strip()]
+    return {
+        "schema_version": "financial-report-v1",
+        "source_length": max(0, int(source_length or 0)),
+        "sections": sections,
+        "verification_items": verification_lines[:20],
+        "validation": {
+            "status": "complete" if not missing else "needs_review",
+            "present_sections": list(dict.fromkeys(present)),
+            "missing_sections": missing,
+            "cross_validation": "待回到原始披露与下一期数据核验" if missing else "已列出待核验事项，不能替代人工复核",
+        },
+    }
 
 
 # ---- 研报情感分析：固定小节切分（FR-08）----

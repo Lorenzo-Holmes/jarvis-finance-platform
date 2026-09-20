@@ -15,6 +15,7 @@ const MAX_CONTENT_CHARS = 50_000
 const content = ref('')
 const analyzing = ref(false)
 const result = ref('')
+const structured = ref(null)
 const error = ref('')
 const fileInput = ref(null)
 const importing = ref(false)
@@ -30,16 +31,25 @@ const validation = computed(() => {
   return ''
 })
 const companyContextLabel = computed(() => props.researchContext?.name || props.researchContext?.symbol || '')
+const structuredSections = computed(() => {
+  const labels = {
+    conclusion: '核心结论', revenue_profit: '营收与利润', profit_quality: '盈利质量与毛利率',
+    balance_sheet: '资产负债', cash_flow: '现金流', risks: '风险点', investment_view: '投资观点', verification: '待核验事项',
+  }
+  return Object.entries(structured.value?.sections || {}).filter(([, value]) => value).map(([key, value]) => ({ key, label: labels[key] || key, value }))
+})
 
 async function analyze() {
   if (validation.value || analyzing.value) return
   analyzing.value = true
   error.value = ''
   result.value = ''
+  structured.value = null
   try {
     const response = await api.aiFinancialReport(content.value.trim())
     if (response.code !== 200 || !response.data) throw new Error(response.message || '财报解析失败')
     result.value = response.data.content || '（暂无解析结论）'
+    structured.value = response.data.structured || null
   } catch (e) {
     error.value = e?.message || String(e)
   } finally {
@@ -104,6 +114,7 @@ function applyImportedText(mode) {
     content.value = importedText
   }
   result.value = ''
+  structured.value = null
   error.value = ''
   importStatus.value = `${mode === 'append' ? '已追加' : '已替换'}：${pendingImport.value.fileName}`
   pendingImport.value = null
@@ -119,6 +130,7 @@ function cancelImport() {
 function clearAll() {
   content.value = ''
   result.value = ''
+  structured.value = null
   error.value = ''
   importController?.abort()
   importController = null
@@ -217,6 +229,16 @@ onBeforeUnmount(() => importController?.abort())
               <div><b>分析结果{{ companyContextLabel ? ` · ${companyContextLabel}` : '' }}</b><span>基于输入文本的财务解读，仅供研究参考，请以原始财报为准</span></div>
               <span class="result-state">已完成</span>
             </div>
+            <div v-if="structured" class="fr-structured" aria-label="结构化财报摘要">
+              <div class="fr-structured-head"><b>STRUCTURED REVIEW</b><span :class="structured.validation?.status">{{ structured.validation?.status === 'complete' ? '小节齐全' : '需要复核缺失小节' }}</span></div>
+              <div class="fr-structured-grid">
+                <article v-for="item in structuredSections" :key="item.key">
+                  <h3>{{ item.label }}</h3>
+                  <p>{{ item.value }}</p>
+                </article>
+              </div>
+              <div v-if="structured.validation?.missing_sections?.length" class="fr-structured-warning">缺失小节：{{ structured.validation.missing_sections.join('、') }}。请补充原文或人工核验，不应把缺失数据当作结论。</div>
+            </div>
             <MarkdownContent class="fr-output" :content="result" />
           </div>
         </template>
@@ -290,6 +312,15 @@ onBeforeUnmount(() => importController?.abort())
 .fr-result-head b { color: var(--text); font: 650 10px/1 ui-monospace, monospace; letter-spacing: .1em; }
 .fr-result-head span { display: block; margin-top: 3px; color: var(--subtle); font-size: 9px; }
 .fr-result-head .result-state { color: #66705f; font: 600 8px/1 ui-monospace, monospace; letter-spacing: .08em; }
+.fr-structured { margin-top: 14px; padding: 12px; border: 1px solid var(--line); background: var(--workspace-panel-wash, var(--panel)); }
+.fr-structured-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--subtle); font: 650 8px/1 ui-monospace, monospace; letter-spacing: .1em; }
+.fr-structured-head span { color: var(--ok); font-size: 8px; letter-spacing: 0; }
+.fr-structured-head span.needs_review { color: var(--warn); }
+.fr-structured-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 1px; margin-top: 10px; border: 1px solid var(--line); background: var(--line); }
+.fr-structured-grid article { min-width: 0; padding: 10px; background: var(--workspace-panel-soft, var(--surface)); }
+.fr-structured-grid h3 { margin: 0; color: var(--accent-strong); font-size: 10px; font-weight: 650; }
+.fr-structured-grid p { margin: 6px 0 0; color: var(--muted); font-size: 9px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.fr-structured-warning { margin-top: 9px; color: var(--workspace-warning-text); font-size: 9px; line-height: 1.5; }
 .fr-output { margin-top: 0; min-height: 500px; max-height: 650px; overflow: auto; background: transparent; border: 0; border-radius: 0; padding: 20px 2px; color: var(--text); font-size: 11px; line-height: 1.82; overflow-wrap: anywhere; }
 .fr-empty { min-height: 520px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px; padding: 46px 20px; text-align: center; border: 0; border-radius: 0; background: transparent; }
 .fr-empty-mark { color: var(--accent-strong); border: 1px solid var(--line-strong); border-radius: 0; width: 64px; height: 44px; display: grid; place-items: center; font: 600 9px/1 ui-monospace, monospace; letter-spacing: .12em; }

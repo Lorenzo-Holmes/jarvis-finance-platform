@@ -117,10 +117,17 @@ public class BacktestService {
 
         double peak = ((Number) equityCurve.get(0).get("equity")).doubleValue();
         double maxDrawdown = 0.0;
+        List<Map<String, Object>> drawdownCurve = new ArrayList<>();
         for (Map<String, Object> point : equityCurve) {
             double equity = ((Number) point.get("equity")).doubleValue();
             peak = Math.max(peak, equity);
-            if (peak > 0) maxDrawdown = Math.max(maxDrawdown, (peak - equity) / peak);
+            double drawdown = peak > 0 ? (peak - equity) / peak : 0.0;
+            maxDrawdown = Math.max(maxDrawdown, drawdown);
+            point.put("drawdown_pct", round2(drawdown * 100));
+            Map<String, Object> drawdownPoint = new LinkedHashMap<>();
+            drawdownPoint.put("date", point.get("date"));
+            drawdownPoint.put("drawdown_pct", round2(drawdown * 100));
+            drawdownCurve.add(drawdownPoint);
         }
 
         long calendarDays = Math.max(1, ChronoUnit.DAYS.between(
@@ -129,6 +136,7 @@ public class BacktestService {
         double annualReturn = finalEquity > 0
                 ? (Math.pow(finalEquity / initialCash, 365.0 / calendarDays) - 1) * 100
                 : 0.0;
+        Map<String, Object> advanced = advancedMetrics(trades, equityCurve);
 
         Map<String, Object> range = new LinkedHashMap<>();
         range.put("start", dates.get(0));
@@ -156,10 +164,81 @@ public class BacktestService {
         out.put("annual_return_pct", round2(annualReturn));
         out.put("buy_hold_return_pct", round2(buyHoldReturn));
         out.put("max_drawdown_pct", round2(maxDrawdown * 100));
+        out.put("drawdown_curve", drawdownCurve);
+        out.put("sharpe_ratio", advanced.get("sharpe_ratio"));
+        out.put("win_rate_pct", advanced.get("win_rate_pct"));
+        out.put("profit_loss_ratio", advanced.get("profit_loss_ratio"));
+        out.put("avg_holding_days", advanced.get("avg_holding_days"));
+        out.put("completed_trades", advanced.get("completed_trades"));
         out.put("num_trades", trades.size());
         out.put("trades", trades.size() <= 20 ? trades : trades.subList(trades.size() - 20, trades.size()));
         out.put("equity_curve", equityCurve);
         return out;
+    }
+
+    /**
+     * 高级回测指标只基于已闭合的买卖轮次；最后仍持仓的 BUY 不计入胜率/盈亏比，
+     * 避免把未实现盈亏和已实现交易混在一个口径中。
+     */
+    private Map<String, Object> advancedMetrics(List<Map<String, Object>> trades,
+                                                List<Map<String, Object>> equityCurve) {
+        final double transactionCost = 0.001;
+        List<Double> returns = new ArrayList<>();
+        for (int i = 1; i < equityCurve.size(); i++) {
+            double previous = number(equityCurve.get(i - 1).get("equity"));
+            double current = number(equityCurve.get(i).get("equity"));
+            if (previous > 0) returns.add(current / previous - 1.0);
+        }
+        double sharpe = 0.0;
+        if (returns.size() > 1) {
+            double mean = returns.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
+            double variance = returns.stream().mapToDouble(value -> Math.pow(value - mean, 2)).sum()
+                    / (returns.size() - 1);
+            double deviation = Math.sqrt(Math.max(0.0, variance));
+            if (deviation > 0) sharpe = mean / deviation * Math.sqrt(252.0);
+        }
+
+        List<Double> profits = new ArrayList<>();
+        List<Long> holdingDays = new ArrayList<>();
+        Map<String, Object> buy = null;
+        for (Map<String, Object> trade : trades) {
+            if ("BUY".equals(trade.get("type"))) {
+                buy = trade;
+            } else if ("SELL".equals(trade.get("type")) && buy != null) {
+                double buyPrice = number(buy.get("price")) * (1.0 + transactionCost);
+                double sellPrice = number(trade.get("price")) * (1.0 - transactionCost);
+                double quantity = number(trade.get("qty"));
+                profits.add((sellPrice - buyPrice) * quantity);
+                try {
+                    holdingDays.add(Math.max(0L, ChronoUnit.DAYS.between(
+                            LocalDate.parse(String.valueOf(buy.get("date"))),
+                            LocalDate.parse(String.valueOf(trade.get("date"))))));
+                } catch (RuntimeException ignored) {
+                    // 非日期型数据不阻断主回测结果，只跳过持仓时长。
+                }
+                buy = null;
+            }
+        }
+        long wins = profits.stream().filter(value -> value > 0).count();
+        double winRate = profits.isEmpty() ? 0.0 : wins * 100.0 / profits.size();
+        double winningAverage = profits.stream().filter(value -> value > 0)
+                .mapToDouble(Double::doubleValue).average().orElse(0.0);
+        double losingAverage = profits.stream().filter(value -> value < 0)
+                .mapToDouble(Double::doubleValue).average().orElse(0.0);
+        double profitLossRatio = losingAverage < 0 ? winningAverage / Math.abs(losingAverage) : 0.0;
+        double averageHolding = holdingDays.stream().mapToLong(Long::longValue).average().orElse(0.0);
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("sharpe_ratio", round3(sharpe));
+        out.put("win_rate_pct", round2(winRate));
+        out.put("profit_loss_ratio", round3(profitLossRatio));
+        out.put("avg_holding_days", round2(averageHolding));
+        out.put("completed_trades", profits.size());
+        return out;
+    }
+
+    private double number(Object value) {
+        return value instanceof Number number ? number.doubleValue() : 0.0;
     }
 
     private String dataFingerprint(String market, List<String> dates, List<Double> closes) {
