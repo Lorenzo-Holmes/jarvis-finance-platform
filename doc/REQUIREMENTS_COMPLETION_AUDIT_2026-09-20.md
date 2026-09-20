@@ -33,7 +33,7 @@
 ## Gitee PR 审核（2026-09-20）
 
 - Gitee 当前没有 open PR；最新 PR#15（`feat: 补 DAILY_DIGEST 执行器，定时任务 4 个类型全部可用`）已处于 merged 状态，提交 `3db902a` 已包含日报执行器、参数边界、来源不可用降级和 wiring 测试。本轮已复核 PR 详情、文件差异和评论，没有可再次修改或合并的待审 PR。
-- Gitee 当前没有 open PR；本地补齐的 RSS 持久化、AI 分析、通知、测试 Agent、监控模板和 RSS 超时修复已同步到 Gitee `main`，最新相关提交为 `44321ce`（烟测脚本）及其前置提交。后续新增 PR 应继续先做 diff/测试审查，再合并到 `main`。
+- Gitee 当前没有 open PR；本地补齐的 RSS 持久化、AI 分析、通知、测试 Agent、监控模板、RSS 超时修复和 Agent 断线取消竞态修复均已同步到 Gitee `main`，当前 `main` 为 `14feb56`（审计文档提交，后端功能提交为 `cedb9de`）。后续新增 PR 应继续先做 diff/测试审查，再合并到 `main`。
 
 ## 生产发布验收（2026-09-21 更新）
 
