@@ -54,6 +54,12 @@ class BacktestServiceTest {
         assertEquals("double-ma-v1", result.get("strategy_version"));
         assertTrue(String.valueOf(result.get("data_fingerprint")).startsWith("sha256:"));
         assertEquals("2026-01-20", result.get("as_of"));
+        assertNotNull(result.get("drawdown_curve"));
+        assertNotNull(result.get("sharpe_ratio"));
+        assertNotNull(result.get("win_rate_pct"));
+        assertNotNull(result.get("profit_loss_ratio"));
+        assertNotNull(result.get("avg_holding_days"));
+        assertEquals(1, ((Number) result.get("completed_trades")).intValue());
     }
 
     @Test

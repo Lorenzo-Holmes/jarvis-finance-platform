@@ -243,6 +243,7 @@ export const api = {
     API_BASE, '/api/market/prices/stream', 'prices', onEvent, onError,
   ),
   marketKline: (params) => get(API_BASE, '/api/market/kline', params),
+  marketIndicators: (market, limit = 120) => get(API_BASE, '/api/market/indicators', { market, limit }),
   marketOverview: () => get(API_BASE, '/api/market/overview'),
   marketInstruments: () => get(API_BASE, '/api/market/instruments'),
   resolveMarketInstrument: (market, query) => get(API_BASE, '/api/market/instruments/resolve', { market, query }),
@@ -335,6 +336,7 @@ export const api = {
   // 管理员账户、配额和功能权限
   adminUsers: (query = '', limit = 50) => get(API_BASE, '/api/admin/users', { query, limit }),
   adminUser: (userId) => get(API_BASE, `/api/admin/users/${userId}`),
+  adminUserAudit: (userId, limit = 50) => get(API_BASE, `/api/admin/users/${userId}/audit`, { limit }),
   adminUpdateStatus: (userId, enabled) => request(API_BASE, `/api/admin/users/${userId}/status`, {
     method: 'PATCH', body: JSON.stringify({ enabled }),
   }),

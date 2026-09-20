@@ -5,6 +5,8 @@ import com.jarvis.research.security.CurrentUser;
 import com.jarvis.research.service.AiQuotaService;
 import com.jarvis.research.user.AiQuota;
 import com.jarvis.research.user.User;
+import com.jarvis.research.user.OAuthAccount;
+import com.jarvis.research.user.OAuthAccountRepository;
 import com.jarvis.research.user.UserFeaturePermission;
 import com.jarvis.research.user.UserFeaturePermissionRepository;
 import com.jarvis.research.user.UserRepository;
@@ -34,6 +36,7 @@ public class AdminService {
     private final AiQuotaService quotaService;
     private final UserFeaturePermissionRepository permissionRepository;
     private final AuditService auditService;
+    private final OAuthAccountRepository oauthAccountRepository;
 
     @Transactional(readOnly = true)
     public Map<String, Object> listUsers(String query, int limit) {
@@ -53,6 +56,12 @@ public class AdminService {
     public Map<String, Object> userDetails(Long userId) {
         User user = requireUser(userId);
         return fullUserView(user);
+    }
+
+    @Transactional(readOnly = true)
+    public List<com.jarvis.research.audit.AuditEvent> userAudit(Long userId, int limit) {
+        requireUser(userId);
+        return auditService.recentForAdmin(userId, limit);
     }
 
     @Transactional
@@ -155,6 +164,21 @@ public class AdminService {
         out.put("role", user.getRole());
         out.put("enabled", user.isEnabled());
         out.put("createdAt", user.getCreatedAt());
+        out.put("lastLoginAt", user.getLastLoginAt());
+        List<Map<String, Object>> oauth = oauthAccountRepository.findByUserIdOrderByProviderAsc(user.getId()).stream()
+                .map(this::oauthView).toList();
+        out.put("oauthAccounts", oauth);
+        out.put("authProviders", oauth.stream().map(item -> String.valueOf(item.get("provider"))).toList());
+        return out;
+    }
+
+    private Map<String, Object> oauthView(OAuthAccount account) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("provider", account.getProvider());
+        out.put("login", account.getProviderLogin());
+        out.put("email", account.getEmail());
+        out.put("createdAt", account.getCreatedAt());
+        out.put("updatedAt", account.getUpdatedAt());
         return out;
     }
 

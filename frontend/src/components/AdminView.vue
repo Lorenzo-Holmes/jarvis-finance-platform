@@ -12,6 +12,7 @@ const selectedLoading = ref(false)
 const message = ref('')
 const error = ref('')
 const usersError = ref('')
+const audit = ref([])
 const quota = reactive({ dailyRequestLimit: 100, monthlyTokenLimit: 0, reason: '' })
 const permissions = ref('')
 const adminCount = computed(() => users.value.filter(user => user.role === 'ADMIN').length)
@@ -48,6 +49,12 @@ async function selectUser(user) {
     const response = await api.adminUser(user.id)
     if (response.code !== 200) throw new Error(response.message || '用户详情加载失败')
     selected.value = response.data
+    try {
+      const auditResponse = await api.adminUserAudit(user.id)
+      audit.value = auditResponse.code === 200 ? (auditResponse.data || []) : []
+    } catch (_) {
+      audit.value = []
+    }
     Object.assign(quota, {
       dailyRequestLimit: response.data.quota?.dailyRequestLimit ?? 100,
       monthlyTokenLimit: response.data.quota?.monthlyTokenLimit ?? 0,
@@ -172,6 +179,8 @@ onMounted(loadUsers)
             <div><span>USER ID</span><b>#{{ selected.id }}</b></div>
             <div><span>角色</span><b>{{ selected.role }}</b></div>
             <div><span>注册时间</span><b>{{ selected.createdAt?.replace('T', ' ').slice(0, 19) || '-' }}</b></div>
+            <div><span>最近登录</span><b>{{ selected.lastLoginAt?.replace('T', ' ').slice(0, 19) || '从未登录' }}</b></div>
+            <div><span>登录方式</span><b>{{ selected.authProviders?.join(' / ') || '邮箱' }}</b></div>
             <div><span>功能权限</span><b>{{ selected.permissions?.length || 0 }} 项</b></div>
           </div>
 
@@ -210,6 +219,16 @@ onMounted(loadUsers)
             <button type="button" class="btn primary" @click="updatePermissions">保存权限</button>
           </section>
         </div>
+
+        <section class="detail-panel audit-panel">
+          <div class="section-title"><div><b>最近审计事件</b><span>管理员只读查看该账户的关键操作</span></div><span>{{ audit.length }} 条</span></div>
+          <div v-if="audit.length" class="audit-list">
+            <div v-for="event in audit.slice(0, 12)" :key="event.id" class="audit-row">
+              <b>{{ event.action }}</b><span>{{ event.detail || event.target || '—' }}</span><time>{{ event.createdAt?.replace('T', ' ').slice(0, 19) || '—' }}</time>
+            </div>
+          </div>
+          <div v-else class="audit-empty">暂无审计事件</div>
+        </section>
       </main>
 
       <div v-else class="empty-detail">
@@ -296,6 +315,13 @@ onMounted(loadUsers)
 .permission-preview em { color: var(--subtle); font-size: 9px; font-style: normal; }
 .permission-input { width: 100%; min-height: 74px; margin-top: 7px; padding: 8px; resize: vertical; font-size: 9px; line-height: 1.5; }
 .permission-hint { margin: 6px 0 9px; color: var(--subtle); font-size: 8px; line-height: 1.5; }
+.audit-panel { margin-top: 0; }
+.audit-list { display: grid; margin-top: 10px; border-top: 1px solid var(--line); }
+.audit-row { display: grid; grid-template-columns: 170px minmax(0,1fr) 150px; gap: 10px; align-items: center; min-height: 34px; border-bottom: 1px solid var(--line); font-size: 9px; }
+.audit-row b { color: var(--accent-strong); font: 650 8px/1 ui-monospace, monospace; }
+.audit-row span { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.audit-row time { color: var(--subtle); font: 8px/1 ui-monospace, monospace; text-align: right; }
+.audit-empty { margin-top: 10px; color: var(--subtle); font-size: 9px; }
 .empty-detail { min-height: 430px; display: flex; align-items: center; justify-content: center; flex-direction: column; text-align: center; }
 .empty-mark { width: 42px; height: 42px; display: grid; place-items: center; border: 1px solid #4d4434; border-radius: 50%; color: var(--accent-strong); background: rgba(201,166,95,.04); font-size: 9px; font-weight: 700; }
 .empty-detail b { margin-top: 11px; color: var(--text); font-size: 10px; }

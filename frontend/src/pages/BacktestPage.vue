@@ -16,6 +16,8 @@ const result = ref(null)
 const error = ref('')
 const equityChart = useEcharts()
 const equityChartRef = equityChart.elementRef
+const drawdownChart = useEcharts()
+const drawdownChartRef = drawdownChart.elementRef
 
 const invalid = computed(() => bt.short_ma < 1 || bt.long_ma < 2 || bt.short_ma >= bt.long_ma || bt.initial_cash < 1000)
 const validation = computed(() => {
@@ -44,6 +46,7 @@ async function runBacktest() {
   error.value = ''
   result.value = null
   equityChart.clear()
+  drawdownChart.clear()
   try {
     const response = await api.backtest({
       market: 'gold_etf',
@@ -57,6 +60,7 @@ async function runBacktest() {
     result.value = response.data
     await nextTick()
     await renderEquity(response.data.equity_curve || [])
+    await renderDrawdown(response.data.drawdown_curve || [])
   } catch (e) {
     error.value = e?.message || String(e)
   } finally {
@@ -79,10 +83,25 @@ async function renderEquity(curve) {
   })
 }
 
+async function renderDrawdown(curve) {
+  await drawdownChart.setOption({
+    animation: false,
+    backgroundColor: 'transparent',
+    tooltip: { trigger: 'axis', valueFormatter: value => `${value}%` },
+    grid: { left: 55, right: 20, top: 15, bottom: 30 },
+    xAxis: { type: 'category', data: curve.map(point => point.date), axisLabel: { color: '#8f9498', hideOverlap: true } },
+    yAxis: { type: 'value', inverse: true, min: 0, axisLabel: { color: '#8f9498', formatter: value => `${value}%` }, splitLine: { lineStyle: { color: '#24272b' } } },
+    series: [{
+      name: '回撤', type: 'line', showSymbol: false, data: curve.map(point => point.drawdown_pct),
+      lineStyle: { color: '#d97774', width: 1.5 }, areaStyle: { color: 'rgba(217,119,116,0.12)' },
+    }],
+  })
+}
+
 watch(() => props.active, async active => {
   if (!active || !result.value) return
   await nextTick()
-  requestAnimationFrame(() => equityChart.resize())
+  requestAnimationFrame(() => { equityChart.resize(); drawdownChart.resize() })
 })
 </script>
 
@@ -167,6 +186,10 @@ watch(() => props.active, async active => {
             <div class="bt-metric"><span>最大回撤</span><b class="neg">{{ formatPercent(result.max_drawdown_pct) }}</b></div>
             <div class="bt-metric"><span>期末资金</span><b>{{ formatNumber(result.final_equity) }}</b></div>
             <div class="bt-metric"><span>交易次数</span><b>{{ result.num_trades }}</b></div>
+            <div class="bt-metric"><span>夏普比率</span><b>{{ result.sharpe_ratio ?? '—' }}</b></div>
+            <div class="bt-metric"><span>胜率</span><b>{{ formatPercent(result.win_rate_pct) }}</b></div>
+            <div class="bt-metric"><span>盈亏比</span><b>{{ result.profit_loss_ratio ?? '—' }}</b></div>
+            <div class="bt-metric"><span>平均持仓</span><b>{{ result.avg_holding_days ?? '—' }} 天</b></div>
           </div>
           <div class="bt-repro-meta">
             <span>策略 {{ result.strategy_version || '-' }}</span>
@@ -180,6 +203,13 @@ watch(() => props.active, async active => {
               <span class="bt-benchmark">策略 vs. 买入持有</span>
             </div>
             <div ref="equityChartRef" class="chart bt-equity-chart"></div>
+          </div>
+          <div class="panel bt-chart-panel">
+            <div class="bt-chart-head">
+              <div><b>回撤曲线</b><span>从历史峰值回落的百分比</span></div>
+              <span class="bt-benchmark">最大 {{ formatPercent(result.max_drawdown_pct) }}</span>
+            </div>
+            <div ref="drawdownChartRef" class="chart bt-drawdown-chart"></div>
           </div>
         </template>
 
@@ -262,6 +292,7 @@ watch(() => props.active, async active => {
 .bt-chart-head span { color: var(--subtle); font-size: 9px; }
 .bt-benchmark { color: var(--muted) !important; }
 .bt-equity-chart { height: 390px !important; margin-top: 10px !important; }
+.bt-drawdown-chart { height: 220px !important; margin-top: 10px !important; }
 .bt-empty { min-height: 450px; display: flex; align-items: center; justify-content: center; flex-direction: column; text-align: center; }
 .bt-empty-mark { width: 54px; height: 38px; display: grid; place-items: center; border: 1px solid var(--line-strong); color: var(--accent-strong); background: transparent; border-radius: 0; font: 700 9px/1 ui-monospace, monospace; letter-spacing: .08em; }
 .bt-empty b { margin-top: 12px; color: var(--text); font-size: 12px; }

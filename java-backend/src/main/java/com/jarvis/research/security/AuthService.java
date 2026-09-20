@@ -114,6 +114,8 @@ public class AuthService {
         if (!user.isEnabled()) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "账号已被禁用");
         }
+        user.setLastLoginAt(LocalDateTime.now());
+        userRepository.save(user);
         SimAccount account = ensureSimAccount(user.getId());
         auditService.record(user.getId(), created ? "USER_GITHUB_REGISTER" : "USER_GITHUB_LOGIN",
                 "auth", clientIp, "GitHub OAuth 登录成功");
@@ -206,6 +208,8 @@ public class AuthService {
         if (!passwordEncoder.matches(req.getPassword(), user.getPasswordHash())) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "邮箱或密码错误");
         }
+        user.setLastLoginAt(LocalDateTime.now());
+        userRepository.save(user);
         SimAccount account = ensureSimAccount(user.getId());
         auditService.record(user.getId(), "USER_LOGIN", "auth", clientIp, "登录成功");
         String token = jwtUtil.generateToken(user.getId(), user.getEmail(), user.getCredentialVersion());
