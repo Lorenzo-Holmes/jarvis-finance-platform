@@ -428,6 +428,15 @@ sudo /usr/local/sbin/jarvis-smoke-test
 CHECK_AGENT_STREAM=1 /usr/local/sbin/jarvis-smoke-test
 ```
 
+如需验收 Agent 客户端断线、主动取消和同一 `runId` 的 SSE 重订阅，可在测试窗口执行：
+
+```bash
+CHECK_AGENT_RECOVERY=1 /usr/local/sbin/jarvis-smoke-test
+```
+
+该检查会使用真实登录会话启动一次研究运行，断开客户端后发起取消，再从 PostgreSQL
+历史事件重新订阅；不会输出账号、令牌或模型正文。
+
 该开关会发起一次最小研究问题并只输出事件协议/运行 ID 验证结果，不打印模型正文或认证信息。
 
 生产启用邮箱注册时，还需在 `/etc/jarvis/java.env` 配置 `RESEND_API_KEY`、`RESEND_FROM`，并保持

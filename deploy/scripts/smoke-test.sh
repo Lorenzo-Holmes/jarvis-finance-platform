@@ -14,6 +14,7 @@ LOCAL_API_BASE="${LOCAL_API_BASE:-http://127.0.0.1:8200}"
 LOCAL_METRICS_URL="${LOCAL_METRICS_URL:-http://127.0.0.1:8201/actuator/prometheus}"
 CHECK_PY_BLOCK="${CHECK_PY_BLOCK:-1}"
 CHECK_AGENT_STREAM="${CHECK_AGENT_STREAM:-0}"
+CHECK_AGENT_RECOVERY="${CHECK_AGENT_RECOVERY:-0}"
 : "${SMOKE_EMAIL:?SMOKE_EMAIL is required}"
 : "${SMOKE_PASSWORD:?SMOKE_PASSWORD is required}"
 
@@ -87,12 +88,66 @@ assert_agent_stream() {
   if [ "$stream_exit" -ne 0 ]; then
     echo "WARN  Agent SSE transport closed with curl=$stream_exit; validating buffered events"
   fi
-  run_id="$(AGENT_BODY_FILE="$body_file" python3 -c 'import json,os,pathlib; lines=pathlib.Path(os.environ["AGENT_BODY_FILE"]).read_text().splitlines(); events=[json.loads(x[5:].strip()) for x in lines if x.startswith("data:")]; assert events, "no Agent SSE data"; ids={e.get("runId") for e in events}; assert len(ids)==1 and next(iter(ids)), ids; assert any(e.get("type") in {"run_completed","run_failed","run_cancelled"} for e in events), events[-1]; seq=[int(e.get("sequence",0)) for e in events]; assert seq==sorted(seq), seq; print(next(iter(ids)))')"
+  run_id="$(AGENT_BODY_FILE="$body_file" python3 -c 'import json,os,pathlib; lines=pathlib.Path(os.environ["AGENT_BODY_FILE"]).read_text().splitlines(); events=[json.loads(x[5:].strip()) for x in lines if x.startswith("data:")]; assert events, "no Agent SSE data"; ids={e.get("runId") for e in events}; assert len(ids)==1 and next(iter(ids)), ids; assert any(e.get("type")=="tool_call" for e in events), events; assert any(e.get("type") in {"run_completed","run_failed","run_cancelled"} for e in events), events[-1]; seq=[int(e.get("sequence",0)) for e in events]; assert seq==sorted(seq), seq; print(next(iter(ids)))')"
   echo "OK  $label"
   events_body="$(curl "${curl_args[@]}" -b "$cookie_jar" -c "$cookie_jar" "$SMOKE_API_BASE/api/agent/runs/$run_id/events")"
   AGENT_EVENTS="$events_body" python3 -c 'import json,os; d=json.loads(os.environ["AGENT_EVENTS"]); assert d.get("code")==200 and isinstance(d.get("data"),list) and d["data"], d'
   echo "OK  Agent PostgreSQL event replay"
   rm -f "$body_file"
+}
+
+assert_agent_cancel_and_reconnect() {
+  local label="$1"
+  local url="$2"
+  local csrf="$3"
+  local body_file run_id stream_pid cancel_body reconnect_file reconnect_exit
+  body_file="$(mktemp)"
+  # 让运行先落库并发出 run_started，再主动断开客户端连接；后端运行不能因此丢失。
+  set +e
+  printf '%s' '{"question":"请执行完整金融研究工作流，调用资讯、财报、行情、K线、技术指标和风险工具后再总结；不要执行交易。"}' | curl \
+    --silent --show-error --http1.1 --no-buffer --connect-timeout 5 --max-time 90 \
+    -b "$cookie_jar" -c "$cookie_jar" \
+    -H 'Content-Type: application/json' \
+    -H "X-XSRF-TOKEN: $csrf" \
+    --data-binary @- "$url" > "$body_file" 2>/dev/null &
+  stream_pid=$!
+  set -e
+
+  run_id=""
+  for _ in $(seq 1 20); do
+    run_id="$(AGENT_BODY_FILE="$body_file" python3 -c 'import json,os,pathlib; p=pathlib.Path(os.environ["AGENT_BODY_FILE"]); events=[json.loads(x[5:].strip()) for x in p.read_text(errors="ignore").splitlines() if x.startswith("data:")]; print(next((e.get("runId") for e in events if e.get("runId")), ""))')"
+    [ -n "$run_id" ] && break
+    sleep 0.25
+  done
+  if [ -z "$run_id" ]; then
+    kill "$stream_pid" 2>/dev/null || true
+    wait "$stream_pid" 2>/dev/null || true
+    rm -f "$body_file"
+    echo "ERROR: Agent recovery runId not emitted" >&2
+    exit 1
+  fi
+
+  # 模拟浏览器断线，之后使用同一个 runId 发送取消请求。
+  kill "$stream_pid" 2>/dev/null || true
+  wait "$stream_pid" 2>/dev/null || true
+  cancel_body="$(curl "${curl_args[@]}" -X DELETE \
+    -b "$cookie_jar" -c "$cookie_jar" \
+    -H "X-XSRF-TOKEN: $csrf" \
+    "$SMOKE_API_BASE/api/agent/runs/$run_id")"
+  printf '%s' "$cancel_body" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("code")==200,d'
+  echo "OK  $label cancel request"
+
+  # 重新订阅历史 SSE；必须看到同一 runId 的取消终态，而不是创建第二个运行。
+  reconnect_file="$(mktemp)"
+  set +e
+  curl --silent --show-error --http1.1 --no-buffer --connect-timeout 5 --max-time 20 \
+    -b "$cookie_jar" -c "$cookie_jar" \
+    "$SMOKE_API_BASE/api/agent/runs/$run_id/stream" > "$reconnect_file" 2>/dev/null
+  reconnect_exit=$?
+  set -e
+  AGENT_RECONNECT_FILE="$reconnect_file" AGENT_EXPECTED_RUN="$run_id" python3 -c 'import json,os,pathlib; expected=os.environ["AGENT_EXPECTED_RUN"]; events=[json.loads(x[5:].strip()) for x in pathlib.Path(os.environ["AGENT_RECONNECT_FILE"]).read_text(errors="ignore").splitlines() if x.startswith("data:")]; assert events, "no replay events"; assert {e.get("runId") for e in events}=={expected}, events; assert any(e.get("type")=="run_cancelled" for e in events), events[-1]'
+  echo "OK  $label reconnect/replay (curl=$reconnect_exit)"
+  rm -f "$body_file" "$reconnect_file"
 }
 
 post_wrapped_ok() {
@@ -163,6 +218,10 @@ assert_json_object "AI capabilities" "$SMOKE_API_BASE/api/ai/capabilities"
 if [ "$CHECK_AGENT_STREAM" = "1" ]; then
   csrf_token="$(fetch_csrf_token)"
   assert_agent_stream "Agent SSE stream" "$SMOKE_API_BASE/api/agent/research/stream" "$csrf_token"
+fi
+if [ "$CHECK_AGENT_RECOVERY" = "1" ]; then
+  csrf_token="$(fetch_csrf_token)"
+  assert_agent_cancel_and_reconnect "Agent recovery" "$SMOKE_API_BASE/api/agent/research/stream" "$csrf_token"
 fi
 backtest_as_of="$(python3 -c 'import datetime; print((datetime.date.today()-datetime.timedelta(days=1)).isoformat())')"
 assert_reproducible_backtest "reproducible backtest" "$SMOKE_API_BASE/api/backtest?market=gold_etf&short_ma=5&long_ma=20&initial_cash=100000&limit=60&as_of=$backtest_as_of"
