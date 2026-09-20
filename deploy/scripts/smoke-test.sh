@@ -73,12 +73,20 @@ assert_agent_stream() {
   local body_file run_id events_body
   body_file="$(mktemp)"
   # Agent SSE 可能需要等待上游模型；这里只验证真实事件协议，不把模型内容打印到日志。
+  set +e
   printf '%s' '{"question":"请用一句话确认 Agent 事件流已连通，不要调用交易工具。"}' | curl \
-    --silent --show-error --no-buffer --connect-timeout 5 --max-time 90 \
+    --silent --show-error --http1.1 --no-buffer --connect-timeout 5 --max-time 90 \
     -b "$cookie_jar" -c "$cookie_jar" \
     -H 'Content-Type: application/json' \
     -H "X-XSRF-TOKEN: $csrf" \
     --data-binary @- "$url" > "$body_file"
+  stream_exit=$?
+  set -e
+  # SSE 完成后由反向代理主动关闭连接时，curl 可能返回 18/92；下面的
+  # 事件解析仍必须通过，不能把传输层关闭码误判为业务失败。
+  if [ "$stream_exit" -ne 0 ]; then
+    echo "WARN  Agent SSE transport closed with curl=$stream_exit; validating buffered events"
+  fi
   run_id="$(AGENT_BODY_FILE="$body_file" python3 -c 'import json,os,pathlib; lines=pathlib.Path(os.environ["AGENT_BODY_FILE"]).read_text().splitlines(); events=[json.loads(x[5:].strip()) for x in lines if x.startswith("data:")]; assert events, "no Agent SSE data"; ids={e.get("runId") for e in events}; assert len(ids)==1 and next(iter(ids)), ids; assert any(e.get("type") in {"run_completed","run_failed","run_cancelled"} for e in events), events[-1]; seq=[int(e.get("sequence",0)) for e in events]; assert seq==sorted(seq), seq; print(next(iter(ids)))')"
   echo "OK  $label"
   events_body="$(curl "${curl_args[@]}" -b "$cookie_jar" -c "$cookie_jar" "$SMOKE_API_BASE/api/agent/runs/$run_id/events")"
