@@ -14,6 +14,7 @@
 - 财报解析返回 `financial-report-v1` 结构化 JSON，固定包含核心结论、营收利润、盈利质量、资产负债、现金流、风险点、投资观点和待核验事项；缺失小节会标记 `needs_review`，不伪造数据。
 - 前端财报页展示结构化摘要，并保留原始 Markdown 渲染结果。
 - Agent 运行服务补齐 pending/running 孤儿运行恢复、终态运行内存清理、SSE 重连终态竞态保护和超大 payload 有界降级；新增生命周期/恢复边界回归测试。
+- 管理员按用户的额度、权限和审计能力已完成；SRS 要求的“按用户组配置额度”目前尚未建立用户组/成员关系数据模型，仍属于待开发增量。
 
 ## 自动化验证结果
 
@@ -29,8 +30,8 @@
 
 ## 生产发布验收（2026-09-20）
 
-- GitHub Pages 工作流 `Deploy Frontend to GitHub Pages` 运行 `35509402177` 成功；正式域名 `https://f.shengxia.me/version.json` 返回 SHA `6481c68381c5f520f43e636670afc9020ebe53c1`。
-- 后端 release `20260920-6481c68381c5-final` 已通过远端 `SHA256SUMS` 校验并原子切换；`/opt/jarvis/current` 指向该 release，旧版本 `20260920-30107f4` 保留用于回滚。
+- GitHub Pages 工作流 `Deploy Frontend to GitHub Pages` 运行 `35511233253` 成功；正式域名 `https://f.shengxia.me/version.json` 返回 SHA `6fe8f83a90f271183ec3c8d0949f7af5da89cdd9`。
+- 后端 release `20260920-6fe8f83-final` 已通过远端原子切换；`/opt/jarvis/current` 指向该 release，旧版本 `20260920-6481c68381c5-final` 保留用于回滚。
 - 远端 `jarvis-ai.service`、`jarvis-java.service`、`postgresql` 均为 active；Java readiness、Python 内部 token readiness 和公网 Java readiness 均返回 200。
 - 公网数据库健康接口返回 401（该接口受认证保护），属于预期安全行为。
 
