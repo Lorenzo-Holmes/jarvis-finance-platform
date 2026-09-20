@@ -216,13 +216,36 @@ async function scrollChatToBottom() {
   if (chatBox.value) chatBox.value.scrollTop = chatBox.value.scrollHeight
 }
 
-function stopChat() {
+async function stopChat() {
   const runId = agentRunId.value
   currentChatAbort?.abort()
+  currentChatAbort = null
   recoveryClose?.()
   recoveryClose = null
   if (runId) {
-    api.agentCancel(runId).catch(() => {})
+    try {
+      await api.agentCancel(runId)
+      const nextSequence = Math.max(0, ...agentSteps.value.map(step => Number(step.sequence) || 0)) + 1
+      applyAgentEvent({
+        runId,
+        stepId: `terminal:${runId}`,
+        sequence: nextSequence,
+        type: 'run_cancelled',
+        status: 'cancelled',
+        title: '研究工作流已停止',
+        tool: null,
+        inputSummary: null,
+        outputSummary: '已取消本次研究运行',
+        payload: {},
+        startedAt: null,
+        finishedAt: new Date().toISOString(),
+        durationMs: null,
+        errorCode: 'AGENT_CANCELLED',
+      })
+      loadAgentHistory()
+    } catch (error) {
+      agentError.value = error?.message || '停止 Agent 运行失败，请稍后重试'
+    }
   }
 }
 
