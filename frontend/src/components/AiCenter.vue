@@ -4,6 +4,7 @@ import { api } from '../api/client'
 import DataState from './common/DataState.vue'
 import MarkdownContent from './common/MarkdownContent.vue'
 import ResearchTasksPanel from './ResearchTasksPanel.vue'
+import AgentTracePanel from './AgentTracePanel.vue'
 import { extractFinancialDocument } from '../utils/financialDocumentImport'
 
 const props = defineProps({
@@ -20,6 +21,17 @@ const deskView = ref('chat')
 const messages = ref([])
 const input = ref('')
 const sending = ref(false)
+// Agent 工作流可观察轨迹（Codex 风格）
+const agentSteps = ref([])
+const agentRunning = ref(false)
+const agentRunId = ref('')
+const agentError = ref('')
+const historyOpen = ref(false)
+const historyLoading = ref(false)
+const historyError = ref('')
+const agentHistory = ref([])
+const historySelectedId = ref('')
+const historyReplayLoading = ref(false)
 const aiStatus = ref(null)
 const statusLoading = ref(true)
 const statusError = ref('')
@@ -35,6 +47,7 @@ const documentImportError = ref('')
 let attachmentSequence = 0
 let documentImportController = null
 let currentChatAbort = null
+let recoveryClose = null
 
 // ---- 智能报价 ----
 const quoteData = ref(null)
@@ -204,7 +217,132 @@ async function scrollChatToBottom() {
 }
 
 function stopChat() {
+  const runId = agentRunId.value
   currentChatAbort?.abort()
+  recoveryClose?.()
+  recoveryClose = null
+  if (runId) {
+    api.agentCancel(runId).catch(() => {})
+  }
+}
+
+function applyAgentEvent(event) {
+  if (!event || typeof event !== 'object') return
+  if (event.runId) agentRunId.value = event.runId
+  const summary = event.outputSummary || event.inputSummary || ''
+  const next = {
+    ...event,
+    content: summary,
+    message: summary,
+  }
+  const index = agentSteps.value.findIndex(step => step.stepId && step.stepId === event.stepId)
+  if (index >= 0) {
+    agentSteps.value.splice(index, 1, { ...agentSteps.value[index], ...next })
+  } else {
+    agentSteps.value.push(next)
+  }
+  if (event.type === 'run_failed') {
+    agentError.value = event.outputSummary || 'Agent 执行失败，请稍后重试'
+  }
+  if (event.type === 'assistant_delta' && event.payload?.content) {
+    return event.payload.content
+  }
+  if (['run_completed', 'run_failed', 'run_cancelled'].includes(event.type)) {
+    agentRunning.value = false
+  }
+  return ''
+}
+
+function responseData(response) {
+  return response?.data ?? response
+}
+
+async function loadAgentHistory() {
+  historyLoading.value = true
+  historyError.value = ''
+  try {
+    const response = await api.agentRuns()
+    const data = responseData(response)
+    agentHistory.value = Array.isArray(data) ? data : []
+  } catch (e) {
+    historyError.value = e?.message || '历史运行读取失败'
+  } finally {
+    historyLoading.value = false
+  }
+}
+
+async function openAgentHistory() {
+  historyOpen.value = true
+  await loadAgentHistory()
+}
+
+function formatHistoryTime(value) {
+  if (!value) return '时间未知'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? String(value) : new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+  }).format(date)
+}
+
+function historyStatusLabel(status) {
+  return ({ pending: '排队中', running: '执行中', completed: '已完成', failed: '失败', cancelled: '已停止' })[status] || status || '未知'
+}
+
+async function replayAgentRun(run) {
+  if (!run?.runId || historyReplayLoading.value) return
+  historySelectedId.value = run.runId
+  historyReplayLoading.value = true
+  historyError.value = ''
+  try {
+    const response = await api.agentRunEvents(run.runId)
+    const events = responseData(response)
+    if (!Array.isArray(events)) throw new Error('历史事件格式异常')
+    agentRunId.value = run.runId
+    agentSteps.value = []
+    agentError.value = ''
+    let answer = ''
+    events.forEach(event => {
+      const content = applyAgentEvent(event)
+      if (content) answer += content
+    })
+    agentRunning.value = ['pending', 'running'].includes(run.status)
+    messages.value = messages.value.slice(0, 1)
+    push('user', run.question || '历史研究运行')
+    push('assistant', answer || (run.status === 'failed' ? '历史运行未生成完整结论。' : '该运行没有可展示的模型结论。'))
+    await scrollChatToBottom()
+  } catch (e) {
+    historyError.value = e?.message || '历史运行恢复失败'
+  } finally {
+    historyReplayLoading.value = false
+  }
+}
+
+async function recoverCurrentRun() {
+  if (!agentRunId.value) return
+  const runId = agentRunId.value
+  const run = agentHistory.value.find(item => item.runId === runId) || { runId, status: 'running', question: '当前研究运行' }
+  await replayAgentRun(run)
+  if (!['pending', 'running'].includes(run.status)) return
+  let lastSequence = Math.max(0, ...agentSteps.value.map(step => Number(step.sequence) || 0))
+  recoveryClose?.()
+  recoveryClose = api.agentRunStream(runId, ({ data }) => {
+    const sequence = Number(data?.sequence) || 0
+    if (sequence <= lastSequence) return
+    lastSequence = sequence
+    const content = applyAgentEvent(data)
+    if (content) {
+      const lastAssistant = [...messages.value].map((message, index) => ({ message, index }))
+        .reverse().find(item => item.message.role === 'assistant')
+      if (lastAssistant) lastAssistant.message.content += content
+    }
+    if (['run_completed', 'run_failed', 'run_cancelled'].includes(data?.type)) {
+      recoveryClose?.()
+      recoveryClose = null
+      loadAgentHistory()
+    }
+  }, () => {
+    historyError.value = '恢复订阅中断，可稍后再次点击“恢复轨迹”'
+  })
 }
 
 async function sendChat() {
@@ -227,40 +365,44 @@ async function sendChat() {
   }))
   push('assistant', '')
   const assistantIndex = messages.value.length - 1
+  agentSteps.value = []
+  agentRunId.value = ''
+  agentError.value = ''
+  agentRunning.value = true
   sending.value = true
-  let streamFinished = false
   currentChatAbort = new AbortController()
   await scrollChatToBottom()
   try {
-    await api.aiChatStream(history, ({ event, data }) => {
-      if (event === 'delta' && data?.content) {
-        messages.value[assistantIndex].content += data.content
+    const priorContext = history.slice(-8).map(item => `${item.role === 'user' ? '用户' : 'JARVIS'}：${item.content}`).join('\n')
+    const question = priorContext
+      ? `以下是此前研究对话上下文：\n${priorContext}\n\n当前研究问题：\n${apiContent}`
+      : apiContent
+    await api.agentResearchStream(question, ({ event, data }) => {
+      if (event === 'agent_step') {
+        const content = applyAgentEvent(data)
+        if (content) messages.value[assistantIndex].content += content
         scrollChatToBottom()
-      } else if (event === 'done') {
-        // 部分代理在 SSE 已发送 done 后关闭 chunked 连接时，浏览器仍会
-        // 抛出一次 network error。done 已确认模型输出完整，不能再把它
-        // 呈现为失败。
-        streamFinished = true
       } else if (event === 'error') {
-        throw new Error(data?.message || 'AI 流式响应中断')
+        throw new Error(data?.message || data?.outputSummary || 'Agent 流式响应中断')
       }
     }, currentChatAbort.signal)
     if (!messages.value[assistantIndex].content) {
-      messages.value[assistantIndex].content = '（无回复）'
+      messages.value[assistantIndex].content = agentError.value ? `⚠️ ${agentError.value}` : '（无回复）'
     }
   } catch (e) {
     if (e?.name === 'AbortError') {
       if (!messages.value[assistantIndex].content) messages.value[assistantIndex].content = '（已停止）'
-    } else if (streamFinished) {
-      // 兼容 Cloudflare/Nginx 在 SSE 正常结束后的连接收尾异常。
-      if (!messages.value[assistantIndex].content) messages.value[assistantIndex].content = '（无回复）'
     } else {
       const prefix = messages.value[assistantIndex].content ? '\n\n' : ''
       messages.value[assistantIndex].content += `${prefix}⚠️ ${e?.message || e}`
+      agentError.value = e?.message || String(e)
+      if (agentRunId.value) loadAgentHistory()
     }
   } finally {
+    agentRunning.value = false
     currentChatAbort = null
     sending.value = false
+    if (historyOpen.value) loadAgentHistory()
     scrollChatToBottom()
   }
 }
@@ -374,6 +516,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', onResearchKeydown)
   documentImportController?.abort()
   currentChatAbort?.abort()
+  recoveryClose?.()
 })
 </script>
 
@@ -386,6 +529,7 @@ onBeforeUnmount(() => {
       </div>
       <div class="research-head-actions">
         <button v-if="props.researchContext" type="button" class="context-action" @click="useResearchContext">引用当前对象</button>
+        <button type="button" class="context-action history-trigger" @click="openAgentHistory">运行历史</button>
         <span class="engine-status" :title="statusError || '研究引擎状态'">
           <i :class="aiStatus?.available ? 'ok' : 'bad'"></i>
           {{ statusLoading ? '检查研究服务' : (aiStatus?.available ? '研究服务可用' : '研究服务暂不可用') }}
@@ -519,6 +663,13 @@ onBeforeUnmount(() => {
           <button v-for="s in sugg" :key="s" type="button" @click="useSuggestion(s)">{{ s }}</button>
         </div>
 
+        <AgentTracePanel
+          :steps="agentSteps"
+          :running="agentRunning"
+          :recoverable="Boolean(agentError && agentRunId)"
+          @stop="stopChat"
+          @recover="recoverCurrentRun"
+        />
         <div class="conversation-label"><span>JARVIS 注释</span><small>基于当前研究上下文持续追加</small></div>
         <div class="chat-window" ref="chatBox" role="log" aria-live="polite" aria-relevant="additions text" aria-label="研究会话记录">
           <div v-for="(m, i) in messages" :key="i" class="message-row" :class="m.role">
@@ -621,6 +772,34 @@ onBeforeUnmount(() => {
         </footer>
       </aside>
     </div>
+
+    <div v-if="historyOpen" class="agent-history-backdrop" @click="historyOpen = false"></div>
+    <aside v-if="historyOpen" class="agent-history-drawer" aria-label="Agent 运行历史">
+      <header class="history-drawer-head">
+        <div>
+          <span class="trace-kicker">RUN ARCHIVE</span>
+          <b>历史运行</b>
+        </div>
+        <button type="button" class="history-close" aria-label="关闭历史运行" @click="historyOpen = false">×</button>
+      </header>
+      <div class="history-drawer-toolbar">
+        <span>PostgreSQL · 最近 50 次</span>
+        <button type="button" @click="loadAgentHistory" :disabled="historyLoading">{{ historyLoading ? '读取中' : '刷新' }}</button>
+      </div>
+      <p v-if="historyError" class="history-error">{{ historyError }}</p>
+      <div v-if="historyLoading && !agentHistory.length" class="history-empty">正在读取运行历史…</div>
+      <div v-else-if="!agentHistory.length" class="history-empty">还没有已保存的研究运行。</div>
+      <ol v-else class="history-list">
+        <li v-for="run in agentHistory" :key="run.runId" :class="{ selected: historySelectedId === run.runId }">
+          <button type="button" class="history-card" @click="replayAgentRun(run)">
+            <span class="history-card-top"><b>{{ historyStatusLabel(run.status) }}</b><time>{{ formatHistoryTime(run.createdAt) }}</time></span>
+            <strong>{{ run.question || '未命名研究运行' }}</strong>
+            <small>{{ run.eventCount || 0 }} 个事件 · {{ run.runId }}</small>
+          </button>
+        </li>
+      </ol>
+      <div v-if="historyReplayLoading" class="history-replay-status">正在从事件日志恢复轨迹…</div>
+    </aside>
   </div>
 </template>
 
@@ -666,6 +845,41 @@ onBeforeUnmount(() => {
 .desk-switch button:active { transform: scale(.97); }
 .desk-switch button.on { color: var(--text); background: color-mix(in srgb, var(--workspace-accent-wash) 68%, transparent); }
 .desk-tasks { min-height: 0; flex: 1; overflow: auto; }
+.history-trigger { border-color: color-mix(in srgb, var(--accent-strong) 42%, var(--line)); }
+.agent-history-backdrop { position: fixed; inset: 0; z-index: 30; background: rgba(4, 7, 9, .38); }
+.agent-history-drawer {
+  position: fixed;
+  z-index: 31;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(370px, 92vw);
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--material-border, var(--line));
+  background: color-mix(in srgb, var(--surface) 94%, #0b1013);
+  box-shadow: -18px 0 42px rgba(0, 0, 0, .28);
+}
+.history-drawer-head { display: flex; align-items: center; justify-content: space-between; padding: 20px 18px 15px; border-bottom: 1px solid var(--line); }
+.history-drawer-head > div { display: grid; gap: 5px; }
+.history-drawer-head b { color: var(--text); font-size: 15px; font-weight: 650; }
+.history-close { width: 28px; height: 28px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; font-size: 17px; line-height: 1; }
+.history-close:hover { color: var(--text); background: var(--workspace-hover-bg); }
+.history-drawer-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 18px; border-bottom: 1px solid var(--line); color: var(--subtle); font: 600 8px/1.4 "IBM Plex Mono", ui-monospace, monospace; }
+.history-drawer-toolbar button { border: 0; background: transparent; color: var(--accent-strong); cursor: pointer; font-size: 9px; }
+.history-drawer-toolbar button:disabled { opacity: .5; cursor: wait; }
+.history-list { list-style: none; overflow: auto; margin: 0; padding: 10px; }
+.history-list li { margin-bottom: 7px; }
+.history-card { width: 100%; display: grid; gap: 7px; padding: 11px 10px; border: 1px solid var(--line); border-radius: 8px; background: color-mix(in srgb, var(--workspace-control-bg, var(--surface)) 80%, transparent); color: var(--text); text-align: left; cursor: pointer; }
+.history-list li.selected .history-card, .history-card:hover { border-color: color-mix(in srgb, var(--accent-strong) 66%, var(--line)); background: color-mix(in srgb, var(--workspace-accent-wash) 45%, transparent); }
+.history-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.history-card-top b { color: var(--accent-strong); font: 700 9px/1.2 "IBM Plex Mono", ui-monospace, monospace; }
+.history-card-top time { color: var(--subtle); font: 600 8px/1.2 "IBM Plex Mono", ui-monospace, monospace; }
+.history-card strong { display: -webkit-box; overflow: hidden; color: var(--text); font-size: 11px; line-height: 1.45; font-weight: 600; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.history-card small { overflow: hidden; color: var(--subtle); font: 8px/1.3 "IBM Plex Mono", ui-monospace, monospace; text-overflow: ellipsis; white-space: nowrap; }
+.history-empty, .history-error, .history-replay-status { margin: 14px 18px; color: var(--muted); font-size: 10px; line-height: 1.6; }
+.history-error { color: var(--negative, #e45d5d); }
+.history-replay-status { margin-top: auto; padding-top: 12px; border-top: 1px solid var(--line); }
 .engine-status i { width: 6px; height: 6px; border-radius: 50%; background: var(--bad); }
 .engine-status i.ok { background: var(--ok); }
 

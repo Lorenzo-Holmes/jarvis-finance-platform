@@ -122,6 +122,8 @@ class FlywaySchemaContractTest {
                 "scheduled_task",
                 "scheduled_task_run",
                 "user_notification",
+                "agent_run",
+                "agent_event",
                 "flyway_schema_history"));
 
         assertEquals(expected, tableNames(), "迁移产出的表集合");
@@ -209,6 +211,22 @@ class FlywaySchemaContractTest {
                         "link_kind", "link_ref", "dedup_key", "repeat_count",
                         "read_at", "created_at", "last_seen_at")),
                 "user_notification 的列与 UserNotification 实体不符，现有: " + columns);
+    }
+
+    @Test
+    void theAgentTablesHaveEveryColumnTheEntitiesMap() throws Exception {
+        Set<String> runColumns = columnNames("agent_run");
+        assertTrue(runColumns.containsAll(List.of(
+                        "run_id", "user_id", "question", "status", "created_at", "started_at",
+                        "finished_at", "event_count", "last_sequence", "error_message")),
+                "agent_run 的列与实体不符，现有: " + runColumns);
+
+        Set<String> eventColumns = columnNames("agent_event");
+        assertTrue(eventColumns.containsAll(List.of(
+                        "id", "run_id", "step_id", "sequence", "event_type", "status", "title",
+                        "tool", "input_summary", "output_summary", "payload_json", "started_at",
+                        "finished_at", "duration_ms", "error_code")),
+                "agent_event 的列与实体不符，现有: " + eventColumns);
     }
 
     // ==================== 夹具 ====================

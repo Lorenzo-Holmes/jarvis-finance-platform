@@ -1,0 +1,349 @@
+package com.jarvis.research.agent;
+
+import com.jarvis.research.ai.DeterministicContext;
+import com.jarvis.research.ai.KlineMetrics;
+import com.jarvis.research.ai.RiskMetrics;
+import com.jarvis.research.market.MarketDataService;
+import com.jarvis.research.market.dto.DailyKlineDTO;
+import com.jarvis.research.market.dto.KlineBarDTO;
+import com.jarvis.research.news.NewsDigest;
+import com.jarvis.research.service.AiProxyService;
+import com.jarvis.research.service.AiRateLimitService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+
+import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
+
+/**
+ * 金融研究 Agent 的第一条真实工作流：行情快照 -> 日 K/指标 -> AI 汇总。
+ * 工具均为只读操作，服务端生成上下文，浏览器不能伪造行情指标。
+ */
+@Service
+@RequiredArgsConstructor
+public class AgentOrchestrator {
+
+    private static final String MARKET = "gold_etf";
+
+    private final MarketDataService marketDataService;
+    private final AiProxyService aiProxyService;
+    private final AiRateLimitService aiRateLimitService;
+    private final AgentToolRegistry toolRegistry;
+
+    public void run(Long userId, String runId, String question, Consumer<AgentEvent> sink,
+                    BooleanSupplier cancelled) {
+        try {
+            checkCancelled(cancelled);
+            emit(sink, AgentEvent.create(
+                    "run_started", "running", "Agent 已开始执行研究工作流", null,
+                    question, "已建立本次研究运行上下文", Map.of("workflow", "financial-research-v1"),
+                    Instant.now(), null, null, null));
+
+            emit(sink, AgentEvent.create(
+                    "plan_created", "completed", "研究计划已生成", null, question,
+                    "新闻、财报、行情、指标、风险检查与模型汇总", Map.of(
+                            "steps", List.of("新闻摘要", "财报解析", "行情快照", "日 K 与技术指标", "风险检查", "AI 研究结论"),
+                            "readOnlyTools", toolRegistry.readOnlyTools()),
+                    Instant.now(), Instant.now(), 0L, null));
+
+            checkCancelled(cancelled);
+            Map<String, Object> news = executeNewsTool(sink, cancelled);
+            Map<String, Object> filing = executeFinancialReportTool(sink, question, userId, cancelled);
+            Map<String, Object> prices = executeQuoteTool(sink, cancelled);
+
+            checkCancelled(cancelled);
+            Map<String, Object> kline = executeKlineTool(sink, cancelled);
+            Map<String, Object> metrics = executeIndicatorTool(sink, kline, cancelled);
+            Map<String, Object> risk = executeRiskTool(sink, kline, cancelled);
+
+            checkCancelled(cancelled);
+            executeSynthesis(userId, sink, question, news, filing, prices, kline, metrics, risk, cancelled);
+
+            emit(sink, AgentEvent.create(
+                    "run_completed", "completed", "研究工作流完成", null, null,
+                    "已生成可继续追问的 Markdown 研究结论", Map.of(), Instant.now(), Instant.now(), 0L, null));
+        } catch (AgentCancelledException ignored) {
+            // 取消事件由 AgentRunService 统一发布，避免重复发送 terminal event。
+        } catch (Exception error) {
+            String message = safeMessage(error);
+            emit(sink, AgentEvent.create(
+                    "run_failed", "failed", "研究工作流失败", null, null, message,
+                    Map.of(), Instant.now(), Instant.now(), 0L, "AGENT_EXECUTION_FAILED"));
+        }
+    }
+
+    private Map<String, Object> executeNewsTool(Consumer<AgentEvent> sink, BooleanSupplier cancelled) {
+        Instant started = Instant.now();
+        emit(sink, AgentEvent.create("tool_call", "running", "读取市场新闻", "MarketNewsTool",
+                "daily", "读取已缓存的市场新闻摘要", Map.of(), started, null, null, null));
+        try {
+            checkCancelled(cancelled);
+            Map<String, Object> raw = aiProxyService.post("/internal/rss/digest?refresh=false&force=false", Map.of());
+            Map<String, Object> news = NewsDigest.fromDigest(raw, 8);
+            emit(sink, AgentEvent.create("tool_result", "completed", "市场新闻读取完成", "MarketNewsTool",
+                    "daily", "已取得 " + listSize(news.get("items")) + " 条新闻",
+                    Map.of("available", news.getOrDefault("available", false),
+                            "items", news.getOrDefault("items", List.of()),
+                            "generated_at", news.getOrDefault("generated_at", "")),
+                    started, Instant.now(), elapsed(started), null));
+            return news;
+        } catch (AgentCancelledException cancelledException) {
+            throw cancelledException;
+        } catch (Exception error) {
+            emitToolFailure(sink, "MarketNewsTool", started, error);
+            return NewsDigest.unavailable(NewsDigest.REASON_UNAVAILABLE);
+        }
+    }
+
+    private Map<String, Object> executeFinancialReportTool(Consumer<AgentEvent> sink, String question,
+                                                             Long userId, BooleanSupplier cancelled) {
+        Instant started = Instant.now();
+        boolean hasFiling = isFinancialDocument(question);
+        emit(sink, AgentEvent.create("tool_call", hasFiling ? "running" : "completed",
+                hasFiling ? "解析财报材料" : "财报工具待命", "FinancialReportTool", null,
+                hasFiling ? "将用户提供的财报材料交给财务解析器" : "本轮未检测到财报原文，跳过额外解析",
+                Map.of("available", hasFiling), started, hasFiling ? null : Instant.now(),
+                hasFiling ? null : 0L, null));
+        if (!hasFiling) return Map.of("available", false, "reason", "no_filing_context");
+        try {
+            checkCancelled(cancelled);
+            Map<String, Object> response = aiProxyService.post("/api/ai/financial/report",
+                    Map.of("content", question));
+            aiRateLimitService.recordTokens(userId, response);
+            String content = extractContent(response);
+            Map<String, Object> filing = new LinkedHashMap<>();
+            filing.put("available", true);
+            filing.put("analysis", content);
+            emit(sink, AgentEvent.create("tool_result", "completed", "财报解析完成", "FinancialReportTool",
+                    null, "已生成财报结构化摘要", Map.of("available", true, "analysis", trim(content, 6000)),
+                    started, Instant.now(), elapsed(started), null));
+            return filing;
+        } catch (AgentCancelledException cancelledException) {
+            throw cancelledException;
+        } catch (Exception error) {
+            emitToolFailure(sink, "FinancialReportTool", started, error);
+            return Map.of("available", false, "reason", "financial_report_failed");
+        }
+    }
+
+    private Map<String, Object> executeQuoteTool(Consumer<AgentEvent> sink, BooleanSupplier cancelled) {
+        Instant started = Instant.now();
+        emit(sink, AgentEvent.create("tool_call", "running", "读取实时行情", "MarketQuoteTool",
+                MARKET, "正在读取服务端行情快照", Map.of(), started, null, null, null));
+        try {
+            checkCancelled(cancelled);
+            Map<String, Object> prices = marketDataService.getLatestPrices();
+            Map<String, Object> summary = new LinkedHashMap<>();
+            summary.put("markets", prices.keySet());
+            summary.put("available", !prices.isEmpty());
+            emit(sink, AgentEvent.create("tool_result", "completed", "行情读取完成", "MarketQuoteTool",
+                    MARKET, "已取得服务端行情快照", summary, started, Instant.now(), elapsed(started), null));
+            return prices;
+        } catch (AgentCancelledException cancelledException) {
+            throw cancelledException;
+        } catch (Exception error) {
+            emitToolFailure(sink, "MarketQuoteTool", started, error);
+            return Map.of();
+        }
+    }
+
+    private Map<String, Object> executeKlineTool(Consumer<AgentEvent> sink, BooleanSupplier cancelled) {
+        Instant started = Instant.now();
+        emit(sink, AgentEvent.create("tool_call", "running", "读取日 K 线", "MarketKlineTool",
+                MARKET + ":60", "正在读取最近 60 根日 K", Map.of(), started, null, null, null));
+        try {
+            checkCancelled(cancelled);
+            DailyKlineDTO dto = marketDataService.getDailyKline(MARKET, 60);
+            Map<String, Object> kline = klineToMap(dto);
+            emit(sink, AgentEvent.create("tool_result", "completed", "日 K 线读取完成", "MarketKlineTool",
+                    MARKET + ":60", "已取得 " + kline.getOrDefault("count", 0) + " 根日 K",
+                    Map.of("market", MARKET, "count", kline.getOrDefault("count", 0)),
+                    started, Instant.now(), elapsed(started), null));
+            return kline;
+        } catch (AgentCancelledException cancelledException) {
+            throw cancelledException;
+        } catch (Exception error) {
+            emitToolFailure(sink, "MarketKlineTool", started, error);
+            return Map.of();
+        }
+    }
+
+    private Map<String, Object> executeIndicatorTool(Consumer<AgentEvent> sink,
+                                                       Map<String, Object> kline,
+                                                       BooleanSupplier cancelled) {
+        Instant started = Instant.now();
+        emit(sink, AgentEvent.create("tool_call", "running", "计算技术指标", "TechnicalIndicatorTool",
+                MARKET, "计算 SMA、EMA、RSI 与支撑阻力", Map.of(), started, null, null, null));
+        try {
+            checkCancelled(cancelled);
+            Map<String, Object> metrics = KlineMetrics.compute(kline);
+            emit(sink, AgentEvent.create("tool_result", "completed", "技术指标计算完成", "TechnicalIndicatorTool",
+                    MARKET, "指标已准备给研究模型引用", metrics, started, Instant.now(), elapsed(started), null));
+            return metrics;
+        } catch (AgentCancelledException cancelledException) {
+            throw cancelledException;
+        } catch (Exception error) {
+            emitToolFailure(sink, "TechnicalIndicatorTool", started, error);
+            return Map.of("available", false, "reason", "indicator_failed");
+        }
+    }
+
+    private Map<String, Object> executeRiskTool(Consumer<AgentEvent> sink, Map<String, Object> kline,
+                                                 BooleanSupplier cancelled) {
+        Instant started = Instant.now();
+        emit(sink, AgentEvent.create("tool_call", "running", "检查历史风险", "RiskCheckTool",
+                MARKET, "根据服务端日 K 计算 VaR、ES、波动率与最大回撤", Map.of(), started, null, null, null));
+        try {
+            checkCancelled(cancelled);
+            List<Object> closes = new ArrayList<>();
+            Object rows = kline.get("data");
+            if (rows instanceof List<?> list) {
+                for (Object row : list) {
+                    if (row instanceof Map<?, ?> map && map.get("close") != null) closes.add(map.get("close"));
+                }
+            }
+            Map<String, Object> risk = RiskMetrics.compute(closes, 0.95, null, MARKET).toMap();
+            boolean available = Boolean.TRUE.equals(risk.get("available"));
+            emit(sink, AgentEvent.create("tool_result", "completed", "历史风险检查完成", "RiskCheckTool",
+                    MARKET, available ? "已取得 VaR、ES、波动率与回撤" : "风险样本不足，已返回降级结果",
+                    risk, started, Instant.now(), elapsed(started), null));
+            return risk;
+        } catch (AgentCancelledException cancelledException) {
+            throw cancelledException;
+        } catch (Exception error) {
+            emitToolFailure(sink, "RiskCheckTool", started, error);
+            return Map.of("available", false, "reason", "risk_check_failed");
+        }
+    }
+
+    private void executeSynthesis(Long userId, Consumer<AgentEvent> sink, String question,
+                                  Map<String, Object> news, Map<String, Object> filing,
+                                  Map<String, Object> prices, Map<String, Object> kline,
+                                  Map<String, Object> metrics, Map<String, Object> risk,
+                                  BooleanSupplier cancelled) {
+        Instant started = Instant.now();
+        emit(sink, AgentEvent.create("tool_call", "running", "生成研究结论", "ResearchSynthesisTool",
+                question, "将服务端行情与指标交给 AI 生成结论", Map.of(), started, null, null, null));
+        try {
+            checkCancelled(cancelled);
+            Map<String, Object> context = new LinkedHashMap<>();
+            context.put("generated_at", Instant.now().toString());
+            context.put("prices", prices);
+            context.put("news", news);
+            context.put("filing", filing);
+            context.put("klines", Map.of(MARKET, kline));
+            context.put("metrics", DeterministicContext.compute(context));
+            context.put("risk", risk);
+
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("messages", List.of(Map.of("role", "user", "content", question)));
+            body.put("research_context", context);
+            body.put("metrics", metrics);
+            Map<String, Object> response = aiProxyService.post("/api/ai/chat", body);
+            aiRateLimitService.recordTokens(userId, response);
+            String content = extractContent(response);
+            emit(sink, AgentEvent.create("assistant_delta", "completed", "研究结论已生成", "ResearchSynthesisTool",
+                    null, "Markdown 结论已返回", Map.of("content", content), started,
+                    Instant.now(), elapsed(started), null));
+            emit(sink, AgentEvent.create("tool_result", "completed", "研究汇总完成", "ResearchSynthesisTool",
+                    question, "模型已引用服务端研究上下文", Map.of(), started, Instant.now(), elapsed(started), null));
+        } catch (AgentCancelledException cancelledException) {
+            throw cancelledException;
+        } catch (Exception error) {
+            emitToolFailure(sink, "ResearchSynthesisTool", started, error);
+            throw error;
+        }
+    }
+
+    private static Map<String, Object> klineToMap(DailyKlineDTO dto) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        if (dto == null) return result;
+        result.put("market", dto.market());
+        result.put("range", dto.range());
+        result.put("as_of", dto.asOf());
+        result.put("count", dto.count());
+        List<Map<String, Object>> rows = new ArrayList<>();
+        if (dto.data() != null) {
+            for (KlineBarDTO bar : dto.data()) {
+                if (bar == null) continue;
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("date", bar.date());
+                row.put("open", bar.open());
+                row.put("close", bar.close());
+                row.put("high", bar.high());
+                row.put("low", bar.low());
+                row.put("volume", bar.volume());
+                rows.add(row);
+            }
+        }
+        result.put("data", rows);
+        return result;
+    }
+
+    private static String extractContent(Map<String, Object> response) {
+        if (response == null) return "（模型未返回内容）";
+        Object data = response.get("data");
+        if (data instanceof Map<?, ?> map) {
+            Object nested = map.get("content");
+            if (nested != null) return String.valueOf(nested);
+            Object message = map.get("message");
+            if (message instanceof Map<?, ?> messageMap && messageMap.get("content") != null) {
+                return String.valueOf(messageMap.get("content"));
+            }
+        }
+        Object content = response.get("content");
+        return content == null ? "（模型未返回内容）" : String.valueOf(content);
+    }
+
+    private static boolean isFinancialDocument(String question) {
+        if (question == null || question.isBlank()) return false;
+        if (question.length() >= 300) return true;
+        return question.contains("财报") || question.contains("年报") || question.contains("季报")
+                || question.contains("营收") || question.contains("现金流") || question.contains("净利润")
+                || question.contains("10-K") || question.contains("10-Q");
+    }
+
+    private static int listSize(Object value) {
+        return value instanceof List<?> list ? list.size() : 0;
+    }
+
+    private static String trim(String value, int max) {
+        if (value == null) return null;
+        return value.length() <= max ? value : value.substring(0, max);
+    }
+
+    private void emitToolFailure(Consumer<AgentEvent> sink, String tool, Instant started, Exception error) {
+        emit(sink, AgentEvent.create("tool_result", "failed", tool + " 执行失败", tool,
+                null, safeMessage(error), Map.of(), started, Instant.now(), elapsed(started), "TOOL_FAILED"));
+    }
+
+    private static long elapsed(Instant started) {
+        return Math.max(0L, Duration.between(started, Instant.now()).toMillis());
+    }
+
+    private static String safeMessage(Throwable error) {
+        String message = error == null ? "未知错误" : error.getMessage();
+        if (message == null || message.isBlank()) return "执行失败，请稍后重试";
+        String sanitized = message.replaceAll("(?i)(authorization|token|api[-_]?key|cookie)\\s*[:=]\\s*\\S+", "$1=[已隐藏]");
+        return sanitized.length() > 240 ? sanitized.substring(0, 240) : sanitized;
+    }
+
+    private static void checkCancelled(BooleanSupplier cancelled) {
+        if (Thread.currentThread().isInterrupted() || cancelled.getAsBoolean()) {
+            throw new AgentCancelledException();
+        }
+    }
+
+    private static void emit(Consumer<AgentEvent> sink, AgentEvent event) {
+        sink.accept(event);
+    }
+
+    private static final class AgentCancelledException extends RuntimeException {
+    }
+}

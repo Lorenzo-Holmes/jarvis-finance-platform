@@ -266,6 +266,18 @@ export const api = {
   aiChatStream: (messages, onEvent, signal) => postSse(
     API_BASE, '/api/ai/chat/stream', { messages }, onEvent, signal,
   ),
+  // Agent Research Runtime：Codex-style 可观察工具调用流
+  agentResearchStream: (question, onEvent, signal) => postSse(
+    API_BASE, '/api/agent/research/stream', { question }, onEvent, signal,
+  ),
+  agentRuns: () => get(API_BASE, '/api/agent/runs'),
+  agentRun: (runId) => get(API_BASE, `/api/agent/runs/${encodeURIComponent(runId)}`),
+  agentRunEvents: (runId) => get(API_BASE, `/api/agent/runs/${encodeURIComponent(runId)}/events`),
+  agentRunStream: (runId, onEvent, onError) => openSse(
+    API_BASE, `/api/agent/runs/${encodeURIComponent(runId)}/stream`, 'agent_step',
+    data => onEvent?.({ event: 'agent_step', data }), onError,
+  ),
+  agentCancel: (runId) => request(API_BASE, `/api/agent/runs/${encodeURIComponent(runId)}`, { method: 'DELETE' }),
   // 智能询报价（FR-07）：现价/涨跌 + 未来价格走势趋势区间 + AI 解读。
   // closes 由 Java 服务端从自营 K 线库注入并覆盖客户端传值，前端只传标的与预测参数。
   aiQuote: (priceData, options = {}) => post(API_BASE, '/api/ai/quote', {
