@@ -15,6 +15,7 @@ LOCAL_METRICS_URL="${LOCAL_METRICS_URL:-http://127.0.0.1:8201/actuator/prometheu
 CHECK_PY_BLOCK="${CHECK_PY_BLOCK:-1}"
 CHECK_AGENT_STREAM="${CHECK_AGENT_STREAM:-0}"
 CHECK_AGENT_RECOVERY="${CHECK_AGENT_RECOVERY:-0}"
+CHECK_RSS_NOTIFICATION="${CHECK_RSS_NOTIFICATION:-0}"
 : "${SMOKE_EMAIL:?SMOKE_EMAIL is required}"
 : "${SMOKE_PASSWORD:?SMOKE_PASSWORD is required}"
 
@@ -23,7 +24,16 @@ for cmd in curl python3; do
 done
 
 cookie_jar="$(mktemp)"
-cleanup() { rm -f "$cookie_jar"; }
+rss_smoke_task_id=""
+cleanup() {
+  # 任务创建后的任何异常都不能把临时 smoke 任务留在生产调度器里。
+  if [ -n "$rss_smoke_task_id" ] && [ -n "${csrf_token:-}" ]; then
+    curl "${curl_args[@]}" -b "$cookie_jar" -c "$cookie_jar" \
+      -X DELETE -H "X-XSRF-TOKEN: $csrf_token" \
+      "$SMOKE_API_BASE/api/scheduled-tasks/$rss_smoke_task_id" >/dev/null 2>&1 || true
+  fi
+  rm -f "$cookie_jar"
+}
 trap cleanup EXIT
 
 curl_args=(--silent --show-error --fail-with-body --connect-timeout 5 --max-time 20)
@@ -180,6 +190,101 @@ post_wrapped_ok() {
   echo "OK  $label"
 }
 
+delete_rss_smoke_task() {
+  if [ -z "$rss_smoke_task_id" ]; then
+    return 0
+  fi
+  csrf_token="$(fetch_csrf_token)"
+  curl "${curl_args[@]}" -b "$cookie_jar" -c "$cookie_jar" \
+    -X DELETE -H "X-XSRF-TOKEN: $csrf_token" \
+    "$SMOKE_API_BASE/api/scheduled-tasks/$rss_smoke_task_id" >/dev/null
+  echo "OK  RSS notification smoke task cleanup"
+  rss_smoke_task_id=""
+}
+
+cleanup_previous_rss_smoke_tasks() {
+  local tasks stale_id stale_ids
+  tasks="$(curl "${curl_args[@]}" -b "$cookie_jar" -c "$cookie_jar" \
+    "$SMOKE_API_BASE/api/scheduled-tasks?page=0&size=50")"
+  stale_ids="$(RSS_TASKS="$tasks" python3 -c '
+import json, os
+d = json.loads(os.environ["RSS_TASKS"])
+for item in d.get("data", {}).get("items", []):
+    if str(item.get("name", "")).startswith("__jarvis_rss_notification_smoke_"):
+        print(item.get("id"))
+')"
+  while IFS= read -r stale_id; do
+    [ -n "$stale_id" ] || continue
+    csrf_token="$(fetch_csrf_token)"
+    curl "${curl_args[@]}" -b "$cookie_jar" -c "$cookie_jar" \
+      -X DELETE -H "X-XSRF-TOKEN: $csrf_token" \
+      "$SMOKE_API_BASE/api/scheduled-tasks/$stale_id" >/dev/null
+    echo "OK  stale RSS notification smoke task cleanup"
+  done <<< "$stale_ids"
+}
+
+assert_rss_notification() {
+  local task_body task_run_body run_status run_artifacts notification_body
+  local task_name task_id
+  cleanup_previous_rss_smoke_tasks
+  csrf_token="$(fetch_csrf_token)"
+  task_name="__jarvis_rss_notification_smoke_$(date +%s)"
+  task_body="$(printf '%s' "{\"name\":\"$task_name\",\"taskType\":\"DAILY_DIGEST\",\"cronExpr\":\"0 0 0 * * *\",\"timezone\":\"Asia/Shanghai\",\"params\":{\"limit\":10,\"headlineCount\":3,\"analyze\":true}}" | curl "${curl_args[@]}" \
+    -b "$cookie_jar" -c "$cookie_jar" \
+    -H 'Content-Type: application/json' -H "X-XSRF-TOKEN: $csrf_token" \
+    --data-binary @- "$SMOKE_API_BASE/api/scheduled-tasks")"
+  task_id="$(RSS_TASK_BODY="$task_body" python3 -c 'import json,os; d=json.loads(os.environ["RSS_TASK_BODY"]); assert d.get("code")==200,d; print(d["data"]["id"])')"
+  rss_smoke_task_id="$task_id"
+  echo "OK  RSS notification smoke task created"
+
+  # 创建任务本身也可能轮换 CSRF Cookie；每个写操作前重新取一次，避免 419。
+  csrf_token="$(fetch_csrf_token)"
+  post_wrapped_ok "RSS notification smoke dispatch" \
+    "$SMOKE_API_BASE/api/scheduled-tasks/$task_id/run" "$csrf_token" '{}'
+
+  run_status=""
+  run_artifacts=""
+  for _ in $(seq 1 90); do
+    task_run_body="$(curl "${curl_args[@]}" -b "$cookie_jar" -c "$cookie_jar" \
+      "$SMOKE_API_BASE/api/scheduled-tasks/$task_id/runs?page=0&size=5")"
+    run_status="$(RSS_RUN_BODY="$task_run_body" python3 -c 'import json,os; d=json.loads(os.environ["RSS_RUN_BODY"]); items=d.get("data",{}).get("items",[]); print(items[0].get("status","") if items else "")')"
+    if [ "$run_status" = "SUCCESS" ]; then
+      run_artifacts="$task_run_body"
+      break
+    fi
+    if [ "$run_status" = "FAILED" ] || [ "$run_status" = "TIMEOUT" ]; then
+      echo "ERROR: RSS notification smoke run ended with $run_status" >&2
+      return 1
+    fi
+    sleep 1
+  done
+  [ "$run_status" = "SUCCESS" ] || {
+    echo "ERROR: RSS notification smoke run did not finish" >&2
+    return 1
+  }
+
+  notification_body="$(curl "${curl_args[@]}" -b "$cookie_jar" -c "$cookie_jar" \
+    "$SMOKE_API_BASE/api/notifications?unread_only=true&page=0&size=50")"
+  RSS_RUN_BODY="$run_artifacts" RSS_NOTIFICATIONS="$notification_body" RSS_TASK_ID="$task_id" \
+    python3 -c '
+import json, os
+run = json.loads(os.environ["RSS_RUN_BODY"])
+items = run.get("data", {}).get("items", [])
+artifact = items[0].get("artifacts") if items else None
+articles = artifact.get("items", []) if isinstance(artifact, dict) else []
+important = [a for a in articles if isinstance(a, dict) and isinstance(a.get("ai_analysis"), dict) and str(a["ai_analysis"].get("risk_level", "")).lower() in {"medium", "high"}]
+notices = json.loads(os.environ["RSS_NOTIFICATIONS"])
+assert notices.get("code") == 200, notices
+matches = [n for n in notices.get("data", {}).get("items", []) if n.get("type") == "NEWS_ALERT" and str((n.get("link") or {}).get("ref")) == os.environ["RSS_TASK_ID"]]
+if important:
+    assert matches, {"important_articles": len(important), "notifications": notices}
+    print("OK  RSS important notification delivered")
+else:
+    print("WARN RSS run had no medium/high article; notification path was not triggered by current news")
+'
+  delete_rss_smoke_task
+}
+
 fetch_csrf_token() {
   local body
   body="$(curl "${curl_args[@]}" -b "$cookie_jar" -c "$cookie_jar" "$SMOKE_API_BASE/api/auth/csrf")"
@@ -236,6 +341,10 @@ fi
 if [ "$CHECK_AGENT_RECOVERY" = "1" ]; then
   csrf_token="$(fetch_csrf_token)"
   assert_agent_cancel_and_reconnect "Agent recovery" "$SMOKE_API_BASE/api/agent/research/stream" "$csrf_token"
+fi
+if [ "$CHECK_RSS_NOTIFICATION" = "1" ]; then
+  csrf_token="$(fetch_csrf_token)"
+  assert_rss_notification
 fi
 backtest_as_of="$(python3 -c 'import datetime; print((datetime.date.today()-datetime.timedelta(days=1)).isoformat())')"
 assert_reproducible_backtest "reproducible backtest" "$SMOKE_API_BASE/api/backtest?market=gold_etf&short_ma=5&long_ma=20&initial_cash=100000&limit=60&as_of=$backtest_as_of"

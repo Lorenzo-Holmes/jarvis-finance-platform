@@ -266,7 +266,7 @@
 | `prototype/backtest.html` | 策略回测 | FR-05 |
 | `prototype/simtrade.html` | 模拟盘交易 | FR-04 |
 | `prototype/ai-center.html` | AI 投研中心 | FR-03 / FR-06 / FR-07 / FR-08 / FR-09 |
-| `prototype/admin.html` | 管理员后台 | FR-14（待新增） |
+| `prototype/admin.html` | 管理员后台 | FR-14（产品实现位于 Vue `AdminView`；HTML 原型未单独维护） |
 
 ---
 

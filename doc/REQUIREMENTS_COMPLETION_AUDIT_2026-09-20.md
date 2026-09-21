@@ -1,4 +1,4 @@
-# JARVIS 需求完成度审计（2026-09-21）
+# JARVIS 需求完成度审计（2026-09-22）
 
 本次审计基于 `doc/01_JARVIS金融投研平台_Software Requirement Specification_V1.0.md`、
 `specs/financial-agent-workflow/`、`specs/market-chart-financial-import/` 以及部署文档。
@@ -28,8 +28,8 @@
 
 ## 自动化验证结果
 
-- Java：全量 Maven 测试通过，609 tests / 0 failures / 0 errors / 5 skipped；包含 RSS AI 分析/日报产物/重要资讯提醒测试，以及既有 Flyway/Hibernate schema contract、用户组配额/权限继承、回测、交易回滚故障注入、PostgreSQL 锁策略、Agent 工具步骤生命周期、运行恢复、SSE 断线取消竞态等测试。PostgreSQL 未配置时仅保留既有跳过项。
-- Python：`PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q`，264 passed。普通 `pytest` 仍受本机 `pytest-asyncio` 与当前 pytest 版本兼容问题影响，代码测试本身不受影响。
+- Java：全量 Maven 测试通过，611 tests / 0 failures / 0 errors / 5 skipped；包含 RSS AI 分析/日报产物/重要资讯提醒测试，以及既有 Flyway/Hibernate schema contract、用户组配额/权限继承、回测、交易回滚故障注入、PostgreSQL 锁策略、Agent 工具步骤生命周期、运行恢复、SSE 断线取消竞态等测试。PostgreSQL 未配置时仅保留既有跳过项。
+- Python：`PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q`，278 passed。普通 `pytest` 仍受本机 `pytest-asyncio` 与当前 pytest 版本兼容问题影响，代码测试本身不受影响。
 - 前端：`npm run test:p0`，200 passed；`npm run build` 通过。
 - 浏览器：Playwright `financial-import` 项目通过，验证财报 Markdown 文件导入替换/追加、失败导入保留原文，以及选择文件不会提前请求分析接口；预览模式下夜间多市场图表和财报输入面板也已实际检查。2026-09-21 使用真实生产账号执行 Agent 专项浏览器用例 3 条全部通过：真实 SSE 的工具生命周期、Markdown 结论、历史运行抽屉，以及停止状态和失败提示回归。
 - 测试 Agent：`node tools/test-agent/test-agent.mjs --run --project smoke` 在本地 managed Vite 环境通过，6 条 smoke 浏览器用例无失败；未把 smoke 结果冒充真实登录、真实 AI 或生产验收。
@@ -42,13 +42,14 @@
 
 ## 生产发布验收（2026-09-21 更新）
 
-- GitHub Pages 已发布前端；本轮 `Deploy Frontend to GitHub Pages` 成功，发布后的 `https://f.shengxia.me/version.json` 已复核为功能资源构建输入 `84a6fea`；随后仅追加审计文档提交 `2bbb8a9`，不改变前端资源，四种 favicon PNG 与 `manifest.webmanifest` 均可正常返回。
-- 后端已通过原子发布切换到 `20260921-230800-84a6feaec689`；旧版本 `20260921-dabe37f` 保留用于回滚。本轮没有 Java/Python 业务代码变更，但按发布流程重新构建并验证了后端包、依赖和 readiness；监控栈在 release 外独立运行。
+- GitHub Pages 已发布前端；本轮 `Deploy Frontend to GitHub Pages` 成功（run `35624275984`），发布后的 `https://f.shengxia.me/version.json` 已复核为 `f0ffa0b`；四种 favicon PNG 与 `manifest.webmanifest` 均可正常返回。
+- 后端已通过原子发布切换到 `20260921-235536-f0ffa0bd66fe`；旧版本 `20260921-230800-84a6feaec689` 保留用于回滚。发布包 SHA-256 校验通过，Java/Python/前端构建均通过；监控栈在 release 外独立运行。
 - 远端 `jarvis-ai.service`、`jarvis-java.service`、`postgresql` 均为 active；Java readiness、Python 内部 token readiness、Flyway v17 和公网 Java readiness 均返回成功。
 - 公网数据库健康接口返回 401（该接口受认证保护），属于预期安全行为。
 - 使用真实生产烟测账号完成：登录、数据库详情、行情、1Hz 行情 SSE、日 K、模拟盘、AI capabilities、Agent SSE、Agent PostgreSQL 事件回放、可复现回测和退出登录均通过；Agent SSE 的代理连接关闭码已按事件终态校验处理，不影响业务事件完整性。
 - 2026-09-21 05:35 运行升级后的 `CHECK_AGENT_STREAM=1 CHECK_AGENT_RECOVERY=1` 专项烟测：除 Agent 真实工作流、`tool_call`、PostgreSQL 事件回放、断线取消/重订阅和回测登出外，烟测脚本还强制验证每个运行中工具步骤的 `step_started → tool_call → tool_result → step_completed` 顺序、共享 `stepId` 与终态事件；全部通过，此前可复现的断线取消 409 已不再出现。
 - 使用真实生产会话对 `/api/news/analyze` 提交一条资讯联调通过，返回 `code=200`、1 条结构化分析并带有模型标识；未输出模型正文或任何凭据。
+- 使用生产 smoke 账号执行 `CHECK_RSS_NOTIFICATION=1`：临时 `DAILY_DIGEST(analyze=true)` 任务创建、立即执行、执行历史落库、站内通知读取和任务清理均通过；本次抓取没有 medium/high 风险资讯，因此没有触发 `NEWS_ALERT`，未将“没有命中”误报为通知成功。
 - 使用真实生产账号执行 Agent 浏览器验收 3/3 通过：真实 SSE/工具生命周期/Markdown 结论/历史运行通过；受控长连接验证 `run_cancelled → STOPPED` 和 `run_failed → FAILED`，生产实际取消接口与失败事件由后端专项烟测覆盖。
 - 远端监控已启用 Prometheus/Grafana Docker Compose：Prometheus 监听本机 `127.0.0.1:9090`，Grafana 监听本机 `127.0.0.1:3000`，Java Actuator 监听 `127.0.0.1:8201`；目标、告警组和 2 个 JARVIS dashboard 均已通过 HTTP API 复核。当前已有 stale quote / 风险跳过等真实指标告警状态，需继续按业务窗口观察，不把告警状态本身误判为代码故障。
 
@@ -63,7 +64,7 @@
 ### P1/P2
 
 - 流式 AI 响应的精确月度 Token usage 仍依赖上游稳定返回 usage 事件；当前非流式统计已完成。
-- PRD V1.2 的 RSS 信息源管理、10 源配置、用户订阅、AI 分析、重要事件提醒和多市场入口已发布；全局每日自动刷新已由 Java 调度器负责。生产通知实际触发和上游模型返回 usage 仍需真实业务数据验收。
+- PRD V1.2 的 RSS 信息源管理、10 源配置、用户订阅、AI 分析、重要事件提醒和多市场入口已发布；全局每日自动刷新已由 Java 调度器负责。生产日报执行链已通过 smoke，但当前业务窗口没有 medium/high 资讯，`NEWS_ALERT` 实际触发和上游模型返回 usage 仍需真实业务数据验收。
 - 测试 Agent 已支持真实账号下的 Agent 自动编排并执行通过；当前已补齐主要业务域的显式 project 映射，后续新增 PRD 仍需补充对应浏览器用例与映射规则。
 - Grafana/Prometheus 的仓库模板已补齐并完成生产导入；仍需在真实业务流量下继续验证 5xx、429/502、Hikari、行情源熔断等告警是否按预期 firing/恢复。
 - 视觉规范文档中关于档案海景深、玻璃层次、长时间循环、移动端逐页像素审阅的 checklist 仍属于人工设计验收，不能用单元测试代替。

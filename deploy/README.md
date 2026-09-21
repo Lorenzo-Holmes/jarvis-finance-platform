@@ -422,6 +422,16 @@ sudo /usr/local/sbin/jarvis-smoke-test
 13. AI capabilities（不消耗生成额度）；
 14. logout。
 
+需要验收 RSS 日报产物与重要资讯站内通知链路时，使用：
+
+```bash
+CHECK_RSS_NOTIFICATION=1 /usr/local/sbin/jarvis-smoke-test
+```
+
+该开关会用低权限 smoke 账号创建并立即执行一条临时 `DAILY_DIGEST(analyze=true)`，
+检查执行历史与 `NEWS_ALERT` 通知，然后软删除临时任务。若当前资讯没有 medium/high 风险项，
+会明确输出 WARN，表示本次没有触发通知，不会伪造成功。
+
 需要验收真实 Agent 事件流、PostgreSQL 事件落库与重放时，使用：
 
 ```bash
