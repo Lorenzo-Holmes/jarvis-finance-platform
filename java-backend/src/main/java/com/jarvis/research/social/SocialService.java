@@ -284,13 +284,13 @@ public class SocialService {
     }
 
     @Transactional
-    public List<Map<String, Object>> thread(Long userId, Long otherUserId) {
+    public Map<String, Object> thread(Long userId, Long otherUserId, int page, int size) {
         requireUser(otherUserId);
         messageRepository.markThreadRead(userId, otherUserId, LocalDateTime.now());
-        List<DirectMessage> rows = new ArrayList<>(
-                messageRepository.findThread(userId, otherUserId, PageRequest.of(0, 200)));
+        Page<DirectMessage> result = messageRepository.findThread(userId, otherUserId, pageRequest(page, size));
+        List<DirectMessage> rows = new ArrayList<>(result.getContent());
         Collections.reverse(rows);
-        return rows.stream().map(message -> messageView(userId, message)).toList();
+        return pageView(result, rows.stream().map(message -> messageView(userId, message)).toList());
     }
 
     public Map<String, Object> achievements(Long userId) { return achievementService.overview(userId); }

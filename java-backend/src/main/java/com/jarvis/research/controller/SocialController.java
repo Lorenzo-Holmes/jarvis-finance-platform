@@ -144,8 +144,10 @@ public class SocialController {
     }
 
     @GetMapping("/messages/{userId}")
-    public ApiResponse<Object> thread(@PathVariable Long userId) {
-        return ApiResponse.ok(socialService.thread(CurrentUser.id(), userId));
+    public ApiResponse<Object> thread(@PathVariable Long userId,
+                                      @RequestParam(defaultValue = "0") int page,
+                                      @RequestParam(defaultValue = "40") int size) {
+        return ApiResponse.ok(socialService.thread(CurrentUser.id(), userId, page, size));
     }
 
     @PostMapping("/messages/{userId}")

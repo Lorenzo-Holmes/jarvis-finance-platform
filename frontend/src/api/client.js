@@ -238,7 +238,7 @@ export const api = {
   communityCreateGroupPost: (groupId, body) => post(API_BASE, `/api/social/groups/${groupId}/posts`, body),
   socialConversations: () => get(API_BASE, '/api/social/messages/conversations'),
   socialMessageUnreadCount: () => get(API_BASE, '/api/social/messages/unread-count'),
-  socialThread: (userId) => get(API_BASE, `/api/social/messages/${userId}`),
+  socialThread: (userId, page = 0, size = 40) => get(API_BASE, `/api/social/messages/${userId}`, { page, size }),
   socialSendMessage: (userId, content) => post(API_BASE, `/api/social/messages/${userId}`, { content }),
   me: () => get(API_BASE, '/api/auth/me'),
   logout: () => post(API_BASE, '/api/auth/logout', {}),

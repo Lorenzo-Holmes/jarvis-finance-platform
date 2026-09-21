@@ -324,6 +324,24 @@ class SocialServiceTest {
         verify(achievementService, never()).evaluateSocial(7L);
     }
 
+    @Test
+    void messageThreadReturnsPagedEnvelopeWithChronologicalItems() {
+        DirectMessage newer = DirectMessage.builder().id(2L).senderUserId(7L).recipientUserId(8L)
+                .content("new").createdAt(LocalDateTime.now()).build();
+        DirectMessage older = DirectMessage.builder().id(1L).senderUserId(8L).recipientUserId(7L)
+                .content("old").createdAt(LocalDateTime.now().minusMinutes(1)).build();
+        when(userRepository.findById(8L)).thenReturn(Optional.of(user(8L)));
+        when(messageRepository.findThread(eq(7L), eq(8L), any())).thenReturn(new PageImpl<>(
+                java.util.List.of(newer, older), PageRequest.of(0, 40), 41));
+
+        Map<String, Object> result = service.thread(7L, 8L, 0, 40);
+        java.util.List<?> items = (java.util.List<?>) result.get("items");
+
+        assertEquals(2, items.size());
+        assertEquals("old", ((Map<?, ?>) items.get(0)).get("content"));
+        assertEquals(2, result.get("totalPages"));
+    }
+
     private static User user(Long id) {
         return User.builder()
                 .id(id)

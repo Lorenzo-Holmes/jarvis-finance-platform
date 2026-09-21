@@ -46,6 +46,8 @@ test('community surface contains groups, user discovery, direct messages and exp
   assert.match(page, /加载更多用户/)
   assert.match(page, /@keydown\.meta\.enter\.prevent="sendMessage"/)
   assert.match(page, /message\.readAt \? '已读' : '已发送'/)
+  assert.match(page, /threadHasMore/)
+  assert.match(page, /加载更早消息/)
   assert.match(page, /shareToWeibo/)
   assert.match(page, /shareToXiaohongshu/)
 })

@@ -42,6 +42,8 @@ const conversations = ref([])
 const messageUnreadCount = ref(0)
 const selectedPartner = ref(null)
 const thread = ref([])
+const threadPage = ref(0)
+const threadHasMore = ref(false)
 const messageText = ref('')
 
 const selectedGroupRole = computed(() => selectedGroup.value?.role || '')
@@ -249,9 +251,24 @@ async function openConversation(user) {
   activeTab.value = 'messages'
   selectedPartner.value = user
   await run(async () => {
-    const response = await api.socialThread(user.id)
-    thread.value = responseData(response) || []
+    const response = await api.socialThread(user.id, 0, 40)
+    const data = pageMeta(response)
+    thread.value = pageItems(response)
+    threadPage.value = Number(data.page || 0)
+    threadHasMore.value = threadPage.value + 1 < Number(data.totalPages || 0)
     await loadConversations()
+  })
+}
+
+async function loadOlderMessages() {
+  if (!selectedPartner.value?.id || !threadHasMore.value) return
+  await run(async () => {
+    const nextPage = threadPage.value + 1
+    const response = await api.socialThread(selectedPartner.value.id, nextPage, 40)
+    const data = pageMeta(response)
+    thread.value = [...pageItems(response), ...thread.value]
+    threadPage.value = Number(data.page || nextPage)
+    threadHasMore.value = threadPage.value + 1 < Number(data.totalPages || 0)
   })
 }
 
@@ -261,8 +278,11 @@ async function sendMessage() {
   await run(async () => {
     await api.socialSendMessage(selectedPartner.value.id, content)
     messageText.value = ''
-    const response = await api.socialThread(selectedPartner.value.id)
-    thread.value = responseData(response) || []
+    const response = await api.socialThread(selectedPartner.value.id, 0, 40)
+    const data = pageMeta(response)
+    thread.value = pageItems(response)
+    threadPage.value = Number(data.page || 0)
+    threadHasMore.value = threadPage.value + 1 < Number(data.totalPages || 0)
     await loadConversations()
   })
 }
@@ -407,7 +427,7 @@ onMounted(async () => {
 
     <div v-else class="messages-layout">
       <aside class="conversation-list"><button v-for="item in conversations" :key="item.partner.id" type="button" :class="{ active: selectedPartner?.id === item.partner.id }" @click="openConversation(item.partner)"><span class="avatar"><img v-if="item.partner.avatarUrl" :src="item.partner.avatarUrl" alt="" /><b v-else>{{ (item.partner.displayName || '?').slice(0,1) }}</b></span><span><strong>{{ item.partner.displayName }}</strong><small>{{ item.lastMessage?.content }}</small></span><i v-if="item.unreadCount">{{ item.unreadCount }}</i></button><div v-if="!conversations.length" class="empty-state">暂无私信会话。</div></aside>
-      <main v-if="selectedPartner" class="message-room"><header><span>PRIVATE CHANNEL</span><h3>{{ selectedPartner.displayName }}</h3></header><div class="message-thread" role="log" aria-live="polite" aria-relevant="additions text"><article v-for="message in thread" :key="message.id" :class="{ mine: message.mine }"><p>{{ message.content }}</p><small>{{ formatTime(message.createdAt) }}<template v-if="message.mine"> · {{ message.readAt ? '已读' : '已发送' }}</template></small></article></div><footer><div class="message-compose"><textarea v-model="messageText" maxlength="2000" rows="3" :aria-label="`给 ${selectedPartner.displayName} 发送私信`" placeholder="发送站内私信…" @keydown.ctrl.enter.prevent="sendMessage" @keydown.meta.enter.prevent="sendMessage"></textarea><small>{{ messageText.length }}/2000 · Ctrl/⌘ + Enter 发送</small></div><button type="button" :disabled="!messageText.trim()" @click="sendMessage">发送</button></footer></main>
+      <main v-if="selectedPartner" class="message-room"><header><span>PRIVATE CHANNEL</span><h3>{{ selectedPartner.displayName }}</h3></header><div class="message-thread" role="log" aria-live="polite" aria-relevant="additions text"><button v-if="threadHasMore" class="load-older-messages" type="button" :disabled="loading" @click="loadOlderMessages">加载更早消息</button><article v-for="message in thread" :key="message.id" :class="{ mine: message.mine }"><p>{{ message.content }}</p><small>{{ formatTime(message.createdAt) }}<template v-if="message.mine"> · {{ message.readAt ? '已读' : '已发送' }}</template></small></article></div><footer><div class="message-compose"><textarea v-model="messageText" maxlength="2000" rows="3" :aria-label="`给 ${selectedPartner.displayName} 发送私信`" placeholder="发送站内私信…" @keydown.ctrl.enter.prevent="sendMessage" @keydown.meta.enter.prevent="sendMessage"></textarea><small>{{ messageText.length }}/2000 · Ctrl/⌘ + Enter 发送</small></div><button type="button" :disabled="!messageText.trim()" @click="sendMessage">发送</button></footer></main>
       <main v-else class="empty-panel">选择一个会话，或从“用户发现”中发起私信。</main>
     </div>
   </section>
@@ -468,6 +488,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .achievement-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; padding: 0 14px; }.achievement-strip article { padding: 11px; border: 1px solid var(--line); border-radius: 9px; display: grid; gap: 5px; }.achievement-strip span, .achievement-strip small { color: var(--subtle); font-size: 7px; }.achievement-strip b { font-size: 9px; }
 .activity-list { display: grid; gap: 0; padding: 0 14px 14px; }.activity-list article { display: grid; grid-template-columns: 120px 1fr auto; gap: 8px; padding: 9px 0; border-bottom: 1px solid var(--line); }.activity-list article span, .activity-list article small { color: var(--subtle); font-size: 8px; }.activity-list article p { margin: 0; color: var(--muted); font-size: 9px; }
 .message-room { grid-template-rows: auto minmax(280px, 1fr) auto; }.message-thread { padding: 14px; overflow: auto; display: flex; flex-direction: column; gap: 8px; }.message-thread article { max-width: 72%; align-self: flex-start; padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); }.message-thread article.mine { align-self: flex-end; background: var(--workspace-accent-wash); }.message-thread p { margin: 0 0 5px; font-size: 10px; line-height: 1.55; }.message-thread small { color: var(--subtle); font-size: 7px; }.message-room > footer { display: flex; gap: 8px; padding: 12px; border-top: 1px solid var(--line); }.message-compose { min-width: 0; flex: 1; display: grid; gap: 4px; }.message-compose small { color: var(--subtle); font-size: 7px; text-align: right; }
+.load-older-messages { align-self: center; border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--muted); padding: 6px 10px; cursor: pointer; font-size: 8px; }
 .empty-state, .empty-panel { padding: 24px; color: var(--subtle); font-size: 9px; }.empty-panel { display: grid; place-items: center; }
 .load-more { justify-self: center; border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--muted); padding: 7px 13px; cursor: pointer; font-size: 8px; }
 @media (max-width: 980px) { .feed-layout { grid-template-columns: 1fr; }.network-rail { display: none; }.groups-layout, .users-layout, .messages-layout { grid-template-columns: 1fr; }.group-directory, .user-directory, .conversation-list { max-height: 320px; } }
