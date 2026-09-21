@@ -36,8 +36,8 @@ public class SocialService {
     public Map<String, Object> searchUsers(Long viewerId, String query, int page, int size) {
         PageRequest request = pageRequest(page, size);
         Page<User> users = query == null || query.isBlank()
-                ? userRepository.findAll(request)
-                : userRepository.findByDisplayNameContainingIgnoreCase(query.trim(), request);
+                ? userRepository.findByEnabledTrue(request)
+                : userRepository.findByEnabledTrueAndDisplayNameContainingIgnoreCase(query.trim(), request);
         return pageView(users.map(user -> publicUser(viewerId, user)));
     }
 

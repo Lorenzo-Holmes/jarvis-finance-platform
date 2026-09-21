@@ -342,6 +342,21 @@ class SocialServiceTest {
         assertEquals(2, result.get("totalPages"));
     }
 
+    @Test
+    void userDiscoveryOnlyQueriesEnabledAccounts() {
+        when(userRepository.findByEnabledTrue(any(PageRequest.class)))
+                .thenReturn(new PageImpl<>(java.util.List.of()));
+        when(userRepository.findByEnabledTrueAndDisplayNameContainingIgnoreCase(eq("alice"), any(PageRequest.class)))
+                .thenReturn(new PageImpl<>(java.util.List.of()));
+
+        service.searchUsers(7L, "", 0, 20);
+        service.searchUsers(7L, " alice ", 0, 20);
+
+        verify(userRepository).findByEnabledTrue(any(PageRequest.class));
+        verify(userRepository).findByEnabledTrueAndDisplayNameContainingIgnoreCase(eq("alice"), any(PageRequest.class));
+        verify(userRepository, never()).findAll(any(PageRequest.class));
+    }
+
     private static User user(Long id) {
         return User.builder()
                 .id(id)
