@@ -205,3 +205,10 @@ test('news articles use a bounded staggered reveal', () => {
   assert.match(page, /@keyframes news-article-in/)
   assert.match(page, /18ms/)
 })
+
+test('news feed animates article insertion removal and reordering', () => {
+  const page = read('pages/NewsCenterPage.vue')
+  assert.match(page, /<TransitionGroup name="article-flow"/)
+  assert.match(page, /\.article-flow-move/)
+  assert.match(page, /\.article-flow-leave-active \{ position: absolute/)
+})

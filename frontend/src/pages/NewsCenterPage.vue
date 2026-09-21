@@ -359,6 +359,7 @@ onBeforeUnmount(() => {
         <DataState v-else-if="!filteredArticles.length" state="empty" title="当前结果中没有匹配项" message="可清空检索词继续浏览。" compact />
         <div v-else class="article-list" :class="{ compact: feedDensity === 'compact' }">
           <div v-if="feedQuery" class="search-count">显示 {{ filteredArticles.length }} / {{ articles.length }} 条</div>
+          <TransitionGroup name="article-flow" tag="div" class="article-flow">
           <article v-for="(article, index) in filteredArticles" :key="`${article.url}-${article.published}`" class="article-row" :style="{ '--article-index': Math.min(index, 8) }">
             <div class="article-meta"><span>{{ article.source || article.source_id }}</span><time>{{ formatTime(article.published) }}</time></div>
             <a :href="article.url" target="_blank" rel="noreferrer">{{ article.title_zh || article.title }}</a>
@@ -397,6 +398,7 @@ onBeforeUnmount(() => {
               </template>
             </div>
           </article>
+          </TransitionGroup>
         </div>
       </section>
     </template>
@@ -460,6 +462,12 @@ onBeforeUnmount(() => {
 .quality-strip b { color: var(--text); font: 650 11px ui-monospace, monospace; }
 .quality-strip small { white-space: nowrap; }
 .article-list { display: grid; margin-top: 3px; }
+.article-flow { position: relative; display: grid; }
+.article-flow-enter-active, .article-flow-leave-active { transition: opacity var(--news-motion-surface) ease, transform var(--news-motion-surface) var(--news-ease); }
+.article-flow-enter-from { opacity: 0; transform: translateY(5px) scale(.995); }
+.article-flow-leave-to { opacity: 0; transform: translateY(-3px) scale(.995); }
+.article-flow-leave-active { position: absolute; width: 100%; }
+.article-flow-move { transition: transform var(--news-motion-layout) var(--news-ease); }
 .article-list.compact .article-row { padding-top: 8px; padding-bottom: 8px; gap: 4px 12px; }.article-list.compact .article-detail > p:not(.ai-summary) { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }.article-list.compact .article-meta { gap: 2px; }
 .search-count { padding: 7px 8px 3px; color: var(--subtle); font: 7px ui-monospace, monospace; }
 .article-row { position: relative; display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 7px 14px; align-items: baseline; padding: 12px 8px; border-bottom: 1px solid var(--line); border-radius: 7px; transition: transform var(--news-motion-surface) var(--news-ease), background var(--news-motion-state) ease, border-color var(--news-motion-state) ease, box-shadow var(--news-motion-surface) ease; }
