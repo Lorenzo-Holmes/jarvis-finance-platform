@@ -96,7 +96,7 @@ class FlywaySchemaContractTest {
      *
      * <p>写死是有意的：它同时挡住"新加了实体却忘了写迁移"（表不存在 → 上面那条
      * validate 也会失败）和"迁移里手滑删/改名了一张表"（这里会失败）。
-     * 17 张业务表 + Flyway 自己的历史表。
+     * 当前全部业务表 + Flyway 自己的历史表。
      *
      * <p>⚠️ 新增迁移时必须同步这份清单 —— 这是本测试刻意的维护成本：
      * 它逼着每次加表都显式确认一次"我确实要加这张表"。</p>
@@ -130,6 +130,12 @@ class FlywaySchemaContractTest {
                 "group_feature_permission",
                 "news_source",
                 "news_subscription",
+                "community_group",
+                "community_group_member",
+                "community_post",
+                "direct_message",
+                "user_activity",
+                "user_achievement",
                 "flyway_schema_history"));
 
         assertEquals(expected, tableNames(), "迁移产出的表集合");

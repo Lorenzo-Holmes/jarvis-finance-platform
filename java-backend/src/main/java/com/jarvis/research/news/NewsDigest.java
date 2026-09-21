@@ -90,6 +90,7 @@ public final class NewsDigest {
             copyIfPresent(article, item, "confirmation_score");
             copyIfPresent(article, item, "rank_score");
             copyIfPresent(article, item, "selection_reason");
+            copyIfPresent(article, item, "recency_timestamp");
             items.add(item);
         }
 
@@ -101,7 +102,18 @@ public final class NewsDigest {
         out.put("total_sources", number(raw.get("total_sources")));
         out.put("ok_sources", number(raw.get("ok_sources")));
         out.put("sources", asList(raw.get("sources")));
+        if (raw.get("quality_metrics") instanceof Map<?, ?> metrics) {
+            out.put("quality_metrics", stringKeyMap(metrics));
+        }
+        String rankMode = text(raw.get("rank_mode"));
+        if (!rankMode.isEmpty()) out.put("rank_mode", rankMode);
         out.put("items", items);
+        return out;
+    }
+
+    private static Map<String, Object> stringKeyMap(Map<?, ?> source) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        source.forEach((key, value) -> out.put(String.valueOf(key), value));
         return out;
     }
 
@@ -112,6 +124,21 @@ public final class NewsDigest {
         if (!(rawItems instanceof List<?> list) || list.size() <= limit) return shaped;
         Map<String, Object> out = new LinkedHashMap<>(shaped);
         out.put("items", new ArrayList<>(list.subList(0, limit)));
+        return out;
+    }
+
+    /** 时间流模式：按 Python 已规范化的 recency timestamp 倒序；相同时间保持稳定顺序。 */
+    public static Map<String, Object> orderByRecency(Map<String, Object> shaped) {
+        if (shaped == null) return null;
+        Object rawItems = shaped.get("items");
+        if (!(rawItems instanceof List<?> list) || list.size() < 2) return shaped;
+        List<Object> ordered = new ArrayList<>(list);
+        ordered.sort((left, right) -> Double.compare(
+                doubleValue(right instanceof Map<?, ?> map ? map.get("recency_timestamp") : null),
+                doubleValue(left instanceof Map<?, ?> map ? map.get("recency_timestamp") : null)));
+        Map<String, Object> out = new LinkedHashMap<>(shaped);
+        out.put("items", ordered);
+        out.put("rank_mode", "latest");
         return out;
     }
 
@@ -152,6 +179,15 @@ public final class NewsDigest {
             return Integer.parseInt(text(value));
         } catch (NumberFormatException ignored) {
             return 0;
+        }
+    }
+
+    private static double doubleValue(Object value) {
+        if (value instanceof Number num) return num.doubleValue();
+        try {
+            return Double.parseDouble(text(value));
+        } catch (NumberFormatException ignored) {
+            return 0.0;
         }
     }
 }

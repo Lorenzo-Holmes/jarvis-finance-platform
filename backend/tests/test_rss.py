@@ -393,6 +393,7 @@ def test_rss_endpoints_are_registered_and_token_protected():
         "/internal/rss/fetch/{source_id}",
         "/internal/rss/articles",
         "/internal/rss/digest",
+        "/internal/rss/rerank",
     }
 
     for path, route in rss_paths.items():

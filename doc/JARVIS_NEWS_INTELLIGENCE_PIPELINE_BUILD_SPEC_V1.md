@@ -10,6 +10,7 @@
   - 重复条目合并到事件代表文章，记录 `source_ids/source_count/duplicate_count/event_cluster_id`。
   - digest 时动态计算 freshness 与 rank score，并输出 `selection_reason`。
   - `list_articles(source_id)` 对聚合后的多来源关系保持可见。
+  - 在线工作集按时间 retention + 最大事件数双重裁剪，避免长期运行无界增长。
 
 ## Java API 层
 
@@ -17,6 +18,7 @@
   - `fromDigest(..., 0)` 先整形全候选。
   - `filterDigest(...)` 再按用户订阅筛选。
   - `NewsDigest.limitItems(...)` 最后执行 Top-K。
+  - `ranking=smart/latest`：默认 smart；latest 跳过语义增强并按规范化时间排序。
 - `NewsSourceService.filterDigest`
   - 同维度 OR、跨维度 AND。
   - 来源匹配支持聚合事件的 `source_ids`。

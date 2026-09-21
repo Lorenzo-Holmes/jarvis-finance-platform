@@ -56,6 +56,25 @@ class NewsSourceServiceTest {
     }
 
     @Test
+    void filterDigestExposesCandidateReductionStats() {
+        NewsSubscriptionRepository subscriptions = mock(NewsSubscriptionRepository.class);
+        when(subscriptions.findByUserIdAndEnabledTrueOrderBySourceKeyAscTopicAsc(42L))
+                .thenReturn(List.of(
+                        NewsSubscription.builder().userId(42L).sourceKey("wire").topic("").enabled(true).build()));
+        NewsSourceService service = new NewsSourceService(
+                mock(NewsSourceRepository.class), subscriptions, mock(AiProxyService.class));
+
+        Map<String, Object> result = service.filterDigest(42L, Map.of(
+                "items", List.of(
+                        Map.of("source_id", "wire", "category", "markets"),
+                        Map.of("source_id", "other", "category", "markets"))));
+
+        Map<?, ?> stats = (Map<?, ?>) result.get("filter_stats");
+        assertEquals(2, stats.get("filter_before_count"));
+        assertEquals(1, stats.get("filter_after_count"));
+    }
+
+    @Test
     void emptySubscriptionsLeaveDigestUntouched() {
         NewsSubscriptionRepository subscriptions = mock(NewsSubscriptionRepository.class);
         when(subscriptions.findByUserIdAndEnabledTrueOrderBySourceKeyAscTopicAsc(42L)).thenReturn(List.of());
@@ -64,5 +83,38 @@ class NewsSourceServiceTest {
         Map<String, Object> digest = Map.of("available", true, "items", List.of(Map.of("title", "all")));
 
         assertEquals(digest, service.filterDigest(42L, digest));
+    }
+
+    @Test
+    void rankingQueryUsesTopicIntentWithoutInventingSourceMeaning() {
+        NewsSubscriptionRepository subscriptions = mock(NewsSubscriptionRepository.class);
+        when(subscriptions.findByUserIdAndEnabledTrueOrderBySourceKeyAscTopicAsc(42L))
+                .thenReturn(List.of(
+                        NewsSubscription.builder().userId(42L).sourceKey("wire").topic("").enabled(true).build(),
+                        NewsSubscription.builder().userId(42L).sourceKey("").topic("gold").enabled(true).build(),
+                        NewsSubscription.builder().userId(42L).sourceKey("").topic("global").enabled(true).build()));
+        NewsSourceService service = new NewsSourceService(
+                mock(NewsSourceRepository.class), subscriptions, mock(AiProxyService.class));
+
+        String query = service.rankingQuery(42L);
+
+        org.junit.jupiter.api.Assertions.assertTrue(query.contains("黄金"));
+        org.junit.jupiter.api.Assertions.assertTrue(query.contains("全球宏观"));
+        org.junit.jupiter.api.Assertions.assertFalse(query.contains("wire"));
+    }
+
+    @Test
+    void rankingQueryFallsBackToGenericFinanceIntentWhenOnlySourcesAreSelected() {
+        NewsSubscriptionRepository subscriptions = mock(NewsSubscriptionRepository.class);
+        when(subscriptions.findByUserIdAndEnabledTrueOrderBySourceKeyAscTopicAsc(42L))
+                .thenReturn(List.of(
+                        NewsSubscription.builder().userId(42L).sourceKey("wire").topic("").enabled(true).build()));
+        NewsSourceService service = new NewsSourceService(
+                mock(NewsSourceRepository.class), subscriptions, mock(AiProxyService.class));
+
+        String query = service.rankingQuery(42L);
+
+        org.junit.jupiter.api.Assertions.assertTrue(query.contains("财经投研重要资讯"));
+        org.junit.jupiter.api.Assertions.assertFalse(query.contains("wire"));
     }
 }

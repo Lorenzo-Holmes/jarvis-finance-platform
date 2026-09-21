@@ -134,6 +134,23 @@ class NewsDigestTest {
     }
 
     @Test
+    void latestModeOrdersByNormalizedRecencyTimestamp() {
+        Map<String, Object> shaped = new LinkedHashMap<>();
+        shaped.put("items", List.of(
+                Map.of("title", "older", "recency_timestamp", 100.0),
+                Map.of("title", "newest", "recency_timestamp", 300.0),
+                Map.of("title", "middle", "recency_timestamp", 200.0)));
+
+        Map<String, Object> ordered = NewsDigest.orderByRecency(shaped);
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> result = (List<Map<String, Object>>) ordered.get("items");
+        assertEquals(List.of("newest", "middle", "older"),
+                result.stream().map(item -> String.valueOf(item.get("title"))).toList());
+        assertEquals("latest", ordered.get("rank_mode"));
+    }
+
+    @Test
     void intelligenceFieldsArePassedThroughForFrontendAuditability() {
         Map<String, Object> intelligent = article("高质量资讯", "https://a.example.com/1", "s", "");
         intelligent.put("rank_score", 0.91);
@@ -143,12 +160,14 @@ class NewsDigestTest {
 
         Map<String, Object> raw = digestOf(List.of(source("s", "S")), List.of(intelligent));
         raw.put("rank_mode", "intelligence_v1");
+        raw.put("quality_metrics", Map.of("article_count", 1, "source_diversity", 2));
         Map<String, Object> shaped = NewsDigest.fromDigest(raw, 10);
 
         assertEquals(0.91, items(shaped).get(0).get("rank_score"));
         assertEquals(List.of("s", "wire"), items(shaped).get(0).get("source_ids"));
         assertEquals(2, items(shaped).get(0).get("source_count"));
         assertEquals("intelligence_v1", shaped.get("rank_mode"));
+        assertEquals(1, ((Map<?, ?>) shaped.get("quality_metrics")).get("article_count"));
     }
 
     @Test

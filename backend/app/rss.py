@@ -40,6 +40,14 @@ _TRACKING_QUERY_KEYS = {
 _NEAR_DUPLICATE_WINDOW_SECONDS = 72 * 3600
 _NEAR_DUPLICATE_SCAN_LIMIT = 600
 
+
+def _positive_int_env(name: str, default: int) -> int:
+    try:
+        value = int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+    return value if value > 0 else default
+
 #: 预置财经资讯源。让"每日要闻"开箱可用，而不必先手工登记源。
 #:
 #: 抓取成败取决于**服务器的出网能力**：这些域名在受限网络下可能全部超时。
@@ -313,15 +321,16 @@ def _market_impact(title: str, body: str) -> Dict[str, str]:
 class RSSStore:
     """内存版资讯源仓库。
 
-    已知限制（有意保留，不做过度设计）：
-      - 无持久化：进程重启后 sources / articles 清空；
-      - 无容量上限：长期运行会持续占用内存。
-    两者都应由 Java 主后端接入后接管，本模块不自行发明淘汰策略。
+    文章仍不做业务持久化（进程重启后清空），但作为在线筛选工作集必须有明确
+    retention/cap，避免长期运行后历史噪声持续占内存并拖慢近重复扫描和 rerank。
+    真正的历史归档仍应由 Java 主后端接管。
     """
 
     #: 同一资讯源在 digest 中的最小抓取间隔（秒）。
     #: 前端每次打开行情页都会问一次要闻，不设间隔就会把外部 feed 打爆。
     DIGEST_MIN_INTERVAL_SECONDS = 300
+    ARTICLE_RETENTION_DAYS = _positive_int_env("RSS_ARTICLE_RETENTION_DAYS", 30)
+    MAX_ARTICLES = _positive_int_env("RSS_MAX_ARTICLES", 5_000)
 
     def __init__(self, seed_defaults: bool = True):
         self.sources: Dict[str, Dict] = {}
@@ -613,6 +622,7 @@ class RSSStore:
         else:
             age_hours = max(0.0, (now.timestamp() - timestamp) / 3600.0)
             freshness = max(0.0, min(100.0, (2 ** (-age_hours / 18.0)) * 100.0))
+        article["recency_timestamp"] = round(float(timestamp or 0.0), 3)
 
         quality = 0.0
         quality += 30.0 if _clean_text(article.get("title")) else 0.0
@@ -653,6 +663,36 @@ class RSSStore:
         article["confirmation_score"] = round(confirmation, 2)
         article["rank_score"] = round(rank, 2)
         article["selection_reason"] = reasons[:4]
+
+    def _prune_articles(self, now: datetime) -> None:
+        cutoff = now.timestamp() - max(1, int(self.ARTICLE_RETENTION_DAYS)) * 86400
+        expired = []
+        for article_id, article in self.articles.items():
+            timestamp = (
+                _published_timestamp(article.get("published"))
+                or _published_timestamp(article.get("created_at"))
+            )
+            if timestamp is not None and timestamp < cutoff:
+                expired.append(article_id)
+        for article_id in expired:
+            self.articles.pop(article_id, None)
+
+        cap = max(1, int(self.MAX_ARTICLES))
+        if len(self.articles) <= cap:
+            return
+        ordered = sorted(
+            self.articles.values(),
+            key=lambda article: (
+                _published_timestamp(article.get("published"))
+                or _published_timestamp(article.get("created_at"))
+                or 0.0
+            ),
+            reverse=True,
+        )
+        keep = {article["id"] for article in ordered[:cap] if article.get("id")}
+        for article_id in list(self.articles):
+            if article_id not in keep:
+                self.articles.pop(article_id, None)
 
     # ---- 文章 ----
 
@@ -720,16 +760,41 @@ class RSSStore:
                     "health_score": self._source_health_score(source_id),
                 })
 
+        self._prune_articles(now)
         articles = self.list_articles()
         for article in articles:
             self._score_article(article, now)
         articles.sort(key=lambda article: (float(article.get("rank_score") or 0), _article_sort_key(article)), reverse=True)
+        source_ids = {
+            source_id
+            for article in articles
+            for source_id in (article.get("source_ids") or [article.get("source_id")])
+            if source_id
+        }
+        article_count = len(articles)
+        quality_metrics = {
+            "article_count": article_count,
+            "confirmed_event_count": sum(
+                1 for article in articles if int(article.get("source_count") or 1) > 1
+            ),
+            "duplicate_merge_count": sum(
+                int(article.get("duplicate_count") or 0) for article in articles
+            ),
+            "source_diversity": len(source_ids),
+            "average_rank_score": round(
+                sum(float(article.get("rank_score") or 0) for article in articles) / article_count, 2
+            ) if article_count else 0.0,
+            "average_content_quality_score": round(
+                sum(float(article.get("content_quality_score") or 0) for article in articles) / article_count, 2
+            ) if article_count else 0.0,
+        }
         return {
             "generated_at": now.isoformat(),
             "refreshed": sum(1 for item in statuses if item["crawled"]),
             "ok_sources": sum(1 for item in statuses if item["ok"]),
             "total_sources": len(statuses),
             "rank_mode": "intelligence_v1",
+            "quality_metrics": quality_metrics,
             "sources": statuses,
             "articles": articles,
         }

@@ -10,7 +10,7 @@ JARVIS Python AI Service
 from fastapi import Body, Depends, FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 
-from . import ai_service
+from . import ai_service, news_semantic
 from .ai_routes import require_internal_service, router as ai_router
 from .rss import RSSSourceNotFound, RSSValidationError, rss_store
 
@@ -60,6 +60,19 @@ def rss_digest(refresh: bool = True, force: bool = False):
     单源失败逐源返回 error，不会让整个响应失败；`force=true` 绕过最小抓取间隔。
     """
     return rss_store.digest(refresh=refresh, force=force)
+
+
+@app.post("/internal/rss/rerank", dependencies=[Depends(require_internal_service)])
+def rerank_rss(payload: dict = Body(...)):
+    """对已通过订阅筛选的 V1 候选执行可选语义重排。
+
+    模型服务未配置或失败时返回 available=false + 原始 items，Java 必须保留 V1 顺序。
+    """
+    query = str(payload.get("query") or "").strip()
+    articles = payload.get("articles")
+    if not isinstance(articles, list):
+        articles = []
+    return news_semantic.rerank_articles(query, articles)
 
 
 @app.get("/api/health", dependencies=[Depends(require_internal_service)])
