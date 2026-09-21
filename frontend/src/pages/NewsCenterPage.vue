@@ -17,6 +17,7 @@ const error = ref('')
 const message = ref('')
 const generatedAt = ref('')
 const available = ref(true)
+const rankingMode = ref('smart')
 
 const topicOptions = [
   { key: 'markets', label: '市场行情' },
@@ -46,12 +47,26 @@ async function loadPreferences() {
 }
 
 async function loadDigest(force = false) {
-  const response = await api.newsDaily(24, force)
+  const response = await api.newsDaily(24, force, rankingMode.value)
   responseError(response, '资讯摘要加载失败')
   const data = response.data || {}
   available.value = data.available !== false
   articles.value = data.items || []
   generatedAt.value = data.generated_at || ''
+}
+
+async function changeRanking(mode) {
+  if (!['smart', 'latest'].includes(mode) || rankingMode.value === mode || refreshing.value) return
+  rankingMode.value = mode
+  refreshing.value = true
+  error.value = ''
+  try {
+    await loadDigest(false)
+  } catch (e) {
+    error.value = e?.message || String(e)
+  } finally {
+    refreshing.value = false
+  }
 }
 
 async function load() {
@@ -157,6 +172,10 @@ onMounted(load)
       </div>
       <div class="head-actions">
         <span class="source-count">{{ sourceCountLabel }}</span>
+        <div class="ranking-switch" role="group" aria-label="资讯排序方式">
+          <button type="button" :aria-pressed="rankingMode === 'smart'" :class="{ active: rankingMode === 'smart' }" :disabled="refreshing" @click="changeRanking('smart')">智能精选</button>
+          <button type="button" :aria-pressed="rankingMode === 'latest'" :class="{ active: rankingMode === 'latest' }" :disabled="refreshing" @click="changeRanking('latest')">最新发布</button>
+        </div>
         <button class="action-button" type="button" :disabled="refreshing" @click="refresh">{{ refreshing ? '刷新中…' : '刷新资讯' }}</button>
       </div>
     </header>
@@ -235,6 +254,10 @@ onMounted(load)
 .news-head h2 { margin: 8px 0 4px; color: var(--text); font-size: 22px; letter-spacing: .05em; }
 .news-head p { margin: 0; color: var(--muted); font-size: 10px; }
 .head-actions, .subscription-actions { display: flex; align-items: center; gap: 10px; }
+.ranking-switch { display: inline-flex; padding: 2px; border: 1px solid var(--line); border-radius: 8px; background: color-mix(in srgb, var(--surface) 88%, transparent); }
+.ranking-switch button { min-height: 27px; padding: 0 9px; border: 0; border-radius: 6px; background: transparent; color: var(--subtle); cursor: pointer; font: 8px ui-monospace, monospace; transition: background .16s ease, color .16s ease, box-shadow .16s ease; }
+.ranking-switch button.active { color: var(--text); background: var(--workspace-accent-wash); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent); }
+.ranking-switch button:disabled { cursor: wait; opacity: .6; }
 .source-count, .feed-status, .topic-hint { color: var(--subtle); font: 9px ui-monospace, monospace; }
 .panel { padding: 13px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
 .panel-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 9px; border-bottom: 1px solid var(--line); }
