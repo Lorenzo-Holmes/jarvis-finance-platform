@@ -85,17 +85,9 @@ public class AiRateLimitService {
     public void recordTokens(Long userId, Object aiResponse) {
         if (quotaService == null || !(aiResponse instanceof Map<?, ?> response)) return;
         Map<?, ?> usage = findUsage(response);
-        if (usage == null) return;
-        Object total = usage.get("total_tokens");
-        if (total instanceof Number number) {
-            quotaService.consumeTokens(userId, number.longValue());
-        } else if (total != null) {
-            try {
-                quotaService.consumeTokens(userId, Long.parseLong(String.valueOf(total).trim()));
-            } catch (NumberFormatException ignored) {
-                // 兼容非标准上游 usage 格式，不阻断 AI 业务结果。
-            }
-        }
+        Map<?, ?> reviewerUsage = findReviewerUsage(response);
+        long totalTokens = totalTokens(usage) + totalTokens(reviewerUsage);
+        if (totalTokens > 0) quotaService.consumeTokens(userId, totalTokens);
     }
 
     /** 先看信封里的 data，再看顶层；都不是 map 就返回 null。 */
@@ -108,6 +100,35 @@ public class AiRateLimitService {
             return flat;
         }
         return null;
+    }
+
+    /** 输出审查智能体同样消耗模型 token，必须计入用户月度 token 配额。 */
+    private static Map<?, ?> findReviewerUsage(Map<?, ?> response) {
+        Object data = response.get("data");
+        if (data instanceof Map<?, ?> dataMap
+                && dataMap.get("safety") instanceof Map<?, ?> safety
+                && safety.get("reviewer_usage") instanceof Map<?, ?> usage) {
+            return usage;
+        }
+        if (response.get("safety") instanceof Map<?, ?> safety
+                && safety.get("reviewer_usage") instanceof Map<?, ?> usage) {
+            return usage;
+        }
+        return null;
+    }
+
+    private static long totalTokens(Map<?, ?> usage) {
+        if (usage == null) return 0L;
+        Object total = usage.get("total_tokens");
+        if (total instanceof Number number) return Math.max(0L, number.longValue());
+        if (total != null) {
+            try {
+                return Math.max(0L, Long.parseLong(String.valueOf(total).trim()));
+            } catch (NumberFormatException ignored) {
+                // 兼容非标准上游 usage 格式，不阻断 AI 业务结果。
+            }
+        }
+        return 0L;
     }
 
     private static final class Usage {

@@ -14,6 +14,7 @@ from typing import Iterator, List, Dict, Optional, Any
 import requests
 
 from . import research_report as research_report_prompts
+from . import output_guard
 from .research_tools import (
     deterministic_context,
     market_trend as trend_metrics,
@@ -81,10 +82,17 @@ def _key() -> str:
 
 
 def _chat_request(messages: List[Dict[str, str]], temperature: float = 0.7,
-                  max_tokens: Optional[int] = None) -> Dict[str, Any]:
+                  max_tokens: Optional[int] = None, *, model: Optional[str] = None,
+                  base_url: Optional[str] = None, api_key: Optional[str] = None,
+                  timeout: Optional[int] = None) -> Dict[str, Any]:
     """调用 OpenAI Chat Completions 兼容上游。"""
+    active_model = model or AI_MODEL
+    active_base_url = (base_url or AI_BASE_URL).rstrip("/")
+    active_key = _key() if api_key is None else str(api_key or "")
+    if not active_key:
+        raise RuntimeError("AI_API_KEY 未配置")
     payload: Dict[str, Any] = {
-        "model": AI_MODEL,
+        "model": active_model,
         "messages": messages,
         "temperature": temperature,
         "stream": False,
@@ -94,13 +102,13 @@ def _chat_request(messages: List[Dict[str, str]], temperature: float = 0.7,
 
     try:
         resp = requests.post(
-            f"{AI_BASE_URL}/chat/completions",
+            f"{active_base_url}/chat/completions",
             headers={
-                "Authorization": f"Bearer {_key()}",
+                "Authorization": f"Bearer {active_key}",
                 "Content-Type": "application/json",
             },
             json=payload,
-            timeout=AI_TIMEOUT,
+            timeout=timeout or AI_TIMEOUT,
         )
     except requests.RequestException as e:
         logger.error("AI upstream connection failed: %s", e)
@@ -114,12 +122,80 @@ def _chat_request(messages: List[Dict[str, str]], temperature: float = 0.7,
         return {
             "content": data["choices"][0]["message"]["content"],
             "role": data["choices"][0]["message"].get("role", "assistant"),
-            "model": data.get("model", AI_MODEL),
+            "model": data.get("model", active_model),
             "usage": data.get("usage"),
         }
     except (KeyError, IndexError) as e:
         logger.error("AI 上游响应解析失败: %s", data)
         raise RuntimeError(f"AI 上游响应格式异常: {e}")
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() not in {"0", "false", "no", "off"}
+
+
+def _env_int(name: str, default: int, minimum: int = 1, maximum: int = 300) -> int:
+    try:
+        return max(minimum, min(maximum, int(os.getenv(name, str(default)))))
+    except (TypeError, ValueError):
+        return default
+
+
+def _output_guard_config() -> Dict[str, Any]:
+    fail_mode = os.getenv("AI_OUTPUT_GUARD_FAIL_MODE", "closed").strip().lower()
+    if fail_mode not in {"open", "closed"}:
+        fail_mode = "closed"
+    return {
+        "enabled": _env_bool("AI_OUTPUT_GUARD_ENABLED", True),
+        "model": os.getenv("AI_OUTPUT_GUARD_MODEL", AI_MODEL).strip() or AI_MODEL,
+        "base_url": os.getenv("AI_OUTPUT_GUARD_BASE_URL", AI_BASE_URL).rstrip("/"),
+        "api_key": os.getenv("AI_OUTPUT_GUARD_API_KEY", AI_API_KEY),
+        "timeout": _env_int("AI_OUTPUT_GUARD_TIMEOUT", min(20, AI_TIMEOUT)),
+        "fail_mode": fail_mode,
+    }
+
+
+def _review_chat_response(messages: List[Dict[str, str]], response: Dict[str, Any]) -> Dict[str, Any]:
+    """Return an approved response or a fixed replacement; never return blocked text."""
+    config = _output_guard_config()
+
+    def review_call(review_messages: List[Dict[str, str]]) -> Dict[str, Any]:
+        return _chat_request(
+            review_messages,
+            temperature=0.0,
+            max_tokens=300,
+            model=config["model"],
+            base_url=config["base_url"],
+            api_key=config["api_key"],
+            timeout=config["timeout"],
+        )
+
+    candidate = str(response.get("content") or "")
+    decision = output_guard.review_candidate_output(
+        messages=messages,
+        candidate=candidate,
+        review_call=review_call,
+        enabled=bool(config["enabled"]),
+        fail_mode=str(config["fail_mode"]),
+        reviewer_model=str(config["model"]),
+    )
+    guarded = dict(response)
+    guarded["safety"] = decision.public_dict()
+    if decision.blocked:
+        # The untrusted candidate is deliberately overwritten before this
+        # response can cross the Python -> Java trust boundary.
+        guarded["content"] = decision.replacement or output_guard.SAFE_REPLACEMENT
+    return guarded
+
+
+def _released_chunks(content: str, chunk_size: int = 1200) -> Iterator[str]:
+    """Chunk already-reviewed text for the legacy SSE endpoint."""
+    text = str(content or "")
+    for index in range(0, len(text), chunk_size):
+        yield text[index:index + chunk_size]
 
 
 def open_chat_stream(messages: List[Dict[str, str]], temperature: float = 0.7,
@@ -170,7 +246,13 @@ def open_chat_stream(messages: List[Dict[str, str]], temperature: float = 0.7,
 
     def events() -> Iterator[Dict[str, Any]]:
         model = AI_MODEL
+        usage: Optional[Dict[str, Any]] = None
+        finish_reason: Optional[str] = None
+        candidate_parts: List[str] = []
+        guard_config = _output_guard_config()
         try:
+            if guard_config["enabled"]:
+                yield {"type": "safety", "status": "reviewing", "stage": "output_review"}
             for raw_line in resp.iter_lines(decode_unicode=True):
                 if not raw_line:
                     continue
@@ -179,32 +261,53 @@ def open_chat_stream(messages: List[Dict[str, str]], temperature: float = 0.7,
                     continue
                 payload_text = line[5:].strip()
                 if payload_text == "[DONE]":
-                    yield {"type": "done", "model": model}
-                    return
+                    break
                 try:
                     chunk = json.loads(payload_text)
                 except json.JSONDecodeError:
                     logger.warning("忽略无法解析的 AI SSE 行: %s", payload_text[:200])
                     continue
                 model = chunk.get("model") or model
-                usage = chunk.get("usage")
-                if isinstance(usage, dict):
-                    # Usage is emitted as a separate SSE event so the Java
-                    # quota boundary can record it without exposing the
-                    # provider response wholesale to the browser.
-                    yield {"type": "usage", "usage": usage}
+                next_usage = chunk.get("usage")
+                if isinstance(next_usage, dict):
+                    usage = next_usage
                 choices = chunk.get("choices") or []
                 if not choices:
                     continue
                 delta = choices[0].get("delta") or {}
                 content = delta.get("content")
                 if content:
+                    # Security boundary: do not emit unreviewed deltas.
+                    candidate_parts.append(str(content))
+                if choices[0].get("finish_reason"):
+                    finish_reason = str(choices[0].get("finish_reason"))
+
+            reviewed = _review_chat_response(full, {
+                "content": "".join(candidate_parts),
+                "role": "assistant",
+                "model": model,
+                "usage": usage,
+            })
+            safety = dict(reviewed.get("safety") or {})
+            status = str(safety.get("status") or "approved")
+            yield {"type": "safety", **safety}
+            if status == "retracted":
+                yield {
+                    "type": "retracted",
+                    "content": reviewed.get("content") or output_guard.SAFE_REPLACEMENT,
+                    "safety": safety,
+                }
+            else:
+                for content in _released_chunks(str(reviewed.get("content") or "")):
                     yield {"type": "delta", "content": content}
-                finish_reason = choices[0].get("finish_reason")
-                if finish_reason:
-                    yield {"type": "done", "model": model, "finish_reason": finish_reason}
-                    return
-            yield {"type": "done", "model": model}
+            if usage:
+                # Usage is emitted after the review gate, so consumers still
+                # receive accounting metadata without seeing candidate text.
+                yield {"type": "usage", "usage": usage}
+            done: Dict[str, Any] = {"type": "done", "model": model, "safety": safety}
+            if finish_reason:
+                done["finish_reason"] = finish_reason
+            yield done
         except requests.RequestException as e:
             logger.error("AI upstream streaming interrupted: %s", e)
             yield {"type": "error", "message": "AI 上游流式连接中断"}
@@ -223,7 +326,8 @@ def chat(messages: List[Dict[str, str]], temperature: float = 0.7,
     if context_message:
         full.append(context_message)
     full.extend(messages)
-    return _chat_request(full, temperature=temperature)
+    response = _chat_request(full, temperature=temperature)
+    return _review_chat_response(full, response)
 
 
 def translate_news_titles(titles: List[str]) -> Dict[str, Any]:
@@ -406,6 +510,7 @@ def research_report(task: Dict[str, Any], metrics: Optional[Dict[str, Any]] = No
 def capabilities() -> Dict[str, Any]:
     """能力探测: 是否可用 + 协议/模型信息"""
     ok = bool(AI_API_KEY)
+    guard = _output_guard_config()
     return {
         "available": ok,
         "provider": AI_PROVIDER,
@@ -415,6 +520,13 @@ def capabilities() -> Dict[str, Any]:
         "display_name": AI_MODEL_DISPLAY_NAME,
         "key_configured": ok,
         "message": "已配置" if ok else "缺少 AI_API_KEY 环境变量",
+        "output_guard": {
+            "enabled": bool(guard["enabled"]),
+            "model": str(guard["model"]),
+            "fail_mode": str(guard["fail_mode"]),
+            "key_configured": bool(guard["api_key"]),
+            "review_before_release": True,
+        },
         "skills": [
             "金价实时解读",
             "黄金ETF投资咨询",

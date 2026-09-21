@@ -131,7 +131,8 @@ public class AgentOrchestrator {
             filing.put("available", true);
             filing.put("analysis", content);
             emitStepEvent(sink, AgentEvent.create("tool_result", "completed", "财报解析完成", "FinancialReportTool",
-                    null, "已生成财报结构化摘要", Map.of("available", true, "analysis", trim(content, 6000)),
+                    null, "已生成财报结构化摘要，原始模型文本仅在服务端传递给最终汇总步骤",
+                    Map.of("available", true, "analysis_exposed", false),
                     started, Instant.now(), elapsed(started), null), stepId);
             completeStep(sink, stepId, "财报步骤完成", "FinancialReportTool", "已生成财报结构化摘要",
                     started, "completed", null);
@@ -280,15 +281,43 @@ public class AgentOrchestrator {
             body.put("messages", List.of(Map.of("role", "user", "content", question)));
             body.put("research_context", context);
             body.put("metrics", metrics);
+            String safetyStepId = java.util.UUID.randomUUID().toString();
+            emitStepEvent(sink, AgentEvent.create("safety_review", "running", "输出安全审查待执行", "OutputSafetyReviewer",
+                    null, "候选结论将在服务端完成独立安全审查后再释放",
+                    Map.of("safety", Map.of("status", "reviewing")), started, null, null, null), safetyStepId);
             Map<String, Object> response = aiProxyService.post("/api/ai/chat", body);
             aiRateLimitService.recordTokens(userId, response);
             String content = extractContent(response);
-            emitStepEvent(sink, AgentEvent.create("assistant_delta", "completed", "研究结论已生成", "ResearchSynthesisTool",
-                    null, "Markdown 结论已返回", Map.of("content", content), started,
-                    Instant.now(), elapsed(started), null), stepId);
+            Map<String, Object> safety = extractSafety(response);
+            String safetyStatus = String.valueOf(safety.getOrDefault("status", "legacy_unreviewed"));
+            boolean retracted = "retracted".equals(safetyStatus);
+            String safetyTitle = switch (safetyStatus) {
+                case "approved" -> "输出安全审查通过";
+                case "retracted" -> "输出已被安全审查撤回";
+                case "review_error_open" -> "输出审查异常，已按配置降级放行";
+                case "disabled" -> "输出安全审查未启用";
+                default -> "兼容响应未携带安全审查元数据";
+            };
+            emitStepEvent(sink, AgentEvent.create("safety_review", retracted ? "retracted" : "completed",
+                    safetyTitle, "OutputSafetyReviewer", null,
+                    retracted ? "候选结论未越过服务端安全边界" : "候选结论安全状态已确认",
+                    Map.of("safety", safety), started, Instant.now(), elapsed(started),
+                    retracted ? "AI_OUTPUT_RETRACTED" : null), safetyStepId);
+            if (retracted) {
+                emitStepEvent(sink, AgentEvent.create("assistant_retracted", "retracted", "研究结论已撤回",
+                        "OutputSafetyReviewer", null, "危险候选正文未下发，仅返回安全替代文案",
+                        Map.of("content", content, "safety", safety), started,
+                        Instant.now(), elapsed(started), "AI_OUTPUT_RETRACTED"), safetyStepId);
+            } else {
+                emitStepEvent(sink, AgentEvent.create("assistant_delta", "completed", "研究结论已生成", "ResearchSynthesisTool",
+                        null, "Markdown 结论已通过输出边界", Map.of("content", content, "safety", safety), started,
+                        Instant.now(), elapsed(started), null), stepId);
+            }
             emitStepEvent(sink, AgentEvent.create("tool_result", "completed", "研究汇总完成", "ResearchSynthesisTool",
-                    question, "模型已引用服务端研究上下文", Map.of(), started, Instant.now(), elapsed(started), null), stepId);
-            completeStep(sink, stepId, "研究结论步骤完成", "ResearchSynthesisTool", "模型已引用服务端研究上下文",
+                    question, retracted ? "模型候选结论已被输出安全审查撤回" : "模型已引用服务端研究上下文并通过输出边界",
+                    Map.of(), started, Instant.now(), elapsed(started), null), stepId);
+            completeStep(sink, stepId, "研究结论步骤完成", "ResearchSynthesisTool",
+                    retracted ? "候选结论已安全撤回" : "模型结论已通过输出边界",
                     started, "completed", null);
         } catch (AgentCancelledException cancelledException) {
             throw cancelledException;
@@ -338,6 +367,31 @@ public class AgentOrchestrator {
         }
         Object content = response.get("content");
         return content == null ? "（模型未返回内容）" : String.valueOf(content);
+    }
+
+    private static Map<String, Object> extractSafety(Map<String, Object> response) {
+        if (response != null) {
+            Object data = response.get("data");
+            if (data instanceof Map<?, ?> dataMap) {
+                Object safety = dataMap.get("safety");
+                if (safety instanceof Map<?, ?> safetyMap) return stringKeyMap(safetyMap);
+            }
+            Object safety = response.get("safety");
+            if (safety instanceof Map<?, ?> safetyMap) return stringKeyMap(safetyMap);
+        }
+        return Map.of(
+                "status", "legacy_unreviewed",
+                "risk", "unknown",
+                "reason_code", "missing_safety_metadata"
+        );
+    }
+
+    private static Map<String, Object> stringKeyMap(Map<?, ?> source) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        source.forEach((key, value) -> {
+            if (key != null) out.put(String.valueOf(key), value);
+        });
+        return out;
     }
 
     private static boolean isFinancialDocument(String question) {

@@ -17,7 +17,9 @@ const typeLabel = {
   tool_call: 'CALL',
   tool_result: 'RESULT',
   step_completed: 'STEP',
+  safety_review: 'SAFETY',
   assistant_delta: 'ANSWER',
+  assistant_retracted: 'RETRACTED',
   run_completed: 'DONE',
   run_failed: 'FAILED',
   run_cancelled: 'STOPPED',
@@ -96,7 +98,7 @@ function summary(step) {
 .trace-rail i { z-index: 1; width: 7px; height: 7px; margin-top: 2px; border: 1px solid var(--muted); border-radius: 50%; background: var(--surface); }
 .is-running .trace-rail i { border-color: var(--accent); background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent); }
 .is-completed .trace-rail i { border-color: var(--positive, #3fc98a); background: var(--positive, #3fc98a); }
-.is-failed .trace-rail i, .is-cancelled .trace-rail i { border-color: var(--negative, #e45d5d); background: var(--negative, #e45d5d); }
+.is-failed .trace-rail i, .is-cancelled .trace-rail i, .is-retracted .trace-rail i { border-color: var(--negative, #e45d5d); background: var(--negative, #e45d5d); }
 .trace-body { min-width: 0; }
 .trace-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
 .trace-row strong { color: var(--text); font-size: 10px; font-weight: 650; }

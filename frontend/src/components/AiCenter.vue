@@ -133,8 +133,60 @@ async function loadStatus() {
   }
 }
 
-function push(role, content, apiContent = '') {
-  messages.value.push({ role, content, apiContent })
+function push(role, content, apiContent = '', extras = {}) {
+  messages.value.push({ role, content, apiContent, ...extras })
+}
+
+const SAFETY_RISK_LABELS = {
+  none: '未发现输出安全风险',
+  prompt_injection_compliance: '检测到提示词渗透服从风险',
+  system_instruction_leak: '检测到内部指令泄露风险',
+  secret_exposure: '检测到敏感凭据泄露风险',
+  policy_bypass: '检测到安全边界绕过风险',
+  other_security_risk: '检测到其他输出安全风险',
+  unknown: '输出安全状态未知',
+}
+
+function safetyStatusLabel(status) {
+  return ({
+    reviewing: '安全审查中',
+    approved: '输出审查通过',
+    retracted: '输出已撤回',
+    disabled: '输出审查未启用',
+    review_error_open: '审查异常 · 降级放行',
+    legacy_unreviewed: '兼容模式 · 未审查',
+  })[status] || status || ''
+}
+
+function safetyRiskLabel(risk) {
+  return SAFETY_RISK_LABELS[risk] || SAFETY_RISK_LABELS.unknown
+}
+
+function applySafetyEventToMessage(message, event) {
+  if (!message || message.role !== 'assistant' || !event) return
+  const safety = event.payload?.safety && typeof event.payload.safety === 'object'
+    ? event.payload.safety
+    : null
+  if (event.type === 'safety_review' && safety) {
+    message.safetyStatus = safety.status || event.status || 'reviewing'
+    message.safetyRisk = safety.risk || ''
+    message.safetyReason = safety.reason || ''
+    message.reviewId = safety.review_id || ''
+  }
+  if (event.type === 'assistant_delta' && safety) {
+    message.safetyStatus = safety.status || message.safetyStatus || 'approved'
+    message.safetyRisk = safety.risk || message.safetyRisk || ''
+    message.safetyReason = safety.reason || message.safetyReason || ''
+    message.reviewId = safety.review_id || message.reviewId || ''
+  }
+  if (event.type === 'assistant_retracted') {
+    message.retracted = true
+    message.safetyStatus = safety?.status || 'retracted'
+    message.safetyRisk = safety?.risk || 'other_security_risk'
+    message.safetyReason = safety?.reason || '候选回复未通过平台输出安全审查。'
+    message.reviewId = safety?.review_id || ''
+    message.content = event.payload?.content || '该回复未通过输出安全审查，已撤回。请调整问题后重试。'
+  }
 }
 
 function chooseResearchFile() {
@@ -323,15 +375,22 @@ async function replayAgentRun(run) {
     agentRunId.value = run.runId
     agentSteps.value = []
     agentError.value = ''
-    let answer = ''
+    const assistantMessage = {
+      role: 'assistant', content: '', apiContent: '', safetyStatus: '', safetyRisk: '',
+      safetyReason: '', reviewId: '', retracted: false,
+    }
     events.forEach(event => {
       const content = applyAgentEvent(event)
-      if (content) answer += content
+      applySafetyEventToMessage(assistantMessage, event)
+      if (content && !assistantMessage.retracted) assistantMessage.content += content
     })
     agentRunning.value = ['pending', 'running'].includes(run.status)
     messages.value = messages.value.slice(0, 1)
     push('user', run.question || '历史研究运行')
-    push('assistant', answer || (run.status === 'failed' ? '历史运行未生成完整结论。' : '该运行没有可展示的模型结论。'))
+    if (!assistantMessage.content) {
+      assistantMessage.content = run.status === 'failed' ? '历史运行未生成完整结论。' : '该运行没有可展示的模型结论。'
+    }
+    messages.value.push(assistantMessage)
     await scrollChatToBottom()
   } catch (e) {
     historyError.value = e?.message || '历史运行恢复失败'
@@ -353,10 +412,11 @@ async function recoverCurrentRun() {
     if (sequence <= lastSequence) return
     lastSequence = sequence
     const content = applyAgentEvent(data)
-    if (content) {
-      const lastAssistant = [...messages.value].map((message, index) => ({ message, index }))
-        .reverse().find(item => item.message.role === 'assistant')
-      if (lastAssistant) lastAssistant.message.content += content
+    const lastAssistant = [...messages.value].map((message, index) => ({ message, index }))
+      .reverse().find(item => item.message.role === 'assistant')
+    if (lastAssistant) {
+      applySafetyEventToMessage(lastAssistant.message, data)
+      if (content && !lastAssistant.message.retracted) lastAssistant.message.content += content
     }
     if (['run_completed', 'run_failed', 'run_cancelled'].includes(data?.type)) {
       recoveryClose?.()
@@ -382,11 +442,16 @@ async function sendChat() {
   }
   input.value = ''
   // 不把前端欢迎语发给模型；保留最近 20 条真实 user/assistant 上下文。
-  const history = messages.value.slice(1).slice(-20).map(({ role, content, apiContent: hiddenContent }) => ({
-    role,
-    content: hiddenContent || content,
-  }))
-  push('assistant', '')
+  const history = messages.value.slice(1)
+    .filter(message => !(message.role === 'assistant' && message.retracted))
+    .slice(-20)
+    .map(({ role, content, apiContent: hiddenContent }) => ({
+      role,
+      content: hiddenContent || content,
+    }))
+  push('assistant', '', '', {
+    safetyStatus: 'reviewing', safetyRisk: '', safetyReason: '', reviewId: '', retracted: false,
+  })
   const assistantIndex = messages.value.length - 1
   agentSteps.value = []
   agentRunId.value = ''
@@ -403,7 +468,8 @@ async function sendChat() {
     await api.agentResearchStream(question, ({ event, data }) => {
       if (event === 'agent_step') {
         const content = applyAgentEvent(data)
-        if (content) messages.value[assistantIndex].content += content
+        applySafetyEventToMessage(messages.value[assistantIndex], data)
+        if (content && !messages.value[assistantIndex].retracted) messages.value[assistantIndex].content += content
         scrollChatToBottom()
       } else if (event === 'error') {
         throw new Error(data?.message || data?.outputSummary || 'Agent 流式响应中断')
@@ -416,8 +482,10 @@ async function sendChat() {
     if (e?.name === 'AbortError') {
       if (!messages.value[assistantIndex].content) messages.value[assistantIndex].content = '（已停止）'
     } else {
-      const prefix = messages.value[assistantIndex].content ? '\n\n' : ''
-      messages.value[assistantIndex].content += `${prefix}⚠️ ${e?.message || e}`
+      if (!messages.value[assistantIndex].retracted) {
+        const prefix = messages.value[assistantIndex].content ? '\n\n' : ''
+        messages.value[assistantIndex].content += `${prefix}⚠️ ${e?.message || e}`
+      }
       agentError.value = e?.message || String(e)
       if (agentRunId.value) loadAgentHistory()
     }
@@ -695,9 +763,21 @@ onBeforeUnmount(() => {
         />
         <div class="conversation-label"><span>JARVIS 注释</span><small>基于当前研究上下文持续追加</small></div>
         <div class="chat-window" ref="chatBox" role="log" aria-live="polite" aria-relevant="additions text" aria-label="研究会话记录">
-          <div v-for="(m, i) in messages" :key="i" class="message-row" :class="m.role">
-            <div class="message-meta"><span>{{ m.role === 'user' ? '问题' : 'JARVIS' }}</span><i></i></div>
-            <MarkdownContent v-if="m.role === 'assistant'" class="message-content" :content="m.content" />
+          <div v-for="(m, i) in messages" :key="i" class="message-row" :class="[m.role, { retracted: m.retracted }]">
+            <div class="message-meta">
+              <span>{{ m.role === 'user' ? '问题' : 'JARVIS' }}</span><i></i>
+              <small
+                v-if="m.role === 'assistant' && m.safetyStatus"
+                class="safety-badge"
+                :class="m.safetyStatus"
+              >{{ safetyStatusLabel(m.safetyStatus) }}</small>
+            </div>
+            <div v-if="m.role === 'assistant' && m.retracted" class="message-content safety-retraction" role="status">
+              <strong>输出已撤回</strong>
+              <p>{{ m.content }}</p>
+              <small>{{ safetyRiskLabel(m.safetyRisk) }}</small>
+            </div>
+            <MarkdownContent v-else-if="m.role === 'assistant'" class="message-content" :content="m.content" />
             <div v-else class="message-content">{{ m.content }}</div>
           </div>
         </div>
@@ -1396,6 +1476,39 @@ onBeforeUnmount(() => {
   border-left: 1px solid color-mix(in srgb, var(--accent) 54%, var(--line));
 }
 .message-row.assistant .message-meta span { color: var(--accent-strong); }
+.message-meta { flex-wrap: wrap; }
+.safety-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 17px;
+  padding: 0 6px;
+  margin-top: -2px;
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--workspace-accent-wash) 42%, transparent);
+  color: var(--subtle);
+  font-size: 7px;
+  line-height: 1;
+  white-space: nowrap;
+}
+.safety-badge.approved { color: var(--accent-strong); }
+.safety-badge.reviewing { opacity: .72; }
+.safety-badge.retracted {
+  border-color: color-mix(in srgb, var(--bad) 38%, var(--line));
+  background: color-mix(in srgb, var(--bad) 8%, transparent);
+  color: var(--bad);
+}
+.message-row.assistant.retracted .message-content {
+  border-left-color: color-mix(in srgb, var(--bad) 62%, var(--line));
+}
+.safety-retraction {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+}
+.safety-retraction strong { color: var(--bad); font-size: 10px; font-weight: 650; }
+.safety-retraction p { margin: 0; color: var(--text); }
+.safety-retraction small { color: var(--subtle); font-size: 8px; }
 .research-layout:has(.composer-shell:focus-within) .evidence-dock,
 .research-layout:has(.composer-shell:focus-within) .context-inspector {
   opacity: .62;

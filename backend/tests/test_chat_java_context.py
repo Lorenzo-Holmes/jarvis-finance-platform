@@ -10,7 +10,9 @@ chat 面的“响应”是那条注入的 system 消息（确定性上下文的 
 判据说明：上下文本身没有 available 字段（只有其中 portfolio 段有），
 所以这里用**非空字典**判断，不能照抄风险面/趋势面看 available 的那套。
 """
-from backend.app import ai_service, ai_routes
+import json
+
+from backend.app import ai_service, ai_routes, output_guard
 
 SNAPSHOT = {"price": 100.5, "prev_close": 100, "open": 99, "high": 102, "low": 98.5,
             "quote_time": "2026-01-02T10:00:00", "source": "tencent"}
@@ -68,6 +70,16 @@ def capture_llm_messages(monkeypatch):
     seen = {}
 
     def _fake(messages, *args, **kwargs):
+        if messages and messages[0].get("content") == output_guard.REVIEW_SYSTEM_PROMPT:
+            return {
+                "content": json.dumps({
+                    "decision": "allow",
+                    "risk": "none",
+                    "confidence": 0.99,
+                    "reason_code": "test_allow",
+                }),
+                "model": "test-reviewer",
+            }
         seen["messages"] = messages
         return {"content": "好的"}
 
@@ -89,7 +101,8 @@ def test_provided_context_is_used_verbatim_without_recomputing(monkeypatch):
 
     result = ai_service.chat(MESSAGES, metrics=dict(JAVA_CONTEXT))
 
-    assert result == {"content": "好的"}
+    assert result["content"] == "好的"
+    assert result["safety"]["status"] == "approved"
     injected = context_message(seen["messages"])
     assert injected["role"] == "system"
     assert "100.500000" in injected["content"]      # 报价段来自 Java
