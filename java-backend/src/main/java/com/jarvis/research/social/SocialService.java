@@ -289,9 +289,14 @@ public class SocialService {
     }
 
     private Map<String, Object> createPost(Long userId, Long groupId, PostRequest request, String clientIp) {
+        String referenceType = trimToNull(request.getReferenceType());
+        String referenceId = trimToNull(request.getReferenceId());
+        if ((referenceType == null) != (referenceId == null)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "referenceType 与 referenceId 必须同时提供");
+        }
         CommunityPost post = postRepository.save(CommunityPost.builder()
                 .authorUserId(userId).groupId(groupId).content(request.getContent().trim())
-                .referenceType(trimToNull(request.getReferenceType())).referenceId(trimToNull(request.getReferenceId()))
+                .referenceType(referenceType).referenceId(referenceId)
                 .createdAt(LocalDateTime.now()).build());
         String summary = "发布研究动态：" + abbreviate(post.getContent(), 120);
         addActivity(userId, "POST_CREATED", summary, "POST", String.valueOf(post.getId()));

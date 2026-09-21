@@ -207,6 +207,19 @@ class SocialServiceTest {
         verify(achievementService, never()).evaluateSocial(7L);
     }
 
+    @Test
+    void postReferenceMustBeCompletePair() {
+        SocialDtos.PostRequest request = new SocialDtos.PostRequest();
+        request.setContent("research note");
+        request.setReferenceType("RESEARCH_TASK");
+
+        ResponseStatusException error = assertThrows(ResponseStatusException.class,
+                () -> service.createPublicPost(7L, request, "127.0.0.1"));
+
+        assertEquals(HttpStatus.BAD_REQUEST, error.getStatusCode());
+        verify(postRepository, never()).save(any());
+    }
+
     private static User user(Long id) {
         return User.builder()
                 .id(id)
