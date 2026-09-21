@@ -189,6 +189,24 @@ class SocialServiceTest {
         verify(userRepository, never()).findById(9L);
     }
 
+    @Test
+    void invitingExistingMemberIsIdempotentAndDoesNotEmitActivity() {
+        CommunityGroup group = CommunityGroup.builder().id(8L).ownerUserId(9L).name("Desk").visibility("OPEN").build();
+        when(groupRepository.findById(8L)).thenReturn(Optional.of(group));
+        when(userRepository.findById(7L)).thenReturn(Optional.of(user(7L)));
+        when(userRepository.findById(9L)).thenReturn(Optional.of(user(9L)));
+        when(memberRepository.existsByGroupIdAndUserId(8L, 7L)).thenReturn(true);
+        when(memberRepository.findByGroupIdAndUserId(8L, 9L)).thenReturn(Optional.of(
+                CommunityGroupMember.builder().groupId(8L).userId(9L).role("OWNER").build()));
+        when(memberRepository.findByGroupIdOrderByCreatedAtAsc(8L)).thenReturn(java.util.List.of());
+
+        service.addMember(9L, 8L, 7L, "127.0.0.1");
+
+        verify(memberRepository, never()).save(any());
+        verify(activityRepository, never()).save(any());
+        verify(achievementService, never()).evaluateSocial(7L);
+    }
+
     private static User user(Long id) {
         return User.builder()
                 .id(id)

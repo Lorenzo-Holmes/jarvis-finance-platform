@@ -158,7 +158,10 @@ public class SocialService {
         CommunityGroup group = requireGroup(groupId);
         requireOwner(ownerId, group);
         requireUser(userId);
-        if (!memberRepository.existsByGroupIdAndUserId(groupId, userId)) saveMember(groupId, userId, "MEMBER");
+        if (memberRepository.existsByGroupIdAndUserId(groupId, userId)) {
+            return groupView(ownerId, group, true);
+        }
+        saveMember(groupId, userId, "MEMBER");
         addActivity(userId, "GROUP_JOINED", "加入研究小组「" + group.getName() + "」", "GROUP", String.valueOf(groupId));
         auditService.record(ownerId, "COMMUNITY_GROUP_MEMBER_ADD", "group:" + groupId, clientIp, "user=" + userId);
         achievementService.evaluateSocial(userId);
