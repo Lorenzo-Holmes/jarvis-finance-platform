@@ -198,3 +198,10 @@ test('message room distinguishes channel, incoming and own message surfaces', ()
   assert.match(source, /\.message-thread article\.mine::after/)
   assert.match(source, /\.message-thread article:hover/)
 })
+
+test('unread indicators use low-frequency non-layout-shifting motion', () => {
+  const source = read('pages/CommunityPage.vue')
+  assert.match(source, /@keyframes social-unread-pulse/)
+  assert.match(source, /animation: social-unread-pulse 2\.8s/)
+  assert.match(source, /\.conversation-list i \{ min-width: 18px/)
+})
