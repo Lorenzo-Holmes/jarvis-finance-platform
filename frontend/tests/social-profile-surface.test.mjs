@@ -205,3 +205,10 @@ test('unread indicators use low-frequency non-layout-shifting motion', () => {
   assert.match(source, /animation: social-unread-pulse 2\.8s/)
   assert.match(source, /\.conversation-list i \{ min-width: 18px/)
 })
+
+test('profile identity card behaves as a restrained hero surface', () => {
+  const source = read('pages/ProfilePage.vue')
+  assert.match(source, /\.identity-card \{ position: relative/)
+  assert.match(source, /\.identity-card:hover \.avatar\.large/)
+  assert.match(source, /font-variant-numeric: tabular-nums/)
+})
