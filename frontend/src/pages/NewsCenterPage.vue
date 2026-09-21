@@ -300,6 +300,7 @@ onBeforeUnmount(() => {
             <button class="text-button disclosure-button" type="button" :aria-expanded="subscriptionOpen" @click="subscriptionOpen = !subscriptionOpen">{{ subscriptionOpen ? '收起配置' : '展开配置' }}</button>
           </div>
         </div>
+        <Transition name="subscription-fold">
         <div v-show="subscriptionOpen" class="subscription-body">
         <div class="choice-grid source-grid">
           <label class="choice" :class="{ active: isAllSources }">
@@ -325,6 +326,7 @@ onBeforeUnmount(() => {
           <button class="action-button primary" type="button" :disabled="saving || !subscriptionDirty" @click="saveSubscriptions">{{ saving ? '保存中…' : '保存订阅' }}</button>
         </div>
         </div>
+        </Transition>
       </section>
 
       <section class="feed-panel panel" :class="{ refreshing }">
@@ -422,7 +424,9 @@ onBeforeUnmount(() => {
 .panel-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 9px; border-bottom: 1px solid var(--line); }
 .panel-title > div { display: flex; flex-direction: column; gap: 4px; }
 .panel-title .panel-actions { flex-direction: row; align-items: center; gap: 5px; }
-.subscription-body { display: grid; }
+.subscription-body { display: grid; max-height: 1200px; overflow: clip; transform-origin: top center; }
+.subscription-fold-enter-active, .subscription-fold-leave-active { transition: opacity var(--news-motion-surface) ease, transform var(--news-motion-surface) var(--news-ease), max-height var(--news-motion-layout) var(--news-ease); }
+.subscription-fold-enter-from, .subscription-fold-leave-to { opacity: 0; transform: translateY(-4px) scaleY(.985); max-height: 0; }
 .disclosure-button { color: var(--muted); }
 .feed-actions { display: flex; align-items: center; gap: 9px; }
 .feed-search { min-width: 190px; height: 30px; display: flex; align-items: center; gap: 6px; padding: 0 7px; border: 1px solid var(--line); border-radius: 7px; background: color-mix(in srgb, var(--surface) 76%, transparent); transition: border-color .16s ease, background .16s ease, box-shadow .16s ease; }.feed-search:focus-within { border-color: color-mix(in srgb, var(--accent) 30%, var(--line-strong)); background: var(--surface); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 7%, transparent); }.feed-search > span { color: var(--subtle); font: 7px ui-monospace, monospace; }.feed-search input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; color: var(--text); font-size: 8px; }.feed-search button { border: 0; background: transparent; color: var(--subtle); cursor: pointer; padding: 0 2px; }

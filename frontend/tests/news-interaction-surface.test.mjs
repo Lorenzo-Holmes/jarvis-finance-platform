@@ -237,3 +237,10 @@ test('news toasts animate both entry and exit', () => {
   assert.match(page, /\.news-toast-enter-active/)
   assert.match(page, /\.news-toast-leave-to/)
 })
+
+test('subscription configuration expands and collapses as an accordion', () => {
+  const page = read('pages/NewsCenterPage.vue')
+  assert.match(page, /<Transition name="subscription-fold">/)
+  assert.match(page, /\.subscription-fold-enter-active/)
+  assert.match(page, /max-height: 0/)
+})
