@@ -72,12 +72,31 @@ def test_streaming_chat_yields_delta_and_done(monkeypatch):
     response = FakeResponse()
     monkeypatch.setattr(ai_service, "AI_API_KEY", "test-key")
     monkeypatch.setattr(ai_service.requests, "post", lambda *args, **kwargs: response)
+    monkeypatch.setattr(ai_service, "_review_chat_response", lambda messages, result: {
+        **result,
+        "safety": {
+            "status": "approved",
+            "risk": "none",
+            "review_id": "stream-review-ok",
+            "reason_code": "test_allow",
+        },
+    })
 
     events = list(ai_service.open_chat_stream([{"role": "user", "content": "hi"}]))
     assert events == [
-        {"type": "delta", "content": "你"},
-        {"type": "delta", "content": "好"},
-        {"type": "done", "model": "test-model"},
+        {"type": "safety", "status": "reviewing", "stage": "output_review"},
+        {
+            "type": "safety", "status": "approved", "risk": "none",
+            "review_id": "stream-review-ok", "reason_code": "test_allow",
+        },
+        {"type": "delta", "content": "你好"},
+        {
+            "type": "done", "model": "test-model",
+            "safety": {
+                "status": "approved", "risk": "none",
+                "review_id": "stream-review-ok", "reason_code": "test_allow",
+            },
+        },
     ]
     assert response.closed is True
 
@@ -102,13 +121,33 @@ def test_streaming_chat_emits_authoritative_usage_event(monkeypatch):
     captured = {}
     monkeypatch.setattr(ai_service, "AI_API_KEY", "test-key")
     monkeypatch.setattr(ai_service.requests, "post", lambda *args, **kwargs: captured.update(kwargs) or FakeResponse())
+    monkeypatch.setattr(ai_service, "_review_chat_response", lambda messages, result: {
+        **result,
+        "safety": {
+            "status": "approved",
+            "risk": "none",
+            "review_id": "usage-review-ok",
+            "reason_code": "test_allow",
+        },
+    })
 
     events = list(ai_service.open_chat_stream([{"role": "user", "content": "hi"}]))
 
     assert events == [
+        {"type": "safety", "status": "reviewing", "stage": "output_review"},
+        {
+            "type": "safety", "status": "approved", "risk": "none",
+            "review_id": "usage-review-ok", "reason_code": "test_allow",
+        },
         {"type": "delta", "content": "完成"},
         {"type": "usage", "usage": {"prompt_tokens": 10, "completion_tokens": 6, "total_tokens": 16}},
-        {"type": "done", "model": "test-model"},
+        {
+            "type": "done", "model": "test-model",
+            "safety": {
+                "status": "approved", "risk": "none",
+                "review_id": "usage-review-ok", "reason_code": "test_allow",
+            },
+        },
     ]
     assert captured["json"]["stream_options"] == {"include_usage": True}
 
