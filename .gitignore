@@ -81,6 +81,10 @@ Z-Image-Turbo-int4-ov/
 *.gif
 *.webp
 !e2e/tests/*-snapshots/*.png
+!frontend/public/favicon-32.png
+!frontend/public/favicon-64.png
+!frontend/public/favicon-192.png
+!frontend/public/favicon-512.png
 
 # Editor / OS
 .vscode/
