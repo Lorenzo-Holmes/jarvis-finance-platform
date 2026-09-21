@@ -190,3 +190,10 @@ test('market ranking control mirrors the sliding selection lens language', () =>
   assert.match(board, /\.ranking-switch::before/)
   assert.match(board, /translateX\(calc\(var\(--ranking-index\) \* 100%\)\)/)
 })
+
+test('reading density control uses a continuous selection lens', () => {
+  const page = read('pages/NewsCenterPage.vue')
+  assert.match(page, /--density-index/)
+  assert.match(page, /\.density-switch::before/)
+  assert.match(page, /translateX\(calc\(var\(--density-index\) \* 100%\)\)/)
+})
