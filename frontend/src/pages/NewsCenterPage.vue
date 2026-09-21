@@ -283,7 +283,7 @@ onBeforeUnmount(() => {
           <button type="button" :aria-pressed="rankingMode === 'smart'" :class="{ active: rankingMode === 'smart' }" :disabled="refreshing" @click="changeRanking('smart')">智能精选</button>
           <button type="button" :aria-pressed="rankingMode === 'latest'" :class="{ active: rankingMode === 'latest' }" :disabled="refreshing" @click="changeRanking('latest')">最新发布</button>
         </div>
-        <button class="action-button" type="button" :disabled="refreshing" @click="refresh">{{ refreshing ? '刷新中…' : '刷新资讯' }}</button>
+        <button class="action-button refresh-action" :class="{ active: refreshing }" type="button" :disabled="refreshing" @click="refresh"><i class="refresh-glyph"></i>{{ refreshing ? '刷新中…' : '刷新资讯' }}</button>
       </div>
     </header>
 
@@ -430,6 +430,8 @@ onBeforeUnmount(() => {
 .panel-title b { color: var(--text); font-size: 12px; }
 .panel-title span { color: var(--subtle); font-size: 9px; }
 .action-button, .text-button { border: 1px solid var(--line-strong); background: var(--surface); color: var(--text); border-radius: var(--radius-sm); padding: 7px 11px; cursor: pointer; font-size: 9px; }
+.refresh-action { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }.refresh-glyph { width: 9px; height: 9px; border: 1px solid currentColor; border-left-color: transparent; border-radius: 50%; }.refresh-action.active .refresh-glyph { animation: news-refresh-spin .8s linear infinite; }
+@keyframes news-refresh-spin { to { transform: rotate(360deg); } }
 .news-center button:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 62%, transparent); outline-offset: 2px; }
 .action-button.primary { border-color: var(--accent); background: var(--accent); color: #17140e; font-weight: 700; }
 .action-button:disabled { opacity: .5; cursor: not-allowed; }

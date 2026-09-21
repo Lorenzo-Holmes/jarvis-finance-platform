@@ -221,3 +221,12 @@ test('market pagination animates forward and backward with directional motion', 
   assert.match(board, /\.page-forward-enter-from/)
   assert.match(board, /\.page-backward-enter-from/)
 })
+
+test('refresh controls expose animated in-progress glyphs', () => {
+  const page = read('pages/NewsCenterPage.vue')
+  const board = read('components/market/MarketNewsBoard.vue')
+  assert.match(page, /class="refresh-glyph"/)
+  assert.match(page, /@keyframes news-refresh-spin/)
+  assert.match(board, /class="refresh-glyph"/)
+  assert.match(board, /refresh-action\.active/)
+})

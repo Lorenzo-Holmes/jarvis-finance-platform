@@ -163,7 +163,7 @@ onBeforeUnmount(() => {
           <button type="button" :aria-pressed="rankingMode === 'smart'" :class="{ active: rankingMode === 'smart' }" @click="changeRanking('smart')">精选</button>
           <button type="button" :aria-pressed="rankingMode === 'latest'" :class="{ active: rankingMode === 'latest' }" @click="changeRanking('latest')">最新</button>
         </div>
-        <button type="button" :disabled="state === 'loading'" @click="load(true)">刷新要闻</button>
+        <button class="refresh-action" :class="{ active: state === 'loading' }" type="button" :disabled="state === 'loading'" @click="load(true)"><i class="refresh-glyph"></i>刷新要闻</button>
         <button type="button" @click="showOriginal = !showOriginal">{{ showOriginal ? '显示中文' : '显示原文' }}</button>
       </div>
     </header>
@@ -217,6 +217,8 @@ onBeforeUnmount(() => {
 .news-actions small { color: var(--subtle); font-size: 8px; }
 .news-actions button { height: 30px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; background: transparent; color: var(--muted); cursor: pointer; font-size: 9px; }
 .news-actions button:hover:not(:disabled) { color: var(--text); border-color: var(--line-strong); background: var(--workspace-hover-bg); }
+.refresh-action { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }.refresh-glyph { width: 8px; height: 8px; border: 1px solid currentColor; border-left-color: transparent; border-radius: 50%; }.refresh-action.active .refresh-glyph { animation: news-refresh-spin .8s linear infinite; }
+@keyframes news-refresh-spin { to { transform: rotate(360deg); } }
 .news-actions button:focus-visible, .news-copy a:focus-visible, .news-pager button:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 58%, transparent); outline-offset: 2px; }
 .news-state { margin: 12px 0 0; color: var(--muted); font-size: 10px; }
 .news-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 20px; }
