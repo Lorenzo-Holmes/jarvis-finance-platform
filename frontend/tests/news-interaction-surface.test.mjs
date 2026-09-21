@@ -298,3 +298,12 @@ test('feed refresh uses a subtle scanning veil over existing content', () => {
   assert.match(page, /\.feed-panel\.refreshing \.article-list::before/)
   assert.match(page, /@keyframes refresh-scan/)
 })
+
+test('long news feed exposes transform-only scroll progress', () => {
+  const page = read('pages/NewsCenterPage.vue')
+  assert.match(page, /const feedProgress = ref\(0\)/)
+  assert.match(page, /function updateFeedProgress/)
+  assert.match(page, /--feed-progress/)
+  assert.match(page, /scaleX\(var\(--feed-progress, 0\)\)/)
+  assert.match(page, /addEventListener\('scroll', updateFeedProgress, true\)/)
+})

@@ -28,6 +28,8 @@ const expandedAnalysis = ref([])
 const feedQuery = ref('')
 const feedDensity = ref('comfortable')
 const feedSearchRef = ref(null)
+const feedPanelRef = ref(null)
+const feedProgress = ref(0)
 const savedSources = ref([])
 const savedTopics = ref([])
 const subscriptionOpen = ref(true)
@@ -123,6 +125,7 @@ async function load() {
     error.value = e?.message || String(e)
   } finally {
     loading.value = false
+    requestAnimationFrame(updateFeedProgress)
   }
 }
 
@@ -233,6 +236,18 @@ function handleNewsShortcut(event) {
   }
 }
 
+function updateFeedProgress() {
+  const panel = feedPanelRef.value
+  if (!panel) {
+    feedProgress.value = 0
+    return
+  }
+  const rect = panel.getBoundingClientRect()
+  const viewport = Math.max(1, window.innerHeight || 1)
+  const travel = Math.max(1, rect.height - viewport * 0.55)
+  feedProgress.value = Math.max(0, Math.min(1, (viewport * 0.18 - rect.top) / travel))
+}
+
 function openMarket(market) {
   // 资讯与行情之间保留可观察的工作流入口；当前上下文仍由多市场页负责解析。
   emit('navigate-module', '多市场')
@@ -263,11 +278,15 @@ async function analyzeArticles() {
 onMounted(() => {
   load()
   window.addEventListener('keydown', handleNewsShortcut)
+  window.addEventListener('scroll', updateFeedProgress, true)
+  window.addEventListener('resize', updateFeedProgress)
 })
 onBeforeUnmount(() => {
   preferenceRequestSeq += 1
   digestRequestSeq += 1
   window.removeEventListener('keydown', handleNewsShortcut)
+  window.removeEventListener('scroll', updateFeedProgress, true)
+  window.removeEventListener('resize', updateFeedProgress)
 })
 </script>
 
@@ -331,7 +350,7 @@ onBeforeUnmount(() => {
         </Transition>
       </section>
 
-      <section class="feed-panel panel" :class="{ refreshing }">
+      <section ref="feedPanelRef" class="feed-panel panel" :class="{ refreshing }" :style="{ '--feed-progress': feedProgress }">
         <div class="panel-title">
           <div><b>每日要闻</b><span>{{ generatedAt ? `更新于 ${formatTime(generatedAt)}` : '等待抓取' }}</span></div>
           <div class="feed-actions">
@@ -472,6 +491,7 @@ onBeforeUnmount(() => {
 .feed-status { color: var(--ok); }
 .feed-panel { position: relative; }
 .feed-panel > .panel-title { position: sticky; z-index: 12; top: 0; margin: -13px -13px 0; padding: 13px 13px 9px; background: color-mix(in srgb, var(--panel) 90%, transparent); backdrop-filter: blur(14px); }
+.feed-panel > .panel-title::after { content: ''; position: absolute; left: 13px; right: 13px; bottom: -1px; height: 2px; border-radius: 999px; background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 55%, var(--muted)), var(--accent)); transform: scaleX(var(--feed-progress, 0)); transform-origin: left center; transition: transform 80ms linear; pointer-events: none; }
 .feed-status.muted { color: var(--bad); }
 .refresh-indicator { position: absolute; z-index: 4; top: 53px; right: 13px; display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--line)); border-radius: 999px; background: color-mix(in srgb, var(--surface) 90%, transparent); color: var(--muted); font: 7px ui-monospace, monospace; backdrop-filter: blur(10px); pointer-events: none; }.refresh-indicator i { width: 6px; height: 6px; border: 1px solid var(--accent); border-top-color: transparent; border-radius: 50%; animation: news-spin .8s linear infinite; }.feed-panel .article-list { transition: opacity .16s ease, filter .16s ease; }.feed-panel.refreshing .article-list { opacity: .72; filter: saturate(.86); }
 @keyframes news-spin { to { transform: rotate(360deg); } }
