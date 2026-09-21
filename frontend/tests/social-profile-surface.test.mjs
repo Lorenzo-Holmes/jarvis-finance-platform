@@ -163,3 +163,10 @@ test('empty states read as intentional surfaces rather than missing content', ()
   assert.match(read('pages/CommunityPage.vue'), /border: 1px dashed/)
   assert.match(read('pages/ProfilePage.vue'), /\.empty-state \{ padding: 16px; border: 1px dashed/)
 })
+
+test('social directories expose a stable selection rail without layout shift', () => {
+  const source = read('pages/CommunityPage.vue')
+  assert.match(source, /\.group-list > button::before/)
+  assert.match(source, /\.conversation-list > button\.active::before/)
+  assert.match(source, /transform: scaleY\(1\)/)
+})
