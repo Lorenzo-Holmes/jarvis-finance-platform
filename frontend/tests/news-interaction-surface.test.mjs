@@ -307,3 +307,12 @@ test('long news feed exposes transform-only scroll progress', () => {
   assert.match(page, /scaleX\(var\(--feed-progress, 0\)\)/)
   assert.match(page, /addEventListener\('scroll', updateFeedProgress, true\)/)
 })
+
+test('long feed reveals an animated reduced-motion-aware back-to-top control', () => {
+  const page = read('pages/NewsCenterPage.vue')
+  assert.match(page, /function scrollFeedTop/)
+  assert.match(page, /feedProgress > 0\.2/)
+  assert.match(page, /prefers-reduced-motion: reduce/)
+  assert.match(page, /<Transition name="back-top">/)
+  assert.match(page, /aria-label="回到资讯顶部"/)
+})

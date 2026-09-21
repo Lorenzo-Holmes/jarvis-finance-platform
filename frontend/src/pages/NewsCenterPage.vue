@@ -248,6 +248,11 @@ function updateFeedProgress() {
   feedProgress.value = Math.max(0, Math.min(1, (viewport * 0.18 - rect.top) / travel))
 }
 
+function scrollFeedTop() {
+  const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+  feedPanelRef.value?.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' })
+}
+
 function openMarket(market) {
   // 资讯与行情之间保留可观察的工作流入口；当前上下文仍由多市场页负责解析。
   emit('navigate-module', '多市场')
@@ -427,6 +432,9 @@ onBeforeUnmount(() => {
           </article>
           </TransitionGroup>
         </div>
+        <Transition name="back-top">
+          <button v-if="feedProgress > 0.2" class="feed-back-top" type="button" aria-label="回到资讯顶部" @click="scrollFeedTop"><span>↑</span>TOP</button>
+        </Transition>
       </section>
     </template>
   </div>
@@ -492,6 +500,8 @@ onBeforeUnmount(() => {
 .feed-panel { position: relative; }
 .feed-panel > .panel-title { position: sticky; z-index: 12; top: 0; margin: -13px -13px 0; padding: 13px 13px 9px; background: color-mix(in srgb, var(--panel) 90%, transparent); backdrop-filter: blur(14px); }
 .feed-panel > .panel-title::after { content: ''; position: absolute; left: 13px; right: 13px; bottom: -1px; height: 2px; border-radius: 999px; background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 55%, var(--muted)), var(--accent)); transform: scaleX(var(--feed-progress, 0)); transform-origin: left center; transition: transform 80ms linear; pointer-events: none; }
+.feed-back-top { position: fixed; z-index: 32; right: 28px; bottom: 26px; min-width: 52px; height: 34px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--line-strong)); border-radius: 999px; background: color-mix(in srgb, var(--surface) 90%, transparent); color: var(--muted); box-shadow: 0 10px 28px rgba(0,0,0,.12); backdrop-filter: blur(14px); cursor: pointer; font: 650 7px/1 ui-monospace, monospace; }.feed-back-top span { color: var(--accent-strong); font-size: 10px; }.feed-back-top:hover { color: var(--text); transform: translateY(-1px); }
+.back-top-enter-active, .back-top-leave-active { transition: opacity var(--news-motion-surface) ease, transform var(--news-motion-surface) var(--news-ease); }.back-top-enter-from, .back-top-leave-to { opacity: 0; transform: translateY(8px) scale(.94); }
 .feed-status.muted { color: var(--bad); }
 .refresh-indicator { position: absolute; z-index: 4; top: 53px; right: 13px; display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--line)); border-radius: 999px; background: color-mix(in srgb, var(--surface) 90%, transparent); color: var(--muted); font: 7px ui-monospace, monospace; backdrop-filter: blur(10px); pointer-events: none; }.refresh-indicator i { width: 6px; height: 6px; border: 1px solid var(--accent); border-top-color: transparent; border-radius: 50%; animation: news-spin .8s linear infinite; }.feed-panel .article-list { transition: opacity .16s ease, filter .16s ease; }.feed-panel.refreshing .article-list { opacity: .72; filter: saturate(.86); }
 @keyframes news-spin { to { transform: rotate(360deg); } }
