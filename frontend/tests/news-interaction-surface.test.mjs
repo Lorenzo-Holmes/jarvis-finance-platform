@@ -212,3 +212,12 @@ test('news feed animates article insertion removal and reordering', () => {
   assert.match(page, /\.article-flow-move/)
   assert.match(page, /\.article-flow-leave-active \{ position: absolute/)
 })
+
+test('market pagination animates forward and backward with directional motion', () => {
+  const board = read('components/market/MarketNewsBoard.vue')
+  assert.match(board, /const pageDirection = ref\('forward'\)/)
+  assert.match(board, /pageDirection\.value = 'backward'/)
+  assert.match(board, /:name="`page-\$\{pageDirection\}`"/)
+  assert.match(board, /\.page-forward-enter-from/)
+  assert.match(board, /\.page-backward-enter-from/)
+})

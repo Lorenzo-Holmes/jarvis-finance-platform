@@ -15,6 +15,7 @@ const generatedAt = ref('')
 const page = ref(1)
 const showOriginal = ref(false)
 const rankingMode = ref('smart')
+const pageDirection = ref('forward')
 const pageCount = computed(() => Math.max(1, Math.ceil(items.value.length / PAGE_SIZE)))
 const translating = ref(false)
 const visibleItems = computed(() => {
@@ -104,10 +105,12 @@ function displayScore(item) {
 }
 
 function previousPage() {
+  pageDirection.value = 'backward'
   page.value = Math.max(1, page.value - 1)
 }
 
 function nextPage() {
+  pageDirection.value = 'forward'
   page.value = Math.min(pageCount.value, page.value + 1)
 }
 
@@ -169,7 +172,8 @@ onBeforeUnmount(() => {
     <p v-else-if="state !== 'ready'" class="news-state">{{ reason }}</p>
 
     <div v-else class="news-list-wrap">
-      <div class="news-grid">
+      <Transition :name="`page-${pageDirection}`" mode="out-in">
+      <div :key="`${rankingMode}-${page}`" class="news-grid">
       <article v-for="(item, index) in visibleItems" :key="item.id || item.url || index" class="news-item">
         <div class="news-index">{{ String((page - 1) * PAGE_SIZE + index + 1).padStart(2, '0') }}</div>
         <div class="news-copy">
@@ -186,6 +190,7 @@ onBeforeUnmount(() => {
         </div>
       </article>
       </div>
+      </Transition>
       <footer class="news-pager" aria-label="市场要闻分页">
         <span>共 {{ items.length }} 条</span>
         <div>
@@ -215,6 +220,9 @@ onBeforeUnmount(() => {
 .news-actions button:focus-visible, .news-copy a:focus-visible, .news-pager button:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 58%, transparent); outline-offset: 2px; }
 .news-state { margin: 12px 0 0; color: var(--muted); font-size: 10px; }
 .news-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 20px; }
+.page-forward-enter-active, .page-forward-leave-active, .page-backward-enter-active, .page-backward-leave-active { transition: opacity var(--news-motion-surface) ease, transform var(--news-motion-surface) var(--news-ease); }
+.page-forward-enter-from, .page-backward-leave-to { opacity: 0; transform: translateX(10px); }
+.page-forward-leave-to, .page-backward-enter-from { opacity: 0; transform: translateX(-10px); }
 .news-item { position: relative; min-width: 0; display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; padding: 11px 8px; border-bottom: 1px solid color-mix(in srgb, var(--line) 66%, transparent); border-radius: 7px; transition: transform var(--news-motion-surface) var(--news-ease), background var(--news-motion-state) ease, border-color var(--news-motion-state) ease, box-shadow var(--news-motion-surface) ease; }
 .news-item::before { content: ''; position: absolute; left: 0; top: 9px; bottom: 9px; width: 2px; border-radius: 999px; background: var(--accent); opacity: 0; transform: scaleY(.4); transition: opacity .16s ease, transform .18s cubic-bezier(.22,1,.36,1); }
 .news-item:hover, .news-item:focus-within { transform: translateY(-1px); background: color-mix(in srgb, var(--workspace-accent-wash) 18%, transparent); border-color: color-mix(in srgb, var(--line-strong) 76%, var(--accent)); box-shadow: 0 8px 24px rgba(0,0,0,.03); }
