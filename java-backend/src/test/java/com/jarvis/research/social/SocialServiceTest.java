@@ -72,7 +72,7 @@ class SocialServiceTest {
         CommunityGroup group = CommunityGroup.builder()
                 .id(8L).ownerUserId(9L).name("Closed Desk").visibility("CLOSED")
                 .createdAt(LocalDateTime.now()).updatedAt(LocalDateTime.now()).build();
-        when(groupRepository.findById(8L)).thenReturn(Optional.of(group));
+        when(groupRepository.findByIdForMembershipUpdate(8L)).thenReturn(Optional.of(group));
         when(memberRepository.existsByGroupIdAndUserId(8L, 2L)).thenReturn(false);
 
         ResponseStatusException error = assertThrows(ResponseStatusException.class,
@@ -257,7 +257,7 @@ class SocialServiceTest {
     @Test
     void ownerCannotRemoveSelfFromMemberList() {
         CommunityGroup group = CommunityGroup.builder().id(8L).ownerUserId(9L).name("A").visibility("OPEN").build();
-        when(groupRepository.findById(8L)).thenReturn(Optional.of(group));
+        when(groupRepository.findByIdForMembershipUpdate(8L)).thenReturn(Optional.of(group));
 
         ResponseStatusException error = assertThrows(ResponseStatusException.class,
                 () -> service.removeMember(9L, 8L, 9L, "127.0.0.1"));
@@ -310,7 +310,7 @@ class SocialServiceTest {
     @Test
     void invitingExistingMemberIsIdempotentAndDoesNotEmitActivity() {
         CommunityGroup group = CommunityGroup.builder().id(8L).ownerUserId(9L).name("Desk").visibility("OPEN").build();
-        when(groupRepository.findById(8L)).thenReturn(Optional.of(group));
+        when(groupRepository.findByIdForMembershipUpdate(8L)).thenReturn(Optional.of(group));
         when(userRepository.findById(7L)).thenReturn(Optional.of(user(7L)));
         when(userRepository.findById(9L)).thenReturn(Optional.of(user(9L)));
         when(memberRepository.existsByGroupIdAndUserId(8L, 7L)).thenReturn(true);

@@ -172,7 +172,7 @@ public class SocialService {
 
     @Transactional
     public Map<String, Object> joinGroup(Long userId, Long groupId, String clientIp) {
-        CommunityGroup group = requireGroup(groupId);
+        CommunityGroup group = requireGroupForMembershipUpdate(groupId);
         if (memberRepository.existsByGroupIdAndUserId(groupId, userId)) return groupView(userId, group, true);
         if (!"OPEN".equals(group.getVisibility())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "该小组仅允许组主邀请加入");
@@ -186,7 +186,7 @@ public class SocialService {
 
     @Transactional
     public Map<String, Object> addMember(Long ownerId, Long groupId, Long userId, String clientIp) {
-        CommunityGroup group = requireGroup(groupId);
+        CommunityGroup group = requireGroupForMembershipUpdate(groupId);
         requireOwner(ownerId, group);
         requireActiveUser(userId);
         if (memberRepository.existsByGroupIdAndUserId(groupId, userId)) {
@@ -201,7 +201,7 @@ public class SocialService {
 
     @Transactional
     public void removeMember(Long ownerId, Long groupId, Long userId, String clientIp) {
-        CommunityGroup group = requireGroup(groupId);
+        CommunityGroup group = requireGroupForMembershipUpdate(groupId);
         requireOwner(ownerId, group);
         if (Objects.equals(group.getOwnerUserId(), userId)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "不能移除小组 OWNER");
@@ -213,7 +213,7 @@ public class SocialService {
 
     @Transactional
     public void leaveGroup(Long userId, Long groupId, String clientIp) {
-        CommunityGroup group = requireGroup(groupId);
+        CommunityGroup group = requireGroupForMembershipUpdate(groupId);
         if (Objects.equals(group.getOwnerUserId(), userId)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "组主不能直接退出自己创建的小组");
         }
@@ -512,6 +512,11 @@ public class SocialService {
 
     private CommunityGroup requireGroup(Long groupId) {
         return groupRepository.findById(groupId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "研究小组不存在"));
+    }
+
+    private CommunityGroup requireGroupForMembershipUpdate(Long groupId) {
+        return groupRepository.findByIdForMembershipUpdate(groupId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "研究小组不存在"));
     }
 
