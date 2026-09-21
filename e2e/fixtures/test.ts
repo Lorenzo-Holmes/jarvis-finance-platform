@@ -1,6 +1,7 @@
 import { test as base } from '@playwright/test'
 import { LandingPage } from '../pages/LandingPage'
 import { LoginPage } from '../pages/LoginPage'
+import { ScheduledTasksPage } from '../pages/ScheduledTasksPage'
 import { VisualWorkspacePage } from '../pages/VisualWorkspacePage'
 import { WorkspacePage } from '../pages/WorkspacePage'
 
@@ -23,6 +24,7 @@ export type JarvisFixtures = {
   loginPage: LoginPage
   workspacePage: WorkspacePage
   visualWorkspacePage: VisualWorkspacePage
+  scheduledTasksPage: ScheduledTasksPage
 }
 
 export const test = base.extend<JarvisFixtures>({
@@ -37,6 +39,9 @@ export const test = base.extend<JarvisFixtures>({
   },
   visualWorkspacePage: async ({ page }, use) => {
     await use(new VisualWorkspacePage(page))
+  },
+  scheduledTasksPage: async ({ page }, use) => {
+    await use(new ScheduledTasksPage(page))
   },
 })
 

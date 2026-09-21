@@ -80,6 +80,17 @@ export default defineConfig({
       testMatch: /agent\.spec\.ts$/,
       use: { ...devices['Desktop Chrome'] },
     },
+    {
+      // 系统管理域的功能用例。全部对 `/api/**` 打桩，因此不需要起 Java / Python。
+      name: 'tasks',
+      testMatch: /scheduled-tasks\.spec\.ts$/,
+      use: {
+        ...devices['Desktop Chrome'],
+        // 预览进入后先渲染 Archive Sea（WebGL）过场。headless 无 GPU 时该动画
+        // settle 不了，用例会一直等不到工作台外壳 —— 与视觉 project 同样关闭动效。
+        reducedMotion: 'reduce',
+      },
+    },
     visualProject('visual-1600', 1600, 900),
     visualProject('visual-1280', 1280, 800),
     visualProject('visual-1024', 1024, 768),
