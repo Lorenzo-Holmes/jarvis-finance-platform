@@ -29,6 +29,18 @@ const avatarUrlValid = computed(() => {
 const previewAvatarUrl = computed(() => editing.value && avatarUrlValid.value
   ? form.value.avatarUrl.trim()
   : profile.value?.avatarUrl || '')
+const privacyExposureNote = computed(() => {
+  if (form.value.contactPublic && !form.value.profilePublic) {
+    return '个人资料当前为私密，但联系方式仍会单独公开给其他用户。'
+  }
+  if (!form.value.profilePublic && !form.value.activityPublic && !form.value.contactPublic) {
+    return '当前为最小公开模式：其他用户只会看到你的昵称和用户 ID。'
+  }
+  if (!form.value.activityPublic) {
+    return '研究动态与成就仅自己可见；其它资料按各自开关决定。'
+  }
+  return '公开范围由三个开关独立控制，修改后立即影响其他用户可见内容。'
+})
 
 function syncForm(value) {
   form.value = {
@@ -120,6 +132,7 @@ onMounted(load)
             <label><span><b>公开联系方式</b><small>单独控制联系方式是否可见</small></span><input v-model="form.contactPublic" type="checkbox" /></label>
             <label><span><b>公开动态与成就</b><small>控制研究动态和勋章展示</small></span><input v-model="form.activityPublic" type="checkbox" /></label>
           </div>
+          <p class="privacy-note">{{ privacyExposureNote }}</p>
         </section>
 
         <section class="achievement-section">
@@ -164,6 +177,7 @@ onMounted(load)
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }.form-grid label { display: grid; gap: 6px; }.form-grid label.wide { grid-column: 1 / -1; }.form-grid label > span { color: var(--muted); font-size: 8px; }.field-error { color: var(--bad); font-size: 7px; }
 input, textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 8px; background: var(--workspace-control-bg, var(--panel)); color: var(--text); padding: 9px 10px; font: inherit; outline: none; }input:focus, textarea:focus { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
 .privacy-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }.privacy-grid label { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; }.privacy-grid label > span { display: grid; gap: 4px; }.privacy-grid b { font-size: 9px; }.privacy-grid small { color: var(--subtle); font-size: 7px; line-height: 1.4; }.privacy-grid input { width: 15px; height: 15px; }
+.privacy-note { margin: -3px 0 0; padding: 8px 10px; border-left: 2px solid var(--accent); background: var(--workspace-accent-wash); color: var(--muted); font-size: 8px; line-height: 1.5; }
 .achievement-section, .activity-section { padding: 14px; }.achievement-section header strong { color: var(--accent-strong); font: 650 11px/1 ui-monospace, monospace; }
 .achievement-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; margin-top: 12px; }.achievement-grid article { min-height: 135px; display: grid; align-content: start; gap: 7px; padding: 12px; border: 1px solid var(--line); border-radius: 9px; opacity: .52; }.achievement-grid article.unlocked { opacity: 1; border-color: color-mix(in srgb, var(--accent) 28%, var(--line)); background: color-mix(in srgb, var(--workspace-accent-wash) 28%, transparent); }.badge-mark { display: flex; align-items: center; justify-content: space-between; color: var(--subtle); font: 650 7px/1 ui-monospace, monospace; }.badge-mark b { color: var(--accent-strong); font-size: 12px; }.achievement-grid h4 { margin: 0; font-size: 10px; }.achievement-grid p { margin: 0; color: var(--muted); font-size: 8px; line-height: 1.5; }.achievement-grid time { color: var(--subtle); font-size: 7px; }.progress { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 7px; }.progress small { color: var(--subtle); font-size: 7px; }
 .activity-list { display: grid; margin-top: 8px; }.activity-list article { display: grid; grid-template-columns: 140px 1fr auto; gap: 9px; padding: 10px 0; border-bottom: 1px solid var(--line); }.activity-list span, .activity-list time { color: var(--subtle); font-size: 8px; }.activity-list p { margin: 0; color: var(--muted); font-size: 9px; }
