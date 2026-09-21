@@ -71,6 +71,16 @@ async function publishPost() {
   })
 }
 
+async function deletePost(post) {
+  if (!post?.id || !post.mine) return
+  await run(async () => {
+    await api.communityDeletePost(post.id)
+    if (selectedGroup.value?.id && post.groupId === selectedGroup.value.id) await openGroup(selectedGroup.value.id)
+    await loadFeed()
+    setNotice('动态已删除')
+  })
+}
+
 async function loadGroups() {
   const response = await api.communityGroups(groupQuery.value.trim(), 0, 50)
   groups.value = pageItems(response)
@@ -293,7 +303,7 @@ onMounted(async () => {
               <span v-if="post.group" class="group-chip">{{ post.group.name }}</span>
             </header>
             <p>{{ post.content }}</p>
-            <footer><button type="button" @click="share(post, 'weibo')">微博</button><button type="button" @click="share(post, 'xiaohongshu')">小红书</button></footer>
+            <footer><button type="button" @click="share(post, 'weibo')">微博</button><button type="button" @click="share(post, 'xiaohongshu')">小红书</button><button v-if="post.mine" class="danger-link" type="button" @click="deletePost(post)">删除</button></footer>
           </article>
           <div v-if="!feed.length && !loading" class="empty-state">还没有公开研究动态。</div>
         </section>
@@ -345,7 +355,7 @@ onMounted(async () => {
           </div>
         </section>
         <section v-if="selectedGroupJoined" class="group-composer"><textarea v-model="groupPostText" maxlength="4000" rows="3" placeholder="在小组内发布研究记录…"></textarea><button type="button" @click="publishGroupPost">发布到小组</button></section>
-        <div class="feed-list compact"><article v-for="post in groupPosts" :key="post.id" class="post-card"><header><button class="author" type="button" @click="openUser(post.author?.id); activeTab='users'"><span><strong>{{ post.author?.displayName }}</strong><small>{{ formatTime(post.createdAt) }}</small></span></button></header><p>{{ post.content }}</p></article><div v-if="!groupPosts.length" class="empty-state">当前没有可展示的小组动态。</div></div>
+        <div class="feed-list compact"><article v-for="post in groupPosts" :key="post.id" class="post-card"><header><button class="author" type="button" @click="openUser(post.author?.id); activeTab='users'"><span><strong>{{ post.author?.displayName }}</strong><small>{{ formatTime(post.createdAt) }}</small></span></button></header><p>{{ post.content }}</p><footer v-if="post.mine"><button class="danger-link" type="button" @click="deletePost(post)">删除</button></footer></article><div v-if="!groupPosts.length" class="empty-state">当前没有可展示的小组动态。</div></div>
       </main>
       <main v-else class="empty-panel">从左侧选择一个研究小组。</main>
     </div>
@@ -406,6 +416,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .group-chip { padding: 4px 7px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 8px; }
 .post-card > p { margin: 12px 0; white-space: pre-wrap; color: var(--text); font-size: 11px; line-height: 1.72; }
 .post-card > footer { display: flex; gap: 7px; }.post-card > footer button { border: 0; background: transparent; color: var(--muted); cursor: pointer; padding: 4px 0; font-size: 8px; }
+.post-card > footer .danger-link { color: var(--bad); margin-left: auto; }
 .network-rail { padding: 12px; align-self: start; display: grid; gap: 7px; }.network-rail > button { display: flex; align-items: center; justify-content: space-between; gap: 9px; padding: 9px 3px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: inherit; cursor: pointer; text-align: left; }.network-rail span { display: grid; gap: 4px; }.network-rail strong { font-size: 9px; }.network-rail small { color: var(--subtle); font-size: 8px; }
 .groups-layout, .users-layout, .messages-layout { display: grid; grid-template-columns: 290px minmax(0, 1fr); gap: 14px; min-height: 520px; }
 .group-directory, .user-directory, .conversation-list { min-height: 0; overflow: auto; }

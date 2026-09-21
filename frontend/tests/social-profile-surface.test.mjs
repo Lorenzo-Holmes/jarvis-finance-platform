@@ -24,7 +24,7 @@ test('frontend client exposes social, group, messaging, profile and achievement 
   const client = read('api/client.js')
   for (const token of [
     'socialProfile:', 'updateSocialProfile:', 'socialAchievements:', 'socialUsers:',
-    'communityFeed:', 'communityGroups:', 'communityCreateGroup:', 'communityCreatePost:',
+    'communityFeed:', 'communityGroups:', 'communityCreateGroup:', 'communityCreatePost:', 'communityDeletePost:',
     'communityUpdateGroup:', 'communityJoinGroup:', 'communityAddMember:', 'communityRemoveMember:', 'socialConversations:', 'socialThread:',
     'socialMessageUnreadCount:', 'socialSendMessage:',
   ]) assert.match(client, new RegExp(token))

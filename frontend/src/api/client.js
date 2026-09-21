@@ -223,6 +223,7 @@ export const api = {
   socialUserActivity: (userId, page = 0, size = 20) => get(API_BASE, `/api/social/users/${userId}/activity`, { page, size }),
   communityFeed: (page = 0, size = 20) => get(API_BASE, '/api/social/feed', { page, size }),
   communityCreatePost: (body) => post(API_BASE, '/api/social/posts', body),
+  communityDeletePost: (postId) => request(API_BASE, `/api/social/posts/${postId}`, { method: 'DELETE' }),
   communityGroups: (query = '', page = 0, size = 30) => get(API_BASE, '/api/social/groups', { query, page, size }),
   communityGroup: (groupId) => get(API_BASE, `/api/social/groups/${groupId}`),
   communityUpdateGroup: (groupId, body) => request(API_BASE, `/api/social/groups/${groupId}`, {

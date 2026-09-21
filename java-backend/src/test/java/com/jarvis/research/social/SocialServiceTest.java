@@ -159,6 +159,17 @@ class SocialServiceTest {
         verify(memberRepository, never()).deleteByGroupIdAndUserId(anyLong(), anyLong());
     }
 
+    @Test
+    void userCannotDeleteAnotherUsersPost() {
+        CommunityPost post = CommunityPost.builder().id(12L).authorUserId(9L).content("x").build();
+        when(postRepository.findById(12L)).thenReturn(Optional.of(post));
+
+        ResponseStatusException error = assertThrows(ResponseStatusException.class,
+                () -> service.deletePost(7L, 12L, "127.0.0.1"));
+        assertEquals(HttpStatus.FORBIDDEN, error.getStatusCode());
+        verify(postRepository, never()).delete(any());
+    }
+
     private static User user(Long id) {
         return User.builder()
                 .id(id)

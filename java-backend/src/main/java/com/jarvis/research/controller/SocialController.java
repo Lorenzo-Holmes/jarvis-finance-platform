@@ -114,6 +114,12 @@ public class SocialController {
         return ApiResponse.ok(socialService.createPublicPost(CurrentUser.id(), body, clientIp(request)), "动态已发布");
     }
 
+    @DeleteMapping("/posts/{postId}")
+    public ApiResponse<Object> deletePost(@PathVariable Long postId, HttpServletRequest request) {
+        socialService.deletePost(CurrentUser.id(), postId, clientIp(request));
+        return ApiResponse.ok(Map.of("postId", postId), "动态已删除");
+    }
+
     @GetMapping("/groups/{groupId}/posts")
     public ApiResponse<Object> groupPosts(@PathVariable Long groupId,
                                           @RequestParam(defaultValue = "0") int page,

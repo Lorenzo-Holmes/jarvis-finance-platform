@@ -199,6 +199,17 @@ public class SocialService {
         return createPost(userId, null, request, clientIp);
     }
 
+    @Transactional
+    public void deletePost(Long userId, Long postId, String clientIp) {
+        CommunityPost post = postRepository.findById(postId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "动态不存在"));
+        if (!Objects.equals(post.getAuthorUserId(), userId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "只能删除自己发布的动态");
+        }
+        postRepository.delete(post);
+        auditService.record(userId, "COMMUNITY_POST_DELETE", "post:" + postId, clientIp, "deleted");
+    }
+
     @Transactional(readOnly = true)
     public Map<String, Object> groupPosts(Long viewerId, Long groupId, int page, int size) {
         CommunityGroup group = requireGroup(groupId);
@@ -312,6 +323,7 @@ public class SocialService {
         out.put("id", post.getId()); out.put("content", post.getContent()); out.put("groupId", post.getGroupId());
         out.put("referenceType", post.getReferenceType()); out.put("referenceId", post.getReferenceId());
         out.put("createdAt", post.getCreatedAt());
+        out.put("mine", Objects.equals(viewerId, post.getAuthorUserId()));
         out.put("author", publicUser(viewerId, requireUser(post.getAuthorUserId())));
         if (post.getGroupId() != null) groupRepository.findById(post.getGroupId())
                 .ifPresent(group -> out.put("group", Map.of("id", group.getId(), "name", group.getName(), "visibility", group.getVisibility())));
