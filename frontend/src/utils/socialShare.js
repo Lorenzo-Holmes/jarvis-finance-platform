@@ -1,7 +1,22 @@
-export function buildShareText({ title = 'JARVIS 研究分享', text = '', url = '' } = {}) {
-  const body = String(text || '').trim()
-  const link = String(url || '').trim()
-  return [String(title || '').trim(), body, link].filter(Boolean).join('\n\n')
+function cleanPart(value, maxLength) {
+  const cleaned = String(value || '')
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
+    .trim()
+  return cleaned.length <= maxLength ? cleaned : `${cleaned.slice(0, Math.max(0, maxLength - 1))}…`
+}
+
+export function normalizeSharePayload({ title = 'JARVIS 研究分享', text = '', url = '' } = {}) {
+  const safeUrl = cleanPart(url, 500)
+  return {
+    title: cleanPart(title, 100) || 'JARVIS 研究分享',
+    text: cleanPart(text, 1200),
+    url: /^https?:\/\//i.test(safeUrl) ? safeUrl : '',
+  }
+}
+
+export function buildShareText(payload = {}) {
+  const normalized = normalizeSharePayload(payload)
+  return [normalized.title, normalized.text, normalized.url].filter(Boolean).join('\n\n')
 }
 
 async function copyText(text) {
@@ -22,10 +37,11 @@ async function copyText(text) {
 }
 
 export async function shareToWeibo(payload = {}) {
-  const text = buildShareText(payload)
+  const normalized = normalizeSharePayload(payload)
+  const text = buildShareText(normalized)
   const target = new URL('https://service.weibo.com/share/share.php')
-  if (payload.url) target.searchParams.set('url', payload.url)
-  target.searchParams.set('title', [payload.title, payload.text].filter(Boolean).join('｜'))
+  if (normalized.url) target.searchParams.set('url', normalized.url)
+  target.searchParams.set('title', [normalized.title, normalized.text].filter(Boolean).join('｜'))
   const popup = window.open(target.toString(), '_blank', 'noopener,noreferrer,width=760,height=640')
   if (!popup) {
     await copyText(text)
@@ -35,10 +51,11 @@ export async function shareToWeibo(payload = {}) {
 }
 
 export async function shareToXiaohongshu(payload = {}) {
-  const text = buildShareText(payload)
+  const normalized = normalizeSharePayload(payload)
+  const text = buildShareText(normalized)
   if (navigator?.share) {
     try {
-      await navigator.share({ title: payload.title || 'JARVIS 研究分享', text: payload.text || '', url: payload.url || '' })
+      await navigator.share(normalized)
       return { method: 'web-share', copied: false }
     } catch (error) {
       if (error?.name === 'AbortError') return { method: 'cancelled', copied: false }

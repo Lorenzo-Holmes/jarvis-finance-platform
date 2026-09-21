@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { buildShareText } from '../src/utils/socialShare.js'
+import { buildShareText, normalizeSharePayload } from '../src/utils/socialShare.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const src = path.resolve(here, '../src')
@@ -61,4 +61,12 @@ test('profile surface exposes privacy switches and achievement progress', () => 
 
 test('share text is deterministic and includes the explicit source link', () => {
   assert.equal(buildShareText({ title: '标题', text: '观点', url: 'https://example.test/a' }), '标题\n\n观点\n\nhttps://example.test/a')
+})
+
+test('share payload removes control characters, rejects unsafe links and bounds long text', () => {
+  const normalized = normalizeSharePayload({ title: 'A\u0000B', text: 'x'.repeat(1400), url: 'javascript:alert(1)' })
+  assert.equal(normalized.title, 'AB')
+  assert.equal(normalized.url, '')
+  assert.equal(normalized.text.length, 1200)
+  assert.ok(normalized.text.endsWith('…'))
 })
