@@ -324,6 +324,42 @@ const polling = usePolling(async () => {
   }
 }, 30000)
 
+const RISK_STATUS = {
+  SAFE: { text: '安全', cls: 'safe' },
+  WARN: { text: '预警', cls: 'warn' },
+  DANGER: { text: '危险', cls: 'risk' },
+  NONE: { text: '无持仓', cls: 'info' },
+}
+
+function fmtMoney(value) {
+  const n = Number(value)
+  return Number.isFinite(n) ? n.toLocaleString('zh-CN', { maximumFractionDigits: 2 }) : '—'
+}
+
+function fmtPct(value) {
+  const n = Number(value)
+  return Number.isFinite(n) ? `${n.toFixed(2)}%` : '—'
+}
+
+const todayTradeCount = computed(() => {
+  const now = new Date()
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  return trades.value.filter(t => String(t.createdAt || '').slice(0, 10) === today).length
+})
+
+const overviewCards = computed(() => {
+  const a = account.value
+  if (!a) return []
+  return [
+    { label: '净权益', value: fmtMoney(a.netEquity) },
+    { label: '总资产', value: fmtMoney(a.totalAssets) },
+    { label: '持仓标的', value: Array.isArray(a.positions) ? a.positions.length : Object.keys(a.positions || {}).length },
+    { label: '累计收益率', value: fmtPct(a.totalReturnPct), signed: Number(a.totalReturnPct) || 0 },
+    { label: '今日成交', value: todayTradeCount.value },
+    { label: '维持担保比例', value: fmtPct(a.maintMarginPct) },
+  ]
+})
+
 async function initialize() {
   initializing.value = true
   initializeError.value = ''
@@ -472,6 +508,19 @@ onBeforeUnmount(() => {
         />
       </div>
 
+      <section class="account-overview" aria-label="账户运营概览">
+        <header>
+          <div><strong>账户运营概览</strong><span>当前账户权益与风控 · 30 秒自动刷新</span></div>
+          <span class="risk-pill" :class="RISK_STATUS[account.riskStatus]?.cls || 'info'">风控: {{ RISK_STATUS[account.riskStatus]?.text || account.riskStatus || '—' }}</span>
+        </header>
+        <div class="overview-cards">
+          <div v-for="card in overviewCards" :key="card.label" class="overview-card">
+            <span class="overview-label">{{ card.label }}</span>
+            <b class="overview-value" :class="card.signed != null ? (card.signed >= 0 ? 'pos' : 'neg') : ''">{{ card.value }}</b>
+          </div>
+        </div>
+      </section>
+
       <section class="trade-history" aria-label="模拟成交历史">
         <header><div><strong>成交历史</strong><span>最近 50 笔 / 共 {{ tradeTotal }} 笔</span></div><button type="button" @click="loadWorkspace">刷新</button></header>
         <p v-if="!trades.length" class="trade-empty">暂无成交记录。</p>
@@ -525,6 +574,22 @@ onBeforeUnmount(() => {
 .preference-status { min-height: 10px; display: flex; gap: 10px; }
 .parser-error { color: var(--warn); }
 .sim-content { display: grid; grid-template-columns: clamp(148px, 10.5vw, 164px) minmax(0, 1fr); gap: 0; align-items: stretch; min-width: 0; border: 0; border-top: 1px solid color-mix(in srgb, var(--line) 72%, transparent); border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent); }
+.account-overview { margin-top: 4px; border: 1px solid color-mix(in srgb, var(--line) 72%, transparent); }
+.account-overview > header { min-height: 40px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 10px; border-bottom: 1px solid var(--line); }
+.account-overview > header > div { display: flex; align-items: baseline; gap: 8px; }
+.account-overview header strong { color: var(--text); font-size: 9px; }
+.account-overview header span:not(.risk-pill) { color: var(--subtle); font-size: 7px; }
+.risk-pill { display: inline-flex; align-items: center; height: 22px; padding: 0 9px; border: 1px solid var(--line); color: var(--muted); font: 650 8px/1 ui-monospace, monospace; white-space: nowrap; }
+.risk-pill.safe { border-color: transparent; background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
+.risk-pill.warn { border-color: transparent; background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--warn); }
+.risk-pill.risk { border-color: transparent; background: color-mix(in srgb, var(--bad) 14%, transparent); color: var(--bad); }
+.risk-pill.info { border-color: transparent; background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent-strong); }
+.overview-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 1px; background: var(--line); }
+.overview-card { display: flex; flex-direction: column; gap: 6px; padding: 13px 12px; background: var(--workspace-surface, var(--surface-2, transparent)); }
+.overview-label { color: var(--subtle); font-size: 8px; letter-spacing: .06em; }
+.overview-value { color: var(--text); font: 650 15px/1.1 ui-monospace, monospace; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.overview-value.pos { color: var(--ok); }
+.overview-value.neg { color: var(--bad); }
 .trade-history { margin-top: 4px; border: 1px solid color-mix(in srgb, var(--line) 72%, transparent); }
 .trade-history > header { min-height: 40px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 10px; border-bottom: 1px solid var(--line); }
 .trade-history > header > div { display: flex; align-items: baseline; gap: 8px; }
