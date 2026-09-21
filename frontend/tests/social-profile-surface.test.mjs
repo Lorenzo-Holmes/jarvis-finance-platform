@@ -177,3 +177,10 @@ test('group room hierarchy separates hero context from metrics', () => {
   assert.match(source, /\.group-metrics div:hover/)
   assert.match(source, /\.group-metrics div:last-child b/)
 })
+
+test('invite search results render as an anchored animated popover', () => {
+  const source = read('pages/CommunityPage.vue')
+  assert.match(source, /\.invite-panel \{ position: relative/)
+  assert.match(source, /\.invite-candidates \{ position: absolute/)
+  assert.match(source, /@keyframes social-popover-in/)
+})
