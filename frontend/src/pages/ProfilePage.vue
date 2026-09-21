@@ -124,8 +124,8 @@ onMounted(load)
       <button type="button" @click="editing = !editing">{{ editing ? '取消编辑' : '编辑资料' }}</button>
     </header>
 
-    <div v-if="error" class="surface-alert error">{{ error }}</div>
-    <div v-if="notice" class="surface-alert notice">{{ notice }}</div>
+    <div v-if="error" class="surface-alert error" role="alert">{{ error }}</div>
+    <div v-if="notice" class="surface-alert notice" role="status" aria-live="polite">{{ notice }}</div>
 
     <div v-if="profile" class="profile-grid">
       <main>
@@ -154,7 +154,7 @@ onMounted(load)
         <section class="achievement-section">
           <header><div><span>ACHIEVEMENTS</span><h3>研究成就</h3></div><strong>{{ unlockedCount }}/{{ achievements.items?.length || 0 }}</strong></header>
           <nav class="achievement-filters" aria-label="成就分类">
-            <button v-for="category in achievementCategories" :key="category" type="button" :class="{ active: achievementCategory === category }" @click="achievementCategory = category">{{ category === 'ALL' ? '全部' : category }}</button>
+            <button v-for="category in achievementCategories" :key="category" type="button" :aria-pressed="achievementCategory === category" :class="{ active: achievementCategory === category }" @click="achievementCategory = category">{{ category === 'ALL' ? '全部' : category }}</button>
           </nav>
           <nav class="achievement-status" aria-label="成就状态">
             <button type="button" :class="{ active: achievementStatus === 'ALL' }" @click="achievementStatus = 'ALL'">全部</button>

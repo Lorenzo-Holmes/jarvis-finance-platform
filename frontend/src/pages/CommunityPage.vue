@@ -306,14 +306,14 @@ onMounted(async () => {
       <div class="head-status"><i></i><span>社交层与交易权限隔离</span></div>
     </header>
 
-    <nav class="community-tabs" aria-label="社区功能">
-      <button v-for="tab in tabs" :key="tab.key" type="button" :class="{ active: activeTab === tab.key }" @click="switchTab(tab.key)">
+    <nav class="community-tabs" role="tablist" aria-label="社区功能">
+      <button v-for="tab in tabs" :key="tab.key" type="button" role="tab" :aria-selected="activeTab === tab.key" :class="{ active: activeTab === tab.key }" @click="switchTab(tab.key)">
         {{ tab.label }}<span v-if="tab.key === 'messages' && messageUnreadCount" class="tab-badge">{{ messageUnreadCount > 99 ? '99+' : messageUnreadCount }}</span>
       </button>
     </nav>
 
-    <div v-if="error" class="surface-alert error">{{ error }}</div>
-    <div v-if="notice" class="surface-alert notice">{{ notice }}</div>
+    <div v-if="error" class="surface-alert error" role="alert">{{ error }}</div>
+    <div v-if="notice" class="surface-alert notice" role="status" aria-live="polite">{{ notice }}</div>
 
     <div v-if="activeTab === 'feed'" class="feed-layout">
       <main>
@@ -407,7 +407,7 @@ onMounted(async () => {
 
     <div v-else class="messages-layout">
       <aside class="conversation-list"><button v-for="item in conversations" :key="item.partner.id" type="button" :class="{ active: selectedPartner?.id === item.partner.id }" @click="openConversation(item.partner)"><span class="avatar"><img v-if="item.partner.avatarUrl" :src="item.partner.avatarUrl" alt="" /><b v-else>{{ (item.partner.displayName || '?').slice(0,1) }}</b></span><span><strong>{{ item.partner.displayName }}</strong><small>{{ item.lastMessage?.content }}</small></span><i v-if="item.unreadCount">{{ item.unreadCount }}</i></button><div v-if="!conversations.length" class="empty-state">暂无私信会话。</div></aside>
-      <main v-if="selectedPartner" class="message-room"><header><span>PRIVATE CHANNEL</span><h3>{{ selectedPartner.displayName }}</h3></header><div class="message-thread"><article v-for="message in thread" :key="message.id" :class="{ mine: message.mine }"><p>{{ message.content }}</p><small>{{ formatTime(message.createdAt) }}<template v-if="message.mine"> · {{ message.readAt ? '已读' : '已发送' }}</template></small></article></div><footer><div class="message-compose"><textarea v-model="messageText" maxlength="2000" rows="3" placeholder="发送站内私信…" @keydown.ctrl.enter.prevent="sendMessage" @keydown.meta.enter.prevent="sendMessage"></textarea><small>{{ messageText.length }}/2000 · Ctrl/⌘ + Enter 发送</small></div><button type="button" :disabled="!messageText.trim()" @click="sendMessage">发送</button></footer></main>
+      <main v-if="selectedPartner" class="message-room"><header><span>PRIVATE CHANNEL</span><h3>{{ selectedPartner.displayName }}</h3></header><div class="message-thread" role="log" aria-live="polite" aria-relevant="additions text"><article v-for="message in thread" :key="message.id" :class="{ mine: message.mine }"><p>{{ message.content }}</p><small>{{ formatTime(message.createdAt) }}<template v-if="message.mine"> · {{ message.readAt ? '已读' : '已发送' }}</template></small></article></div><footer><div class="message-compose"><textarea v-model="messageText" maxlength="2000" rows="3" :aria-label="`给 ${selectedPartner.displayName} 发送私信`" placeholder="发送站内私信…" @keydown.ctrl.enter.prevent="sendMessage" @keydown.meta.enter.prevent="sendMessage"></textarea><small>{{ messageText.length }}/2000 · Ctrl/⌘ + Enter 发送</small></div><button type="button" :disabled="!messageText.trim()" @click="sendMessage">发送</button></footer></main>
       <main v-else class="empty-panel">选择一个会话，或从“用户发现”中发起私信。</main>
     </div>
   </section>

@@ -67,6 +67,9 @@ test('profile surface exposes privacy switches and achievement progress', () => 
   assert.match(page, /IN_PROGRESS/)
   assert.match(page, /activityTypes/)
   assert.match(page, /displayedActivities/)
+  assert.match(read('pages/CommunityPage.vue'), /role="tablist"/)
+  assert.match(read('pages/CommunityPage.vue'), /role="log"/)
+  assert.match(read('pages/ProfilePage.vue'), /aria-live="polite"/)
 })
 
 test('share text is deterministic and includes the explicit source link', () => {
