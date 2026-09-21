@@ -226,3 +226,10 @@ test('privacy settings retain native checkbox semantics with custom toggle visua
   assert.match(source, /\.privacy-grid input::before/)
   assert.match(source, /\.privacy-grid input:checked::before \{ transform: translateX\(12px\)/)
 })
+
+test('achievement cards use restrained unlocked depth and hover feedback', () => {
+  const source = read('pages/ProfilePage.vue')
+  assert.match(source, /\.achievement-grid article::before/)
+  assert.match(source, /\.achievement-grid article\.unlocked::before/)
+  assert.match(source, /\.achievement-grid article:hover \{ opacity: \.78; transform: translateY\(-1px\)/)
+})
