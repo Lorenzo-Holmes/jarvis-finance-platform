@@ -1,5 +1,10 @@
 # Grafana 监控模板
 
+仓库提供了可直接在单机生产环境使用的 `../docker-compose.yml` 与
+`../prometheus.yml`：Prometheus 监听 `127.0.0.1:9090`，Grafana 监听
+`127.0.0.1:3000`，不会直接暴露公网端口。部署前在同目录创建权限为 `0600` 的
+`grafana-admin-password`，再执行 `docker compose up -d`。
+
 将 `provisioning/` 挂载到 Grafana 的 provisioning 目录，将 `dashboards/` 挂载到
 `/var/lib/grafana/dashboards/jarvis`，并设置 `PROMETHEUS_URL`。
 
