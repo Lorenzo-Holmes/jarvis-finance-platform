@@ -359,7 +359,7 @@ onBeforeUnmount(() => {
         <DataState v-else-if="!filteredArticles.length" state="empty" title="当前结果中没有匹配项" message="可清空检索词继续浏览。" compact />
         <div v-else class="article-list" :class="{ compact: feedDensity === 'compact' }">
           <div v-if="feedQuery" class="search-count">显示 {{ filteredArticles.length }} / {{ articles.length }} 条</div>
-          <article v-for="article in filteredArticles" :key="`${article.url}-${article.published}`" class="article-row">
+          <article v-for="(article, index) in filteredArticles" :key="`${article.url}-${article.published}`" class="article-row" :style="{ '--article-index': Math.min(index, 8) }">
             <div class="article-meta"><span>{{ article.source || article.source_id }}</span><time>{{ formatTime(article.published) }}</time></div>
             <a :href="article.url" target="_blank" rel="noreferrer">{{ article.title_zh || article.title }}</a>
             <div class="article-detail">
@@ -463,6 +463,8 @@ onBeforeUnmount(() => {
 .article-list.compact .article-row { padding-top: 8px; padding-bottom: 8px; gap: 4px 12px; }.article-list.compact .article-detail > p:not(.ai-summary) { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }.article-list.compact .article-meta { gap: 2px; }
 .search-count { padding: 7px 8px 3px; color: var(--subtle); font: 7px ui-monospace, monospace; }
 .article-row { position: relative; display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 7px 14px; align-items: baseline; padding: 12px 8px; border-bottom: 1px solid var(--line); border-radius: 7px; transition: transform var(--news-motion-surface) var(--news-ease), background var(--news-motion-state) ease, border-color var(--news-motion-state) ease, box-shadow var(--news-motion-surface) ease; }
+.article-row { animation: news-article-in var(--news-motion-surface) var(--news-ease) both; animation-delay: calc(var(--article-index, 0) * 18ms); }
+@keyframes news-article-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
 .article-row::before { content: ''; position: absolute; left: 0; top: 10px; bottom: 10px; width: 2px; border-radius: 999px; background: var(--accent); opacity: 0; transform: scaleY(.4); transition: opacity .16s ease, transform .18s cubic-bezier(.22,1,.36,1); }
 .article-row:hover, .article-row:focus-within { transform: translateY(-1px); background: color-mix(in srgb, var(--workspace-accent-wash) 18%, transparent); border-color: color-mix(in srgb, var(--line-strong) 78%, var(--accent)); box-shadow: 0 8px 24px rgba(0,0,0,.035); }
 .article-row:hover::before, .article-row:focus-within::before { opacity: .75; transform: scaleY(1); }

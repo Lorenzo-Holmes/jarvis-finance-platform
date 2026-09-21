@@ -141,7 +141,7 @@ test('news center filters the current result set locally without mutating backen
   const page = read('pages/NewsCenterPage.vue')
   assert.match(page, /const feedQuery = ref\(''\)/)
   assert.match(page, /const filteredArticles = computed/)
-  assert.match(page, /v-for="article in filteredArticles"/)
+  assert.match(page, /v-for="(?:article|\(article, index\)) in filteredArticles"/)
   assert.match(page, /aria-label="筛选当前资讯"/)
   assert.match(page, /当前结果中没有匹配项/)
 })
@@ -196,4 +196,12 @@ test('reading density control uses a continuous selection lens', () => {
   assert.match(page, /--density-index/)
   assert.match(page, /\.density-switch::before/)
   assert.match(page, /translateX\(calc\(var\(--density-index\) \* 100%\)\)/)
+})
+
+test('news articles use a bounded staggered reveal', () => {
+  const page = read('pages/NewsCenterPage.vue')
+  assert.match(page, /--article-index/)
+  assert.match(page, /Math\.min\(index, 8\)/)
+  assert.match(page, /@keyframes news-article-in/)
+  assert.match(page, /18ms/)
 })
