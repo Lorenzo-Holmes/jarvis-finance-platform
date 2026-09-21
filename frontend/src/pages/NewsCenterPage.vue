@@ -25,6 +25,7 @@ const semanticRanking = ref(null)
 const expandedReasons = ref([])
 const savedSources = ref([])
 const savedTopics = ref([])
+const subscriptionOpen = ref(true)
 
 const topicOptions = [
   { key: 'markets', label: '市场行情' },
@@ -228,8 +229,12 @@ onMounted(load)
       <section class="subscription-panel panel">
         <div class="panel-title">
           <div><b>我的资讯订阅</b><span>服务端持久化，刷新页面和重新登录后仍保留</span></div>
-          <button class="text-button" type="button" @click="selectAllSources">全部来源</button>
+          <div class="panel-actions">
+            <button class="text-button" type="button" @click="selectAllSources">全部来源</button>
+            <button class="text-button disclosure-button" type="button" :aria-expanded="subscriptionOpen" @click="subscriptionOpen = !subscriptionOpen">{{ subscriptionOpen ? '收起配置' : '展开配置' }}</button>
+          </div>
         </div>
+        <div v-show="subscriptionOpen" class="subscription-body">
         <div class="choice-grid source-grid">
           <label class="choice" :class="{ active: isAllSources }">
             <input :checked="isAllSources" type="checkbox" @change="selectAllSources" />
@@ -252,6 +257,7 @@ onMounted(load)
           <span>已选 {{ selectedSources.length || '全部' }} 个来源 · {{ selectedTopics.length || '全部' }} 个主题</span>
           <div class="save-state"><i :class="{ dirty: subscriptionDirty }"></i>{{ subscriptionDirty ? '有未保存更改' : '已同步' }}</div>
           <button class="action-button primary" type="button" :disabled="saving || !subscriptionDirty" @click="saveSubscriptions">{{ saving ? '保存中…' : '保存订阅' }}</button>
+        </div>
         </div>
       </section>
 
@@ -329,6 +335,9 @@ onMounted(load)
 .panel { padding: 13px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
 .panel-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 9px; border-bottom: 1px solid var(--line); }
 .panel-title > div { display: flex; flex-direction: column; gap: 4px; }
+.panel-title .panel-actions { flex-direction: row; align-items: center; gap: 5px; }
+.subscription-body { display: grid; }
+.disclosure-button { color: var(--muted); }
 .feed-actions { display: flex; align-items: center; gap: 9px; }
 .panel-title b { color: var(--text); font-size: 12px; }
 .panel-title span { color: var(--subtle); font-size: 9px; }

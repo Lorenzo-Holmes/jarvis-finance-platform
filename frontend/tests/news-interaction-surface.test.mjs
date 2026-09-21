@@ -79,3 +79,12 @@ test('subscription editor exposes deterministic unsaved state', () => {
   assert.match(page, /有未保存更改/)
   assert.match(page, /:disabled="saving \|\| !subscriptionDirty"/)
 })
+
+test('subscription configuration can collapse without discarding draft state', () => {
+  const page = read('pages/NewsCenterPage.vue')
+  assert.match(page, /const subscriptionOpen = ref\(true\)/)
+  assert.match(page, /v-show="subscriptionOpen"/)
+  assert.match(page, /:aria-expanded="subscriptionOpen"/)
+  assert.match(page, /收起配置/)
+  assert.match(page, /展开配置/)
+})
