@@ -318,11 +318,17 @@ public class SocialService {
         out.put("joined", membership != null);
         out.put("role", membership == null ? null : membership.getRole());
         if (includeMembers && ("OPEN".equals(group.getVisibility()) || membership != null)) {
-            out.put("members", memberRepository.findByGroupIdOrderByCreatedAtAsc(group.getId()).stream()
-                    .limit(50).map(member -> Map.of(
+            List<CommunityGroupMember> members = memberRepository.findByGroupIdOrderByCreatedAtAsc(group.getId())
+                    .stream().limit(50).toList();
+            Map<Long, User> users = new HashMap<>();
+            userRepository.findAllById(members.stream().map(CommunityGroupMember::getUserId).toList())
+                    .forEach(user -> users.put(user.getId(), user));
+            out.put("members", members.stream()
+                    .filter(member -> users.containsKey(member.getUserId()))
+                    .map(member -> Map.of(
                             "role", member.getRole(),
                             "joinedAt", member.getCreatedAt(),
-                            "user", publicUser(viewerId, requireUser(member.getUserId()))
+                            "user", publicUser(viewerId, users.get(member.getUserId()))
                     )).toList());
         } else out.put("members", List.of());
         return out;

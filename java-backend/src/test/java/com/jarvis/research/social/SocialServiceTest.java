@@ -146,6 +146,23 @@ class SocialServiceTest {
     }
 
     @Test
+    void groupDetailsBatchLoadMemberProfiles() {
+        CommunityGroup group = CommunityGroup.builder().id(8L).ownerUserId(9L).name("Desk").visibility("OPEN").build();
+        CommunityGroupMember member = CommunityGroupMember.builder().groupId(8L).userId(7L).role("MEMBER")
+                .createdAt(LocalDateTime.now()).build();
+        when(groupRepository.findById(8L)).thenReturn(Optional.of(group));
+        when(userRepository.findById(9L)).thenReturn(Optional.of(user(9L)));
+        when(memberRepository.findByGroupIdAndUserId(8L, 7L)).thenReturn(Optional.of(member));
+        when(memberRepository.findByGroupIdOrderByCreatedAtAsc(8L)).thenReturn(java.util.List.of(member));
+        when(userRepository.findAllById(any())).thenReturn(java.util.List.of(user(7L)));
+
+        service.group(7L, 8L);
+
+        verify(userRepository, times(1)).findAllById(any());
+        verify(userRepository, never()).findById(7L);
+    }
+
+    @Test
     void onlyOwnerCanEditGroup() {
         CommunityGroup group = CommunityGroup.builder().id(8L).ownerUserId(9L).name("A").visibility("OPEN").build();
         when(groupRepository.findById(8L)).thenReturn(Optional.of(group));
