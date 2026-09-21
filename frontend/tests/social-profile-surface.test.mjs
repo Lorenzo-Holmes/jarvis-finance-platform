@@ -233,3 +233,12 @@ test('achievement cards use restrained unlocked depth and hover feedback', () =>
   assert.match(source, /\.achievement-grid article\.unlocked::before/)
   assert.match(source, /\.achievement-grid article:hover \{ opacity: \.78; transform: translateY\(-1px\)/)
 })
+
+test('activity lists render as lightweight event timelines', () => {
+  for (const relative of ['pages/CommunityPage.vue', 'pages/ProfilePage.vue']) {
+    const source = read(relative)
+    assert.match(source, /\.activity-list::before/)
+    assert.match(source, /\.activity-list article::before/)
+    assert.match(source, /article:hover::before/)
+  }
+})
