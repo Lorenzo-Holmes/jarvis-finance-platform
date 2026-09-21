@@ -316,3 +316,15 @@ test('long feed reveals an animated reduced-motion-aware back-to-top control', (
   assert.match(page, /<Transition name="back-top">/)
   assert.match(page, /aria-label="回到资讯顶部"/)
 })
+
+test('final animation budget gates loops and limits repaint scope', () => {
+  const page = read('pages/NewsCenterPage.vue')
+  const board = read('components/market/MarketNewsBoard.vue')
+  assert.match(page, /\.refresh-action\.active \.refresh-glyph \{ will-change: transform;/)
+  assert.match(page, /\.feed-panel\.refreshing \.article-list::before[\s\S]*will-change: transform, opacity/)
+  assert.match(page, /\.article-row \{ position: relative; contain: paint;/)
+  assert.match(board, /\.market-news-board\.translating \.news-copy::before[\s\S]*will-change: transform/)
+  assert.match(board, /\.news-item \{ position: relative; contain: paint;/)
+  assert.match(page, /prefers-reduced-motion: reduce/)
+  assert.match(board, /prefers-reduced-motion: reduce/)
+})

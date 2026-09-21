@@ -467,7 +467,7 @@ onBeforeUnmount(() => {
 .panel-title b { color: var(--text); font-size: 12px; }
 .panel-title span { color: var(--subtle); font-size: 9px; }
 .action-button, .text-button { border: 1px solid var(--line-strong); background: var(--surface); color: var(--text); border-radius: var(--radius-sm); padding: 7px 11px; cursor: pointer; font-size: 9px; }
-.refresh-action { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }.refresh-glyph { width: 9px; height: 9px; border: 1px solid currentColor; border-left-color: transparent; border-radius: 50%; }.refresh-action.active .refresh-glyph { animation: news-refresh-spin .8s linear infinite; }
+.refresh-action { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }.refresh-glyph { width: 9px; height: 9px; border: 1px solid currentColor; border-left-color: transparent; border-radius: 50%; }.refresh-action.active .refresh-glyph { will-change: transform; animation: news-refresh-spin .8s linear infinite; }
 @keyframes news-refresh-spin { to { transform: rotate(360deg); } }
 .news-center button:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 62%, transparent); outline-offset: 2px; }
 .action-button.primary { border-color: var(--accent); background: var(--accent); color: #17140e; font-weight: 700; }
@@ -476,7 +476,7 @@ onBeforeUnmount(() => {
 .notice { position: fixed; z-index: 90; top: 74px; right: 24px; max-width: min(420px, calc(100vw - 32px)); padding: 10px 13px; border-radius: 9px; background: color-mix(in srgb, var(--surface) 92%, transparent); box-shadow: 0 16px 42px rgba(0,0,0,.16); backdrop-filter: blur(16px); font-size: 9px; }
 .notice.success { border: 1px solid rgba(39,196,107,.24); color: #67d69a; }
 .notice.error { border: 1px solid rgba(239,83,80,.24); color: #e47d79; }
-.news-toast-enter-active, .news-toast-leave-active { transition: opacity var(--news-motion-surface) ease, transform var(--news-motion-surface) var(--news-ease); }
+.news-toast-enter-active, .news-toast-leave-active { will-change: opacity, transform; transition: opacity var(--news-motion-surface) ease, transform var(--news-motion-surface) var(--news-ease); }
 .news-toast-enter-from { opacity: 0; transform: translateY(-7px) scale(.985); }
 .news-toast-leave-to { opacity: 0; transform: translateY(-5px) scale(.985); }
 .choice-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-top: 11px; }
@@ -515,17 +515,17 @@ onBeforeUnmount(() => {
 .quality-strip b { color: var(--text); font: 650 11px ui-monospace, monospace; }
 .quality-strip small { white-space: nowrap; }
 .article-list { position: relative; display: grid; margin-top: 3px; overflow: clip; }
-.feed-panel.refreshing .article-list::before { content: ''; position: absolute; z-index: 8; left: 0; right: 0; top: 0; height: 1px; background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent) 54%, transparent), transparent); box-shadow: 0 6px 18px color-mix(in srgb, var(--accent) 8%, transparent); animation: refresh-scan 1.35s var(--news-ease) infinite; pointer-events: none; }
+.feed-panel.refreshing .article-list::before { content: ''; position: absolute; z-index: 8; left: 0; right: 0; top: 0; height: 1px; background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent) 54%, transparent), transparent); box-shadow: 0 6px 18px color-mix(in srgb, var(--accent) 8%, transparent); will-change: transform, opacity; animation: refresh-scan 1.35s var(--news-ease) infinite; pointer-events: none; }
 @keyframes refresh-scan { from { transform: translateY(0); opacity: 0; } 15% { opacity: .75; } 85% { opacity: .6; } to { transform: translateY(min(62vh, 620px)); opacity: 0; } }
 .article-flow { position: relative; display: grid; }
-.article-flow-enter-active, .article-flow-leave-active { transition: opacity var(--news-motion-surface) ease, transform var(--news-motion-surface) var(--news-ease); }
+.article-flow-enter-active, .article-flow-leave-active { will-change: opacity, transform; transition: opacity var(--news-motion-surface) ease, transform var(--news-motion-surface) var(--news-ease); }
 .article-flow-enter-from { opacity: 0; transform: translateY(5px) scale(.995); }
 .article-flow-leave-to { opacity: 0; transform: translateY(-3px) scale(.995); }
 .article-flow-leave-active { position: absolute; width: 100%; }
 .article-flow-move { transition: transform var(--news-motion-layout) var(--news-ease); }
 .article-list.compact .article-row { padding-top: 8px; padding-bottom: 8px; gap: 4px 12px; }.article-list.compact .article-detail > p:not(.ai-summary) { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }.article-list.compact .article-meta { gap: 2px; }
 .search-count { padding: 7px 8px 3px; color: var(--subtle); font: 7px ui-monospace, monospace; }
-.article-row { position: relative; display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 7px 14px; align-items: baseline; padding: 12px 8px; border-bottom: 1px solid var(--line); border-radius: 7px; transition: transform var(--news-motion-surface) var(--news-ease), background var(--news-motion-state) ease, border-color var(--news-motion-state) ease, box-shadow var(--news-motion-surface) ease; }
+.article-row { position: relative; contain: paint; display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 7px 14px; align-items: baseline; padding: 12px 8px; border-bottom: 1px solid var(--line); border-radius: 7px; transition: transform var(--news-motion-surface) var(--news-ease), background var(--news-motion-state) ease, border-color var(--news-motion-state) ease, box-shadow var(--news-motion-surface) ease; }
 .article-row { animation: news-article-in var(--news-motion-surface) var(--news-ease) both; animation-delay: calc(var(--article-index, 0) * 18ms); }
 @keyframes news-article-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
 .article-row::before { content: ''; position: absolute; left: 0; top: 10px; bottom: 10px; width: 2px; border-radius: 999px; background: var(--accent); opacity: 0; transform: scaleY(.4); transition: opacity .16s ease, transform .18s cubic-bezier(.22,1,.36,1); }

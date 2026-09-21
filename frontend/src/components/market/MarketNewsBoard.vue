@@ -219,7 +219,7 @@ onBeforeUnmount(() => {
 .news-actions small { color: var(--subtle); font-size: 8px; }
 .news-actions button { height: 30px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; background: transparent; color: var(--muted); cursor: pointer; font-size: 9px; }
 .news-actions button:hover:not(:disabled) { color: var(--text); border-color: var(--line-strong); background: var(--workspace-hover-bg); }
-.refresh-action { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }.refresh-glyph { width: 8px; height: 8px; border: 1px solid currentColor; border-left-color: transparent; border-radius: 50%; }.refresh-action.active .refresh-glyph { animation: news-refresh-spin .8s linear infinite; }
+.refresh-action { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }.refresh-glyph { width: 8px; height: 8px; border: 1px solid currentColor; border-left-color: transparent; border-radius: 50%; }.refresh-action.active .refresh-glyph { will-change: transform; animation: news-refresh-spin .8s linear infinite; }
 @keyframes news-refresh-spin { to { transform: rotate(360deg); } }
 .news-actions button:focus-visible, .news-copy a:focus-visible, .news-pager button:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 58%, transparent); outline-offset: 2px; }
 .news-state { margin: 12px 0 0; color: var(--muted); font-size: 10px; }
@@ -227,13 +227,13 @@ onBeforeUnmount(() => {
 .page-forward-enter-active, .page-forward-leave-active, .page-backward-enter-active, .page-backward-leave-active { transition: opacity var(--news-motion-surface) ease, transform var(--news-motion-surface) var(--news-ease); }
 .page-forward-enter-from, .page-backward-leave-to { opacity: 0; transform: translateX(10px); }
 .page-forward-leave-to, .page-backward-enter-from { opacity: 0; transform: translateX(-10px); }
-.news-item { position: relative; min-width: 0; display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; padding: 11px 8px; border-bottom: 1px solid color-mix(in srgb, var(--line) 66%, transparent); border-radius: 7px; transition: transform var(--news-motion-surface) var(--news-ease), background var(--news-motion-state) ease, border-color var(--news-motion-state) ease, box-shadow var(--news-motion-surface) ease; }
+.news-item { position: relative; contain: paint; min-width: 0; display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; padding: 11px 8px; border-bottom: 1px solid color-mix(in srgb, var(--line) 66%, transparent); border-radius: 7px; transition: transform var(--news-motion-surface) var(--news-ease), background var(--news-motion-state) ease, border-color var(--news-motion-state) ease, box-shadow var(--news-motion-surface) ease; }
 .news-item::before { content: ''; position: absolute; left: 0; top: 9px; bottom: 9px; width: 2px; border-radius: 999px; background: var(--accent); opacity: 0; transform: scaleY(.4); transition: opacity .16s ease, transform .18s cubic-bezier(.22,1,.36,1); }
 .news-item:hover, .news-item:focus-within { transform: translateY(-1px); background: color-mix(in srgb, var(--workspace-accent-wash) 18%, transparent); border-color: color-mix(in srgb, var(--line-strong) 76%, var(--accent)); box-shadow: 0 8px 24px rgba(0,0,0,.03); }
 .news-item:hover::before, .news-item:focus-within::before { opacity: .7; transform: scaleY(1); }
 .news-index { padding-top: 2px; color: var(--subtle); font: 650 8px/1 ui-monospace, monospace; }
 .news-copy { position: relative; min-width: 0; overflow: hidden; }
-.market-news-board.translating .news-copy::before { content: ''; position: absolute; z-index: 3; inset: 0; background: linear-gradient(100deg, transparent 0%, color-mix(in srgb, var(--accent) 7%, transparent) 42%, color-mix(in srgb, var(--accent) 13%, transparent) 50%, transparent 60%); transform: translateX(-120%); animation: title-translate-shimmer 1.25s ease-in-out infinite; pointer-events: none; }
+.market-news-board.translating .news-copy::before { content: ''; position: absolute; z-index: 3; inset: 0; background: linear-gradient(100deg, transparent 0%, color-mix(in srgb, var(--accent) 7%, transparent) 42%, color-mix(in srgb, var(--accent) 13%, transparent) 50%, transparent 60%); transform: translateX(-120%); will-change: transform; animation: title-translate-shimmer 1.25s ease-in-out infinite; pointer-events: none; }
 @keyframes title-translate-shimmer { to { transform: translateX(120%); } }
 .title-swap-enter-active, .title-swap-leave-active { transition: opacity var(--news-motion-state) ease, transform var(--news-motion-state) var(--news-ease); }
 .title-swap-enter-from { opacity: 0; transform: translateY(2px); }.title-swap-leave-to { opacity: 0; transform: translateY(-2px); }
