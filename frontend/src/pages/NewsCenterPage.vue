@@ -379,6 +379,7 @@ onBeforeUnmount(() => {
                 :aria-expanded="reasonOpen(article)"
                 @click="toggleReason(article)"
               >{{ reasonOpen(article) ? '收起依据' : '为什么入选' }}</button>
+              <Transition name="reason-fold">
               <div v-if="reasonOpen(article)" class="reason-panel">
                 <div class="reason-scores">
                   <span v-if="articleScore(article) !== null">综合 {{ articleScore(article) }}</span>
@@ -390,6 +391,7 @@ onBeforeUnmount(() => {
                   <li v-for="reason in article.selection_reason" :key="reason">{{ reason }}</li>
                 </ul>
               </div>
+              </Transition>
               <template v-if="articleAnalysis(article)">
                 <p class="ai-summary">{{ articleAnalysis(article).summary }}</p>
                 <em class="ai-badge">AI · {{ articleAnalysis(article).sentiment || 'neutral' }} · 风险 {{ articleAnalysis(article).risk_level || 'low' }}</em>
@@ -512,6 +514,8 @@ onBeforeUnmount(() => {
 .market-tag { color: var(--ok); border-color: rgba(39,196,107,.24); cursor: pointer; }
 .reason-toggle { border: 0; background: transparent; color: var(--accent-strong); padding: 2px 0; cursor: pointer; font-size: 8px; }
 .reason-panel { flex-basis: 100%; display: grid; gap: 7px; padding: 9px 10px; border: 1px solid color-mix(in srgb, var(--accent) 16%, var(--line)); border-radius: 7px; background: color-mix(in srgb, var(--workspace-accent-wash) 26%, transparent); }
+.reason-fold-enter-active, .reason-fold-leave-active { overflow: hidden; transition: opacity var(--news-motion-surface) ease, transform var(--news-motion-surface) var(--news-ease), max-height var(--news-motion-layout) var(--news-ease); max-height: 240px; }
+.reason-fold-enter-from, .reason-fold-leave-to { opacity: 0; transform: translateY(-4px); max-height: 0; }
 .reason-scores { display: flex; flex-wrap: wrap; gap: 5px; }.reason-scores span { padding: 2px 5px; border-radius: 999px; background: color-mix(in srgb, var(--surface) 72%, transparent); color: var(--muted); font: 7px ui-monospace, monospace; }
 .reason-panel ul { display: grid; gap: 4px; margin: 0; padding-left: 15px; color: var(--muted); font-size: 8px; line-height: 1.45; }
 .tag, .impact { border: 1px solid var(--line-strong); border-radius: 3px; padding: 2px 5px; color: var(--subtle); font-size: 8px; font-style: normal; }

@@ -270,3 +270,10 @@ test('quality telemetry acknowledges each successful digest refresh', () => {
   assert.match(page, /:key="qualityVersion"/)
   assert.match(page, /@keyframes quality-number-pop/)
 })
+
+test('ranking reason disclosure animates both expansion and collapse', () => {
+  const page = read('pages/NewsCenterPage.vue')
+  assert.match(page, /<Transition name="reason-fold">/)
+  assert.match(page, /\.reason-fold-enter-active/)
+  assert.match(page, /\.reason-fold-leave-to/)
+})
