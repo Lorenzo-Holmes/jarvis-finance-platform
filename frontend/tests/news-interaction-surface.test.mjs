@@ -107,7 +107,7 @@ test('topic filters retain checkbox semantics with chip interactions', () => {
 test('news feedback uses non-layout-shifting floating toasts', () => {
   const page = read('pages/NewsCenterPage.vue')
   assert.match(page, /\.notice \{ position: fixed/)
-  assert.match(page, /@keyframes news-toast-in/)
+  assert.match(page, /\.news-toast-enter-active/)
   assert.match(page, /backdrop-filter: blur\(16px\)/)
 })
 
@@ -229,4 +229,11 @@ test('refresh controls expose animated in-progress glyphs', () => {
   assert.match(page, /@keyframes news-refresh-spin/)
   assert.match(board, /class="refresh-glyph"/)
   assert.match(board, /refresh-action\.active/)
+})
+
+test('news toasts animate both entry and exit', () => {
+  const page = read('pages/NewsCenterPage.vue')
+  assert.match(page, /<Transition name="news-toast">/)
+  assert.match(page, /\.news-toast-enter-active/)
+  assert.match(page, /\.news-toast-leave-to/)
 })

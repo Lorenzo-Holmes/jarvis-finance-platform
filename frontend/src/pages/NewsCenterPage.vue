@@ -287,8 +287,8 @@ onBeforeUnmount(() => {
       </div>
     </header>
 
-    <div v-if="message" class="notice success" role="status">{{ message }}</div>
-    <div v-if="error" class="notice error" role="alert">{{ error }}</div>
+    <Transition name="news-toast"><div v-if="message" class="notice success" role="status">{{ message }}</div></Transition>
+    <Transition name="news-toast"><div v-if="error" class="notice error" role="alert">{{ error }}</div></Transition>
     <DataState v-if="loading" state="loading" title="正在加载资讯中心" />
 
     <template v-else>
@@ -436,10 +436,12 @@ onBeforeUnmount(() => {
 .action-button.primary { border-color: var(--accent); background: var(--accent); color: #17140e; font-weight: 700; }
 .action-button:disabled { opacity: .5; cursor: not-allowed; }
 .text-button { padding: 4px 7px; color: var(--accent-strong); }
-.notice { position: fixed; z-index: 90; top: 74px; right: 24px; max-width: min(420px, calc(100vw - 32px)); padding: 10px 13px; border-radius: 9px; background: color-mix(in srgb, var(--surface) 92%, transparent); box-shadow: 0 16px 42px rgba(0,0,0,.16); backdrop-filter: blur(16px); font-size: 9px; animation: news-toast-in .22s cubic-bezier(.22,1,.36,1) both; }
+.notice { position: fixed; z-index: 90; top: 74px; right: 24px; max-width: min(420px, calc(100vw - 32px)); padding: 10px 13px; border-radius: 9px; background: color-mix(in srgb, var(--surface) 92%, transparent); box-shadow: 0 16px 42px rgba(0,0,0,.16); backdrop-filter: blur(16px); font-size: 9px; }
 .notice.success { border: 1px solid rgba(39,196,107,.24); color: #67d69a; }
 .notice.error { border: 1px solid rgba(239,83,80,.24); color: #e47d79; }
-@keyframes news-toast-in { from { opacity: 0; transform: translateY(-7px) scale(.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
+.news-toast-enter-active, .news-toast-leave-active { transition: opacity var(--news-motion-surface) ease, transform var(--news-motion-surface) var(--news-ease); }
+.news-toast-enter-from { opacity: 0; transform: translateY(-7px) scale(.985); }
+.news-toast-leave-to { opacity: 0; transform: translateY(-5px) scale(.985); }
 .choice-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-top: 11px; }
 .choice { display: flex; align-items: flex-start; gap: 7px; min-width: 0; padding: 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); cursor: pointer; }
 .choice.active { border-color: #695b40; background: rgba(201,166,95,.07); }
