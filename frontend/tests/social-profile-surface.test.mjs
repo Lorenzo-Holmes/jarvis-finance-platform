@@ -184,3 +184,10 @@ test('invite search results render as an anchored animated popover', () => {
   assert.match(source, /\.invite-candidates \{ position: absolute/)
   assert.match(source, /@keyframes social-popover-in/)
 })
+
+test('user profile preview uses identity-focused hierarchy and motion', () => {
+  const source = read('pages/CommunityPage.vue')
+  assert.match(source, /\.profile-preview > header \{ position: relative/)
+  assert.match(source, /\.profile-preview \.avatar\.large/)
+  assert.match(source, /\.achievement-strip article:hover/)
+})
