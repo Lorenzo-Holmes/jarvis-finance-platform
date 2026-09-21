@@ -242,3 +242,13 @@ test('activity lists render as lightweight event timelines', () => {
     assert.match(source, /article:hover::before/)
   }
 })
+
+test('final social scroll polish contains nested scrolling and adds adaptive snap behavior', () => {
+  const community = read('pages/CommunityPage.vue')
+  const profile = read('pages/ProfilePage.vue')
+  assert.match(community, /\.community-tabs \{ position: sticky/)
+  assert.match(community, /overscroll-behavior: contain/)
+  assert.match(community, /scroll-snap-type: x proximity/)
+  assert.match(profile, /\.profile-grid > aside \{ position: sticky/)
+  assert.match(profile, /scroll-snap-align: start/)
+})
