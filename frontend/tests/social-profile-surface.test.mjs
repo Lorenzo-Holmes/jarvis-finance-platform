@@ -157,3 +157,9 @@ test('surface alerts render as animated non-layout-shifting toasts', () => {
     assert.match(source, /@keyframes social-toast-in/)
   }
 })
+
+test('empty states read as intentional surfaces rather than missing content', () => {
+  assert.match(read('pages/CommunityPage.vue'), /\.empty-panel::before/)
+  assert.match(read('pages/CommunityPage.vue'), /border: 1px dashed/)
+  assert.match(read('pages/ProfilePage.vue'), /\.empty-state \{ padding: 16px; border: 1px dashed/)
+})

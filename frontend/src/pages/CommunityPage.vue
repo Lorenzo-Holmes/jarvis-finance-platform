@@ -540,7 +540,9 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .activity-list { display: grid; gap: 0; padding: 0 14px 14px; }.activity-list article { display: grid; grid-template-columns: 120px 1fr auto; gap: 8px; padding: 9px 0; border-bottom: 1px solid var(--line); }.activity-list article span, .activity-list article small { color: var(--subtle); font-size: 8px; }.activity-list article p { margin: 0; color: var(--muted); font-size: 9px; }
 .message-room { grid-template-rows: auto minmax(280px, 1fr) auto; }.message-thread { padding: 14px; overflow: auto; display: flex; flex-direction: column; gap: 8px; }.message-thread article { max-width: 72%; align-self: flex-start; padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); }.message-thread article.mine { align-self: flex-end; background: var(--workspace-accent-wash); }.message-thread p { margin: 0 0 5px; font-size: 10px; line-height: 1.55; }.message-thread small { color: var(--subtle); font-size: 7px; }.message-room > footer { display: flex; gap: 8px; padding: 12px; border-top: 1px solid var(--line); }.message-compose { min-width: 0; flex: 1; display: grid; gap: 4px; }.message-compose small { color: var(--subtle); font-size: 7px; text-align: right; }
 .load-older-messages { align-self: center; border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--muted); padding: 6px 10px; cursor: pointer; font-size: 8px; }
-.empty-state, .empty-panel { padding: 24px; color: var(--subtle); font-size: 9px; }.empty-panel { display: grid; place-items: center; }
+.empty-state, .empty-panel { position: relative; padding: 22px; border: 1px dashed color-mix(in srgb, var(--line-strong) 66%, transparent); border-radius: 9px; background: radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--workspace-accent-wash) 34%, transparent), transparent 62%); color: var(--subtle); font-size: 9px; text-align: center; }
+.empty-panel { min-height: 180px; display: grid; place-items: center; align-content: center; gap: 10px; }
+.empty-panel::before { content: ''; width: 22px; height: 22px; border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--line-strong)); border-radius: 50%; box-shadow: inset 0 0 0 6px color-mix(in srgb, var(--workspace-accent-wash) 40%, transparent); opacity: .7; }
 .load-more { justify-self: center; border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--muted); padding: 7px 13px; cursor: pointer; font-size: 8px; }
 @keyframes social-surface-in { from { opacity: .72; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes social-card-in { from { opacity: 0; transform: translateY(6px) scale(.995); } to { opacity: 1; transform: translateY(0) scale(1); } }
@@ -567,6 +569,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   .composer-panel, .network-rail, .create-group, .group-directory, .group-room, .user-directory, .profile-preview, .conversation-list, .message-room, .empty-panel { border-radius: 8px; }
   .group-metrics { grid-template-columns: 1fr; }
   .post-card { padding: 11px; }
+  .empty-panel { min-height: 120px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .community-page, .community-page * { scroll-behavior: auto !important; }
