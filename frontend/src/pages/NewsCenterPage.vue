@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { api } from '../api/client'
 import DataState from '../components/common/DataState.vue'
 
@@ -26,6 +26,8 @@ const expandedReasons = ref([])
 const savedSources = ref([])
 const savedTopics = ref([])
 const subscriptionOpen = ref(true)
+let preferenceRequestSeq = 0
+let digestRequestSeq = 0
 
 const topicOptions = [
   { key: 'markets', label: '市场行情' },
@@ -48,10 +50,12 @@ function responseError(response, fallback) {
 }
 
 async function loadPreferences() {
+  const requestSeq = ++preferenceRequestSeq
   const [sourceResponse, subscriptionResponse] = await Promise.all([
     api.newsSources(),
     api.newsSubscriptions(),
   ])
+  if (requestSeq !== preferenceRequestSeq) return
   responseError(sourceResponse, 'RSS 来源加载失败')
   responseError(subscriptionResponse, '资讯订阅加载失败')
   sources.value = sourceResponse.data?.items || []
@@ -62,7 +66,9 @@ async function loadPreferences() {
 }
 
 async function loadDigest(force = false) {
+  const requestSeq = ++digestRequestSeq
   const response = await api.newsDaily(24, force, rankingMode.value)
+  if (requestSeq !== digestRequestSeq) return
   responseError(response, '资讯摘要加载失败')
   const data = response.data || {}
   available.value = data.available !== false
@@ -201,6 +207,10 @@ async function analyzeArticles() {
 }
 
 onMounted(load)
+onBeforeUnmount(() => {
+  preferenceRequestSeq += 1
+  digestRequestSeq += 1
+})
 </script>
 
 <template>

@@ -110,3 +110,12 @@ test('news feedback uses non-layout-shifting floating toasts', () => {
   assert.match(page, /@keyframes news-toast-in/)
   assert.match(page, /backdrop-filter: blur\(16px\)/)
 })
+
+test('news center ignores stale async preference and digest responses', () => {
+  const page = read('pages/NewsCenterPage.vue')
+  assert.match(page, /let preferenceRequestSeq = 0/)
+  assert.match(page, /let digestRequestSeq = 0/)
+  assert.match(page, /requestSeq !== preferenceRequestSeq/)
+  assert.match(page, /requestSeq !== digestRequestSeq/)
+  assert.match(page, /onBeforeUnmount/)
+})
