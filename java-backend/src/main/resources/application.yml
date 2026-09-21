@@ -65,6 +65,11 @@ jarvis:
     # 触发频率下限：低于它的 cron 直接 400，防用户配出每秒一次的任务打满服务。
     min-interval-seconds: ${SCHEDULED_TASK_MIN_INTERVAL_SECONDS:60}
     max-tasks-per-user: ${SCHEDULED_TASK_MAX_PER_USER:20}
+  # RSS 全局缓存自动刷新：不绑定用户、不创建用户任务、不消耗 AI 配额。
+  # 用户 DAILY_DIGEST 任务仍负责按个人订阅生成执行历史与站内提醒。
+  news:
+    refresh-initial-delay-ms: ${NEWS_REFRESH_INITIAL_DELAY_MS:60000}
+    refresh-interval-ms: ${NEWS_REFRESH_INTERVAL_MS:86400000}
   # 站内通知（PRD V1.2 增量需求 3 的「通知机制」）。
   notification:
     # 每个用户最多保留多少条；超出后按"最近一次发生时间"裁掉最旧的（每次写入最多裁 50 条）。
