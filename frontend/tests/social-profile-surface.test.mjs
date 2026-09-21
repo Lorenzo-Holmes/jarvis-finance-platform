@@ -219,3 +219,10 @@ test('profile editor communicates mode entry with restrained staggered motion', 
   assert.match(source, /@keyframes social-editor-in/)
   assert.match(source, /@keyframes social-editor-field-in/)
 })
+
+test('privacy settings retain native checkbox semantics with custom toggle visuals', () => {
+  const source = read('pages/ProfilePage.vue')
+  assert.match(source, /\.privacy-grid input \{ position: relative; width: 30px; height: 18px/)
+  assert.match(source, /\.privacy-grid input::before/)
+  assert.match(source, /\.privacy-grid input:checked::before \{ transform: translateX\(12px\)/)
+})
