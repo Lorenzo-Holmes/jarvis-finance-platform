@@ -247,9 +247,9 @@ onMounted(load)
         </div>
         <div class="topic-row">
           <span>主题</span>
-          <label v-for="topic in topicOptions" :key="topic.key" class="topic-choice">
+          <label v-for="topic in topicOptions" :key="topic.key" class="topic-choice" :class="{ active: selectedTopics.includes(topic.key) }">
             <input v-model="selectedTopics" type="checkbox" :value="topic.key" />
-            {{ topic.label }}
+            <i></i>{{ topic.label }}
           </label>
           <span class="topic-hint">不选主题表示不限制主题</span>
         </div>
@@ -351,13 +351,13 @@ onMounted(load)
 .choice-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-top: 11px; }
 .choice { display: flex; align-items: flex-start; gap: 7px; min-width: 0; padding: 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); cursor: pointer; }
 .choice.active { border-color: #695b40; background: rgba(201,166,95,.07); }
-.choice input, .topic-choice input { margin-top: 2px; accent-color: var(--accent); }
+.choice input { margin-top: 2px; accent-color: var(--accent); }
 .choice span { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .choice b { overflow: hidden; color: var(--text); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .choice small { color: var(--subtle); font-size: 8px; }
 .credibility-meter { display: block; width: 100%; height: 3px; margin-top: 2px; border-radius: 999px; overflow: hidden; background: color-mix(in srgb, var(--line) 76%, transparent); }.credibility-meter em { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 45%, var(--muted)), var(--accent)); opacity: .65; transition: width .22s cubic-bezier(.22,1,.36,1), opacity .16s ease; }.choice:hover .credibility-meter em, .choice.active .credibility-meter em { opacity: .95; }
 .topic-row { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; margin-top: 12px; color: var(--muted); font-size: 9px; }
-.topic-choice { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); cursor: pointer; }
+.topic-choice { position: relative; display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding: 0 9px; border: 1px solid var(--line); border-radius: 999px; background: color-mix(in srgb, var(--surface) 76%, transparent); color: var(--muted); cursor: pointer; transition: border-color .16s ease, background .16s ease, color .16s ease, transform .12s ease; }.topic-choice input { position: absolute; opacity: 0; pointer-events: none; }.topic-choice i { width: 6px; height: 6px; border: 1px solid var(--line-strong); border-radius: 50%; background: transparent; transition: background .16s ease, border-color .16s ease, box-shadow .16s ease; }.topic-choice:hover, .topic-choice:focus-within { border-color: var(--line-strong); color: var(--text); }.topic-choice:active { transform: scale(.98); }.topic-choice.active { border-color: color-mix(in srgb, var(--accent) 30%, var(--line-strong)); background: color-mix(in srgb, var(--workspace-accent-wash) 46%, transparent); color: var(--text); }.topic-choice.active i { border-color: var(--accent); background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 8%, transparent); }
 .subscription-actions { justify-content: space-between; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); color: var(--subtle); font-size: 9px; }
 .save-state { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; color: var(--subtle); font: 8px ui-monospace, monospace; }.save-state i { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); }.save-state i.dirty { background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 8%, transparent); }
 .feed-status { color: var(--ok); }

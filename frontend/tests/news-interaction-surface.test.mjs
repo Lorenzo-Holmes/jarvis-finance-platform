@@ -95,3 +95,11 @@ test('source choices visualize existing credibility without recomputing it', () 
   assert.match(page, /Number\(source\.credibility\)/)
   assert.match(page, /\.credibility-meter em/)
 })
+
+test('topic filters retain checkbox semantics with chip interactions', () => {
+  const page = read('pages/NewsCenterPage.vue')
+  assert.match(page, /:class="\{ active: selectedTopics\.includes\(topic\.key\) \}"/)
+  assert.match(page, /\.topic-choice input \{ position: absolute; opacity: 0/)
+  assert.match(page, /\.topic-choice\.active/)
+  assert.match(page, /\.topic-choice:focus-within/)
+})
