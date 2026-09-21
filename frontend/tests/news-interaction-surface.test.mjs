@@ -244,3 +244,9 @@ test('subscription configuration expands and collapses as an accordion', () => {
   assert.match(page, /\.subscription-fold-enter-active/)
   assert.match(page, /max-height: 0/)
 })
+
+test('source cards acknowledge selection with a single restrained pulse', () => {
+  const page = read('pages/NewsCenterPage.vue')
+  assert.match(page, /\.choice\.active::after/)
+  assert.match(page, /@keyframes source-select-pulse/)
+})
