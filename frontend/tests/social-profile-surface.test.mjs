@@ -191,3 +191,10 @@ test('user profile preview uses identity-focused hierarchy and motion', () => {
   assert.match(source, /\.profile-preview \.avatar\.large/)
   assert.match(source, /\.achievement-strip article:hover/)
 })
+
+test('message room distinguishes channel, incoming and own message surfaces', () => {
+  const source = read('pages/CommunityPage.vue')
+  assert.match(source, /\.message-room > header::after/)
+  assert.match(source, /\.message-thread article\.mine::after/)
+  assert.match(source, /\.message-thread article:hover/)
+})
