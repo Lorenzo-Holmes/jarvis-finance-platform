@@ -22,6 +22,13 @@ const profileProgress = computed(() => {
   const fields = [form.value.displayName, form.value.avatarUrl, form.value.signature, form.value.contactInfo]
   return Math.round(fields.filter(value => String(value || '').trim()).length / fields.length * 100)
 })
+const avatarUrlValid = computed(() => {
+  const value = form.value.avatarUrl.trim()
+  return !value || /^https:\/\/[^\s]+$/i.test(value)
+})
+const previewAvatarUrl = computed(() => editing.value && avatarUrlValid.value
+  ? form.value.avatarUrl.trim()
+  : profile.value?.avatarUrl || '')
 
 function syncForm(value) {
   form.value = {
@@ -48,6 +55,10 @@ async function load() {
 
 async function save() {
   if (!form.value.displayName.trim()) return
+  if (!avatarUrlValid.value) {
+    error.value = '头像地址必须使用 HTTPS。'
+    return
+  }
   saving.value = true
   error.value = ''
   try {
@@ -91,7 +102,7 @@ onMounted(load)
     <div v-if="profile" class="profile-grid">
       <main>
         <section class="identity-card">
-          <div class="avatar large"><img v-if="profile.avatarUrl" :src="profile.avatarUrl" alt="个人头像" /><b v-else>{{ (profile.displayName || '?').slice(0, 1) }}</b></div>
+          <div class="avatar large"><img v-if="previewAvatarUrl" :src="previewAvatarUrl" alt="个人头像" /><b v-else>{{ (profile.displayName || '?').slice(0, 1) }}</b></div>
           <div class="identity-copy"><span>USER / {{ profile.id }}</span><h3>{{ profile.displayName }}</h3><p>{{ profile.signature || '还没有个人签名。' }}</p><small>{{ profile.email }}</small></div>
           <div class="completion"><span>资料完整度</span><b>{{ profileProgress }}%</b><i><em :style="{ width: `${profileProgress}%` }"></em></i></div>
         </section>
@@ -100,7 +111,7 @@ onMounted(load)
           <header><div><span>PROFILE EDITOR</span><h3>档案与隐私</h3></div><button type="button" :disabled="saving" @click="save">{{ saving ? '保存中' : '保存变更' }}</button></header>
           <div class="form-grid">
             <label><span>显示名称</span><input v-model="form.displayName" maxlength="60" /></label>
-            <label><span>头像 HTTPS URL</span><input v-model="form.avatarUrl" maxlength="500" placeholder="https://…" /></label>
+            <label><span>头像 HTTPS URL</span><input v-model="form.avatarUrl" maxlength="500" placeholder="https://…" :aria-invalid="!avatarUrlValid" /><small v-if="!avatarUrlValid" class="field-error">仅允许 HTTPS 图片地址</small></label>
             <label class="wide"><span>个人签名</span><textarea v-model="form.signature" maxlength="160" rows="3" /></label>
             <label class="wide"><span>联系方式</span><input v-model="form.contactInfo" maxlength="200" placeholder="邮箱 / 社交账号 / 其它自愿公开方式" /></label>
           </div>
@@ -150,7 +161,7 @@ onMounted(load)
 .identity-copy h3 { margin: 5px 0; font-size: 20px; }.identity-copy p { margin: 0 0 6px; color: var(--muted); font-size: 10px; }.identity-copy small { color: var(--subtle); font-size: 8px; }
 .completion { display: grid; gap: 7px; }.completion span { color: var(--subtle); font-size: 8px; }.completion b { font-size: 18px; }.completion > i, .progress > i { display: block; height: 3px; border-radius: 999px; background: var(--line); overflow: hidden; }.completion em, .progress em { display: block; height: 100%; background: var(--accent); }
 .edit-panel { padding: 14px; display: grid; gap: 13px; }.edit-panel > header, .achievement-section > header, .activity-section > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }.edit-panel h3, .achievement-section h3, .activity-section h3 { margin: 4px 0 0; font-size: 14px; }
-.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }.form-grid label { display: grid; gap: 6px; }.form-grid label.wide { grid-column: 1 / -1; }.form-grid label > span { color: var(--muted); font-size: 8px; }
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }.form-grid label { display: grid; gap: 6px; }.form-grid label.wide { grid-column: 1 / -1; }.form-grid label > span { color: var(--muted); font-size: 8px; }.field-error { color: var(--bad); font-size: 7px; }
 input, textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 8px; background: var(--workspace-control-bg, var(--panel)); color: var(--text); padding: 9px 10px; font: inherit; outline: none; }input:focus, textarea:focus { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
 .privacy-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }.privacy-grid label { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; }.privacy-grid label > span { display: grid; gap: 4px; }.privacy-grid b { font-size: 9px; }.privacy-grid small { color: var(--subtle); font-size: 7px; line-height: 1.4; }.privacy-grid input { width: 15px; height: 15px; }
 .achievement-section, .activity-section { padding: 14px; }.achievement-section header strong { color: var(--accent-strong); font: 650 11px/1 ui-monospace, monospace; }

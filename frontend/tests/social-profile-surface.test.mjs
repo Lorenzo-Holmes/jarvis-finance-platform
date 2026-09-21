@@ -57,6 +57,8 @@ test('profile surface exposes privacy switches and achievement progress', () => 
   assert.match(page, /form\.activityPublic/)
   assert.match(page, /研究成就/)
   assert.match(page, /连续登录/)
+  assert.match(page, /avatarUrlValid/)
+  assert.match(page, /previewAvatarUrl/)
 })
 
 test('share text is deterministic and includes the explicit source link', () => {
