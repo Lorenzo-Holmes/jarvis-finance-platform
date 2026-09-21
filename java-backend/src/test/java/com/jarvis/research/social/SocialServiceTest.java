@@ -117,6 +117,13 @@ class SocialServiceTest {
         verify(postRepository).findVisibleFeed(eq(7L), any());
     }
 
+    @Test
+    void unreadMessageCountOnlyUsesUnreadMessagesAddressedToCurrentUser() {
+        when(messageRepository.countByRecipientUserIdAndReadAtIsNull(7L)).thenReturn(4L);
+
+        assertEquals(4L, service.unreadMessageCount(7L).get("count"));
+    }
+
     private static User user(Long id) {
         return User.builder()
                 .id(id)

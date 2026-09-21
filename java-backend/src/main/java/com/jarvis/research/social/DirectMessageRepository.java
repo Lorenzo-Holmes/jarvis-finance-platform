@@ -11,6 +11,7 @@ import java.util.List;
 
 public interface DirectMessageRepository extends JpaRepository<DirectMessage, Long> {
     long countBySenderUserId(Long senderUserId);
+    long countByRecipientUserIdAndReadAtIsNull(Long recipientUserId);
 
     @Query("select m from DirectMessage m where m.senderUserId = :userId or m.recipientUserId = :userId order by m.createdAt desc")
     List<DirectMessage> findRecentForUser(@Param("userId") Long userId, Pageable pageable);

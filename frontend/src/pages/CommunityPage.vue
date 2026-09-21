@@ -29,6 +29,7 @@ const selectedUser = ref(null)
 const selectedUserActivity = ref([])
 
 const conversations = ref([])
+const messageUnreadCount = ref(0)
 const selectedPartner = ref(null)
 const thread = ref([])
 const messageText = ref('')
@@ -159,8 +160,9 @@ async function openUser(userId) {
 }
 
 async function loadConversations() {
-  const response = await api.socialConversations()
+  const [response, unread] = await Promise.all([api.socialConversations(), api.socialMessageUnreadCount()])
   conversations.value = responseData(response) || []
+  messageUnreadCount.value = Number(responseData(unread)?.count || 0)
 }
 
 async function openConversation(user) {
@@ -226,7 +228,9 @@ onMounted(async () => {
     </header>
 
     <nav class="community-tabs" aria-label="社区功能">
-      <button v-for="tab in tabs" :key="tab.key" type="button" :class="{ active: activeTab === tab.key }" @click="switchTab(tab.key)">{{ tab.label }}</button>
+      <button v-for="tab in tabs" :key="tab.key" type="button" :class="{ active: activeTab === tab.key }" @click="switchTab(tab.key)">
+        {{ tab.label }}<span v-if="tab.key === 'messages' && messageUnreadCount" class="tab-badge">{{ messageUnreadCount > 99 ? '99+' : messageUnreadCount }}</span>
+      </button>
     </nav>
 
     <div v-if="error" class="surface-alert error">{{ error }}</div>
@@ -320,6 +324,7 @@ onMounted(async () => {
 .community-tabs { display: inline-flex; justify-self: start; padding: 3px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
 .community-tabs button { min-height: 31px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); padding: 0 13px; cursor: pointer; font-size: 10px; }
 .community-tabs button.active { color: var(--text); background: var(--workspace-accent-wash); }
+.tab-badge { display: inline-grid; place-items: center; min-width: 15px; height: 15px; margin-left: 6px; padding: 0 3px; border-radius: 999px; background: var(--accent); color: var(--bg); font-size: 7px; }
 .surface-alert { padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px; font-size: 10px; }
 .surface-alert.error { color: var(--bad); }.surface-alert.notice { color: var(--accent-strong); }
 .feed-layout { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 14px; min-height: 0; }

@@ -118,6 +118,11 @@ public class SocialController {
         return ApiResponse.ok(socialService.conversations(CurrentUser.id()));
     }
 
+    @GetMapping("/messages/unread-count")
+    public ApiResponse<Object> unreadMessageCount() {
+        return ApiResponse.ok(socialService.unreadMessageCount(CurrentUser.id()));
+    }
+
     @GetMapping("/messages/{userId}")
     public ApiResponse<Object> thread(@PathVariable Long userId) {
         return ApiResponse.ok(socialService.thread(CurrentUser.id(), userId));

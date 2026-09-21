@@ -241,6 +241,10 @@ public class SocialService {
 
     public Map<String, Object> achievements(Long userId) { return achievementService.overview(userId); }
 
+    public Map<String, Object> unreadMessageCount(Long userId) {
+        return Map.of("count", messageRepository.countByRecipientUserIdAndReadAtIsNull(userId));
+    }
+
     private Map<String, Object> createPost(Long userId, Long groupId, PostRequest request, String clientIp) {
         CommunityPost post = postRepository.save(CommunityPost.builder()
                 .authorUserId(userId).groupId(groupId).content(request.getContent().trim())
