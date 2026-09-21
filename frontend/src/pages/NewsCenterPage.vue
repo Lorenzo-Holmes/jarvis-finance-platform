@@ -26,6 +26,7 @@ const expandedReasons = ref([])
 const expandedAnalysis = ref([])
 const feedQuery = ref('')
 const feedDensity = ref('comfortable')
+const feedSearchRef = ref(null)
 const savedSources = ref([])
 const savedTopics = ref([])
 const subscriptionOpen = ref(true)
@@ -215,6 +216,21 @@ function analysisHasDetails(article) {
   )
 }
 
+function handleNewsShortcut(event) {
+  const target = event.target
+  const tag = String(target?.tagName || '').toLowerCase()
+  const editing = ['input', 'textarea', 'select'].includes(tag) || Boolean(target?.isContentEditable)
+  if (event.key === '/' && !editing) {
+    event.preventDefault()
+    feedSearchRef.value?.focus?.()
+    return
+  }
+  if (event.key === 'Escape' && document.activeElement === feedSearchRef.value) {
+    feedQuery.value = ''
+    feedSearchRef.value?.blur?.()
+  }
+}
+
 function openMarket(market) {
   // 资讯与行情之间保留可观察的工作流入口；当前上下文仍由多市场页负责解析。
   emit('navigate-module', '多市场')
@@ -242,10 +258,14 @@ async function analyzeArticles() {
   }
 }
 
-onMounted(load)
+onMounted(() => {
+  load()
+  window.addEventListener('keydown', handleNewsShortcut)
+})
 onBeforeUnmount(() => {
   preferenceRequestSeq += 1
   digestRequestSeq += 1
+  window.removeEventListener('keydown', handleNewsShortcut)
 })
 </script>
 
@@ -313,7 +333,7 @@ onBeforeUnmount(() => {
           <div class="feed-actions">
             <label class="feed-search">
               <span>检索</span>
-              <input v-model="feedQuery" type="search" aria-label="筛选当前资讯" placeholder="标题 / 来源 / 标签" />
+              <input ref="feedSearchRef" v-model="feedQuery" type="search" aria-label="筛选当前资讯" aria-keyshortcuts="/" placeholder="标题 / 来源 / 标签" />
               <button v-if="feedQuery" type="button" aria-label="清空资讯筛选" @click="feedQuery = ''">×</button>
             </label>
             <div class="density-switch" role="group" aria-label="资讯阅读密度">
@@ -407,6 +427,7 @@ onBeforeUnmount(() => {
 .panel-title b { color: var(--text); font-size: 12px; }
 .panel-title span { color: var(--subtle); font-size: 9px; }
 .action-button, .text-button { border: 1px solid var(--line-strong); background: var(--surface); color: var(--text); border-radius: var(--radius-sm); padding: 7px 11px; cursor: pointer; font-size: 9px; }
+.news-center button:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 62%, transparent); outline-offset: 2px; }
 .action-button.primary { border-color: var(--accent); background: var(--accent); color: #17140e; font-weight: 700; }
 .action-button:disabled { opacity: .5; cursor: not-allowed; }
 .text-button { padding: 4px 7px; color: var(--accent-strong); }
@@ -466,5 +487,5 @@ onBeforeUnmount(() => {
 .impact.positive { color: var(--ok); border-color: rgba(39,196,107,.25); }.impact.negative { color: var(--bad); border-color: rgba(239,83,80,.25); }
 @media (max-width: 850px) { .choice-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 850px) { .quality-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }.quality-strip small { white-space: normal; } }
-@media (max-width: 600px) { .notice { top: 64px; left: 12px; right: 12px; max-width: none; }.news-head, .subscription-actions { align-items: flex-start; flex-direction: column; } .feed-actions { align-items: flex-start; flex-direction: column; } .article-row { grid-template-columns: 1fr; gap: 5px; } .article-detail { grid-column: auto; } }
+@media (max-width: 600px) { .notice { top: 64px; left: 12px; right: 12px; max-width: none; }.news-head, .subscription-actions { align-items: flex-start; flex-direction: column; }.head-actions, .feed-actions { width: 100%; align-items: stretch; flex-wrap: wrap; }.feed-actions { flex-direction: row; }.feed-search { width: 100%; min-width: 0; box-sizing: border-box; }.ranking-switch, .density-switch { max-width: 100%; overflow-x: auto; }.action-button, .text-button, .ranking-switch button, .density-switch button { min-height: 38px; }.article-row { grid-template-columns: 1fr; gap: 5px; } .article-detail { grid-column: auto; } }
 </style>

@@ -154,3 +154,15 @@ test('news center offers comfortable and compact reading density without changin
   assert.match(page, /:class="\{ compact: feedDensity === 'compact' \}"/)
   assert.match(page, /\.article-list\.compact/)
 })
+
+test('news surfaces support keyboard search and visible focus states', () => {
+  const page = read('pages/NewsCenterPage.vue')
+  const board = read('components/market/MarketNewsBoard.vue')
+  assert.match(page, /const feedSearchRef = ref\(null\)/)
+  assert.match(page, /event\.key === '\/'/)
+  assert.match(page, /event\.key === 'Escape'/)
+  assert.match(page, /aria-keyshortcuts="\/"/)
+  assert.match(page, /window\.removeEventListener\('keydown', handleNewsShortcut\)/)
+  assert.match(page, /button:focus-visible/)
+  assert.match(board, /button:focus-visible/)
+})

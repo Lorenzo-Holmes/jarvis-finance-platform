@@ -211,6 +211,7 @@ onBeforeUnmount(() => {
 .news-actions small { color: var(--subtle); font-size: 8px; }
 .news-actions button { height: 30px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; background: transparent; color: var(--muted); cursor: pointer; font-size: 9px; }
 .news-actions button:hover:not(:disabled) { color: var(--text); border-color: var(--line-strong); background: var(--workspace-hover-bg); }
+.news-actions button:focus-visible, .news-copy a:focus-visible, .news-pager button:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 58%, transparent); outline-offset: 2px; }
 .news-state { margin: 12px 0 0; color: var(--muted); font-size: 10px; }
 .news-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 20px; }
 .news-item { position: relative; min-width: 0; display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; padding: 11px 8px; border-bottom: 1px solid color-mix(in srgb, var(--line) 66%, transparent); border-radius: 7px; transition: transform .18s cubic-bezier(.22,1,.36,1), background .16s ease, border-color .16s ease, box-shadow .18s ease; }
@@ -232,5 +233,5 @@ onBeforeUnmount(() => {
 .news-pager button { min-height: 27px; padding: 0 9px; border: 1px solid var(--line); border-radius: 7px; background: transparent; color: var(--muted); cursor: pointer; font-size: 8px; }
 .news-pager button:hover:not(:disabled) { color: var(--text); border-color: var(--line-strong); background: var(--workspace-hover-bg); }
 .news-pager button:disabled { opacity: .36; cursor: default; }
-@media (max-width: 760px) { .news-head { align-items: flex-start; flex-direction: column; } .news-actions { width: 100%; flex-wrap: wrap; } .news-grid { grid-template-columns: 1fr; } .news-pager { align-items: flex-start; flex-direction: column; } }
+@media (max-width: 760px) { .news-head { align-items: flex-start; flex-direction: column; } .news-actions { width: 100%; flex-wrap: wrap; }.news-actions button { min-height: 38px; }.ranking-switch { max-width: 100%; overflow-x: auto; } .news-grid { grid-template-columns: 1fr; } .news-pager { align-items: flex-start; flex-direction: column; }.news-pager button { min-height: 38px; } }
 </style>
