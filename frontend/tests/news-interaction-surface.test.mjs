@@ -25,3 +25,13 @@ test('market news board keeps ranking mode aligned with paged feed', () => {
   assert.match(board, /page\.value = 1/)
   assert.match(board, /aria-label="市场要闻排序方式"/)
 })
+
+test('news center surfaces quality telemetry without requiring it', () => {
+  const page = read('pages/NewsCenterPage.vue')
+  assert.match(page, /const qualityMetrics = ref\(null\)/)
+  assert.match(page, /data\.quality_metrics/)
+  assert.match(page, /跨源确认/)
+  assert.match(page, /重复折叠/)
+  assert.match(page, /来源覆盖/)
+  assert.match(page, /v-if="qualityMetrics"/)
+})

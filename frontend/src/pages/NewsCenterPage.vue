@@ -18,6 +18,10 @@ const message = ref('')
 const generatedAt = ref('')
 const available = ref(true)
 const rankingMode = ref('smart')
+const qualityMetrics = ref(null)
+const filterStats = ref(null)
+const returnedCount = ref(0)
+const semanticRanking = ref(null)
 
 const topicOptions = [
   { key: 'markets', label: '市场行情' },
@@ -53,6 +57,10 @@ async function loadDigest(force = false) {
   available.value = data.available !== false
   articles.value = data.items || []
   generatedAt.value = data.generated_at || ''
+  qualityMetrics.value = data.quality_metrics || null
+  filterStats.value = data.filter_stats || null
+  returnedCount.value = Number(data.returned_count || articles.value.length || 0)
+  semanticRanking.value = data.semantic_ranking || null
 }
 
 async function changeRanking(mode) {
@@ -222,6 +230,14 @@ onMounted(load)
             <span class="feed-status" :class="{ muted: !available }">{{ available ? 'RSS READY' : 'RSS UNAVAILABLE' }}</span>
           </div>
         </div>
+        <div v-if="qualityMetrics" class="quality-strip" aria-label="资讯质量摘要">
+          <div><span>当前结果</span><b>{{ returnedCount }}</b></div>
+          <div><span>跨源确认</span><b>{{ qualityMetrics.confirmed_event_count ?? 0 }}</b></div>
+          <div><span>重复折叠</span><b>{{ qualityMetrics.duplicate_merge_count ?? 0 }}</b></div>
+          <div><span>来源覆盖</span><b>{{ qualityMetrics.source_diversity ?? 0 }}</b></div>
+          <small v-if="filterStats">筛选 {{ filterStats.filter_before_count ?? 0 }} → {{ filterStats.filter_after_count ?? 0 }}</small>
+          <small v-if="semanticRanking?.stage">{{ semanticRanking.stage }}</small>
+        </div>
         <DataState v-if="!articles.length" state="empty" title="暂无匹配资讯" message="可调整订阅范围或手动刷新。" compact />
         <div v-else class="article-list">
           <article v-for="article in articles" :key="`${article.url}-${article.published}`" class="article-row">
@@ -284,6 +300,11 @@ onMounted(load)
 .subscription-actions { justify-content: space-between; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); color: var(--subtle); font-size: 9px; }
 .feed-status { color: var(--ok); }
 .feed-status.muted { color: var(--bad); }
+.quality-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) auto auto; gap: 7px; align-items: center; margin: 10px 0 4px; }
+.quality-strip > div { min-width: 0; display: grid; gap: 3px; padding: 8px 9px; border: 1px solid color-mix(in srgb, var(--line) 82%, transparent); border-radius: 7px; background: color-mix(in srgb, var(--surface) 72%, transparent); }
+.quality-strip span, .quality-strip small { color: var(--subtle); font: 7px ui-monospace, monospace; }
+.quality-strip b { color: var(--text); font: 650 11px ui-monospace, monospace; }
+.quality-strip small { white-space: nowrap; }
 .article-list { display: grid; margin-top: 3px; }
 .article-row { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 7px 14px; align-items: baseline; padding: 12px 3px; border-bottom: 1px solid var(--line); }
 .article-meta { display: flex; flex-direction: column; gap: 4px; }
@@ -302,5 +323,6 @@ onMounted(load)
 .tag, .impact { border: 1px solid var(--line-strong); border-radius: 3px; padding: 2px 5px; color: var(--subtle); font-size: 8px; font-style: normal; }
 .impact.positive { color: var(--ok); border-color: rgba(39,196,107,.25); }.impact.negative { color: var(--bad); border-color: rgba(239,83,80,.25); }
 @media (max-width: 850px) { .choice-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 850px) { .quality-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }.quality-strip small { white-space: normal; } }
 @media (max-width: 600px) { .news-head, .subscription-actions { align-items: flex-start; flex-direction: column; } .feed-actions { align-items: flex-start; flex-direction: column; } .article-row { grid-template-columns: 1fr; gap: 5px; } .article-detail { grid-column: auto; } }
 </style>
