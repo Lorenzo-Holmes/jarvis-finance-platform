@@ -101,6 +101,12 @@ public class AuthDtos {
         private Long id;
         private String email;
         private String displayName;
+        private String avatarUrl;
+        private String signature;
+        private String contactInfo;
+        private boolean profilePublic;
+        private boolean contactPublic;
+        private boolean activityPublic;
         private String role;
         private boolean enabled;
         private BigDecimal simCash;

@@ -33,6 +33,27 @@ public class User {
     @Column(length = 60)
     private String displayName;
 
+    @Column(name = "avatar_url", length = 500)
+    private String avatarUrl;
+
+    @Column(length = 160)
+    private String signature;
+
+    @Column(name = "contact_info", length = 200)
+    private String contactInfo;
+
+    @Builder.Default
+    @Column(name = "profile_public", nullable = false)
+    private boolean profilePublic = true;
+
+    @Builder.Default
+    @Column(name = "contact_public", nullable = false)
+    private boolean contactPublic = false;
+
+    @Builder.Default
+    @Column(name = "activity_public", nullable = false)
+    private boolean activityPublic = true;
+
     @Builder.Default
     @Column(nullable = false)
     private boolean enabled = true;

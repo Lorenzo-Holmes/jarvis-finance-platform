@@ -229,6 +229,12 @@ public class AuthService {
         info.setId(user.getId());
         info.setEmail(user.getEmail());
         info.setDisplayName(user.getDisplayName());
+        info.setAvatarUrl(user.getAvatarUrl());
+        info.setSignature(user.getSignature());
+        info.setContactInfo(user.getContactInfo());
+        info.setProfilePublic(user.isProfilePublic());
+        info.setContactPublic(user.isContactPublic());
+        info.setActivityPublic(user.isActivityPublic());
         info.setRole(user.getRole());
         info.setEnabled(user.isEnabled());
         if (account != null) {

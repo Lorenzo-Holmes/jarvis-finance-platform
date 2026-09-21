@@ -130,6 +130,12 @@ class FlywaySchemaContractTest {
                 "group_feature_permission",
                 "news_source",
                 "news_subscription",
+                "community_group",
+                "community_group_member",
+                "community_post",
+                "direct_message",
+                "user_activity",
+                "user_achievement",
                 "flyway_schema_history"));
 
         assertEquals(expected, tableNames(), "迁移产出的表集合");
@@ -145,6 +151,25 @@ class FlywaySchemaContractTest {
                         "leverage", "stop_price", "time_in_force", "status",
                         "client_order_id", "created_at", "updated_at", "triggered_at", "version")),
                 "sim_order 的列与实体不符，现有: " + columns);
+    }
+
+    @Test
+    void theSocialAndProfileTablesContainTheirPrivacyAndOwnershipColumns() throws Exception {
+        assertTrue(columnNames("users").containsAll(List.of(
+                "avatar_url", "signature", "contact_info",
+                "profile_public", "contact_public", "activity_public")));
+        assertTrue(columnNames("community_group").containsAll(List.of(
+                "id", "owner_user_id", "name", "description", "visibility", "created_at", "updated_at")));
+        assertTrue(columnNames("community_group_member").containsAll(List.of(
+                "id", "group_id", "user_id", "role", "created_at")));
+        assertTrue(columnNames("community_post").containsAll(List.of(
+                "id", "author_user_id", "group_id", "content", "reference_type", "reference_id", "created_at")));
+        assertTrue(columnNames("direct_message").containsAll(List.of(
+                "id", "sender_user_id", "recipient_user_id", "content", "created_at", "read_at")));
+        assertTrue(columnNames("user_activity").containsAll(List.of(
+                "id", "user_id", "activity_type", "summary", "reference_type", "reference_id", "created_at")));
+        assertTrue(columnNames("user_achievement").containsAll(List.of(
+                "id", "user_id", "achievement_key", "unlocked_at")));
     }
 
     /**

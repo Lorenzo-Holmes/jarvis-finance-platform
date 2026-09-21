@@ -27,6 +27,8 @@ const workspaceLoaders = Object.freeze({
   '市场趋势预测': () => import('./pages/TrendPage.vue'),
   '定时任务': () => import('./pages/ScheduledTasksPage.vue'),
   'RSS资讯': () => import('./pages/NewsCenterPage.vue'),
+  '社区': () => import('./pages/CommunityPage.vue'),
+  '个人中心': () => import('./pages/ProfilePage.vue'),
   '管理后台': () => import('./components/AdminView.vue'),
 })
 const MarketPage = defineAsyncComponent(workspaceLoaders['行情'])
@@ -44,6 +46,8 @@ const TrendPage = defineAsyncComponent(workspaceLoaders['市场趋势预测'])
 const OpsView = defineAsyncComponent(workspaceLoaders['运维'])
 const ScheduledTasksPage = defineAsyncComponent(workspaceLoaders['定时任务'])
 const NewsCenterPage = defineAsyncComponent(workspaceLoaders['RSS资讯'])
+const CommunityPage = defineAsyncComponent(workspaceLoaders['社区'])
+const ProfilePage = defineAsyncComponent(workspaceLoaders['个人中心'])
 const AdminView = defineAsyncComponent(workspaceLoaders['管理后台'])
 const workspacePreloads = new Map()
 const preparedWorkspaceRoute = ref('')
@@ -182,6 +186,10 @@ async function logout() {
 async function updateProfile(displayName) {
   const response = await api.updateProfile(displayName)
   if (response.code === 200 && response.data) session.acceptLogin(response.data)
+}
+
+async function refreshProfileSession() {
+  await session.restore()
 }
 
 function syncArchiveModule(key) {
@@ -437,6 +445,8 @@ onBeforeUnmount(() => {
       <TrendPage v-else-if="workspaceRenderRoute === '市场趋势预测'" />
       <ScheduledTasksPage v-else-if="workspaceRenderRoute === '定时任务'" />
       <NewsCenterPage v-else-if="workspaceRenderRoute === 'RSS资讯'" @navigate-module="navigateWorkspace" />
+      <CommunityPage v-else-if="workspaceRenderRoute === '社区'" />
+      <ProfilePage v-else-if="workspaceRenderRoute === '个人中心'" @profile-updated="refreshProfileSession" />
       <section v-else-if="workspaceRenderRoute === '管理后台'" class="panel-wrap">
         <AdminView />
       </section>

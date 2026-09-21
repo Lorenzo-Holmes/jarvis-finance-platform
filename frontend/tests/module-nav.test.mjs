@@ -20,7 +20,7 @@ test('分组覆盖全部模块，且不重复不丢失', () => {
   // 导航少一个模块就是功能消失，这种错误在界面上看不出来，必须钉住
   assert.equal(navCoversAllModules(JARVIS_MODULES, groups), true)
   assert.equal(groups.flatMap(group => group.modules).length, JARVIS_MODULES.length)
-  assert.equal(JARVIS_MODULES.length, 15)
+  assert.equal(JARVIS_MODULES.length, 17)
 })
 
 test('分组顺序按工作流，未知分类落到 OTHER 且排在最后', () => {
@@ -36,11 +36,11 @@ test('分组顺序按工作流，未知分类落到 OTHER 且排在最后', () =
 
 test('各分组的模块数量与模块表一致', () => {
   assert.equal(modulesInGroup(groups, 'MARKET').length, 2)
-  assert.equal(modulesInGroup(groups, 'RESEARCH').length, 3)
+  assert.equal(modulesInGroup(groups, 'RESEARCH').length, 4)
   assert.equal(modulesInGroup(groups, 'INTELLIGENCE').length, 5)
   assert.equal(modulesInGroup(groups, 'STRATEGY').length, 2)
   assert.equal(modulesInGroup(groups, 'EXECUTION').length, 1)
-  assert.equal(modulesInGroup(groups, 'SYSTEM').length, 2)
+  assert.equal(modulesInGroup(groups, 'SYSTEM').length, 3)
   assert.deepEqual(modulesInGroup(groups, 'NOPE'), [])
 })
 
@@ -51,7 +51,7 @@ test('管理员工作区把管理后台注入 SYSTEM，基础模块表仍保持�
 
   assert.equal(JARVIS_MODULES.some(module => module.key === 'admin'), false)
   assert.equal(ADMIN_WORKSPACE_MODULE.adminOnly, true)
-  assert.deepEqual(system.map(module => module.key), ['ops', 'scheduled-tasks', 'admin'])
+  assert.deepEqual(system.map(module => module.key), ['ops', 'scheduled-tasks', 'profile', 'admin'])
   assert.equal(navCoversAllModules(adminModules, adminGroups), true)
 })
 
