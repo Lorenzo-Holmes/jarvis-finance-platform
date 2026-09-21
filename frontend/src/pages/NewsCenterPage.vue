@@ -22,6 +22,7 @@ const qualityMetrics = ref(null)
 const filterStats = ref(null)
 const returnedCount = ref(0)
 const semanticRanking = ref(null)
+const expandedReasons = ref([])
 
 const topicOptions = [
   { key: 'markets', label: '市场行情' },
@@ -140,6 +141,26 @@ function articleAnalysis(article) {
   return article?.aiAnalysis || article?.ai_analysis || null
 }
 
+function articleIdentity(article) {
+  return String(article?.event_cluster_id || article?.url || article?.title || '')
+}
+
+function reasonOpen(article) {
+  return expandedReasons.value.includes(articleIdentity(article))
+}
+
+function toggleReason(article) {
+  const key = articleIdentity(article)
+  expandedReasons.value = reasonOpen(article)
+    ? expandedReasons.value.filter(item => item !== key)
+    : [...expandedReasons.value, key]
+}
+
+function articleScore(article) {
+  const value = article?.hybrid_score ?? article?.rank_score
+  return Number.isFinite(Number(value)) ? Math.round(Number(value)) : null
+}
+
 function openMarket(market) {
   // 资讯与行情之间保留可观察的工作流入口；当前上下文仍由多市场页负责解析。
   emit('navigate-module', '多市场')
@@ -248,6 +269,24 @@ onMounted(load)
               <p v-if="article.summary">{{ article.summary }}</p>
               <span v-for="tag in article.tags || []" :key="tag" class="tag">{{ tag }}</span>
               <em v-if="article.analysis?.direction" :class="`impact ${article.analysis.direction}`">{{ article.analysis.direction === 'positive' ? '偏正面' : article.analysis.direction === 'negative' ? '偏负面' : '中性' }}</em>
+              <button
+                v-if="(article.selection_reason || []).length || articleScore(article) !== null"
+                type="button"
+                class="reason-toggle"
+                :aria-expanded="reasonOpen(article)"
+                @click="toggleReason(article)"
+              >{{ reasonOpen(article) ? '收起依据' : '为什么入选' }}</button>
+              <div v-if="reasonOpen(article)" class="reason-panel">
+                <div class="reason-scores">
+                  <span v-if="articleScore(article) !== null">综合 {{ articleScore(article) }}</span>
+                  <span v-if="article.semantic_score != null">语义 {{ Math.round(Number(article.semantic_score)) }}</span>
+                  <span v-if="article.confirmation_score != null">交叉确认 {{ Math.round(Number(article.confirmation_score)) }}</span>
+                  <span v-if="article.source_count > 1">{{ article.source_count }} 个来源</span>
+                </div>
+                <ul v-if="(article.selection_reason || []).length">
+                  <li v-for="reason in article.selection_reason" :key="reason">{{ reason }}</li>
+                </ul>
+              </div>
               <template v-if="articleAnalysis(article)">
                 <p class="ai-summary">{{ articleAnalysis(article).summary }}</p>
                 <span v-for="keyword in articleAnalysis(article).keywords || []" :key="`ai-${keyword}`" class="tag ai-tag">{{ keyword }}</span>
@@ -320,6 +359,10 @@ onMounted(load)
 .ai-badge { border-color: rgba(201,166,95,.35); color: var(--accent-strong); }
 .ai-rationale { flex-basis: 100%; color: var(--subtle); font-size: 8px; line-height: 1.45; }
 .market-tag { color: var(--ok); border-color: rgba(39,196,107,.24); cursor: pointer; }
+.reason-toggle { border: 0; background: transparent; color: var(--accent-strong); padding: 2px 0; cursor: pointer; font-size: 8px; }
+.reason-panel { flex-basis: 100%; display: grid; gap: 7px; padding: 9px 10px; border: 1px solid color-mix(in srgb, var(--accent) 16%, var(--line)); border-radius: 7px; background: color-mix(in srgb, var(--workspace-accent-wash) 26%, transparent); }
+.reason-scores { display: flex; flex-wrap: wrap; gap: 5px; }.reason-scores span { padding: 2px 5px; border-radius: 999px; background: color-mix(in srgb, var(--surface) 72%, transparent); color: var(--muted); font: 7px ui-monospace, monospace; }
+.reason-panel ul { display: grid; gap: 4px; margin: 0; padding-left: 15px; color: var(--muted); font-size: 8px; line-height: 1.45; }
 .tag, .impact { border: 1px solid var(--line-strong); border-radius: 3px; padding: 2px 5px; color: var(--subtle); font-size: 8px; font-style: normal; }
 .impact.positive { color: var(--ok); border-color: rgba(39,196,107,.25); }.impact.negative { color: var(--bad); border-color: rgba(239,83,80,.25); }
 @media (max-width: 850px) { .choice-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

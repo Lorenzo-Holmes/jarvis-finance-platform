@@ -52,3 +52,13 @@ test('market news renders optional score and cross-source confirmation badges', 
   assert.match(board, /多源 ×\{\{ item\.sourceCount \}\}/)
   assert.match(board, /class="intelligence-badges"/)
 })
+
+test('news center exposes selection reasons as an on-demand disclosure', () => {
+  const page = read('pages/NewsCenterPage.vue')
+  assert.match(page, /const expandedReasons = ref\(\[\]\)/)
+  assert.match(page, /function toggleReason/)
+  assert.match(page, /为什么入选/)
+  assert.match(page, /:aria-expanded="reasonOpen\(article\)"/)
+  assert.match(page, /article\.selection_reason/)
+  assert.match(page, /class="reason-panel"/)
+})
