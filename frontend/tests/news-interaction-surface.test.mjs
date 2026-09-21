@@ -284,3 +284,11 @@ test('AI analysis disclosure animates both expansion and collapse', () => {
   assert.match(page, /\.analysis-fold-enter-active/)
   assert.match(page, /\.analysis-fold-leave-to/)
 })
+
+test('market title translation uses shimmer and crossfade without blocking content', () => {
+  const board = read('components/market/MarketNewsBoard.vue')
+  assert.match(board, /:class="\{ translating \}"/)
+  assert.match(board, /<Transition name="title-swap"/)
+  assert.match(board, /@keyframes title-translate-shimmer/)
+  assert.match(board, /\.title-swap-enter-active/)
+})

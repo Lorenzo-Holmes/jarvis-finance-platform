@@ -149,7 +149,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="market-news-board">
+  <section class="market-news-board" :class="{ translating }">
     <header class="news-head">
       <div>
         <span>MARKET BRIEFING</span>
@@ -177,8 +177,10 @@ onBeforeUnmount(() => {
       <article v-for="(item, index) in visibleItems" :key="item.id || item.url || index" class="news-item">
         <div class="news-index">{{ String((page - 1) * PAGE_SIZE + index + 1).padStart(2, '0') }}</div>
         <div class="news-copy">
-          <a v-if="item.linkable" :href="item.url" target="_blank" rel="noopener noreferrer">{{ displayTitle(item) }}</a>
-          <strong v-else>{{ displayTitle(item) }}</strong>
+          <Transition name="title-swap" mode="out-in">
+            <a v-if="item.linkable" :key="displayTitle(item)" :href="item.url" target="_blank" rel="noopener noreferrer">{{ displayTitle(item) }}</a>
+            <strong v-else :key="displayTitle(item)">{{ displayTitle(item) }}</strong>
+          </Transition>
           <div v-if="displayScore(item) !== null || item.sourceCount > 1" class="intelligence-badges">
             <span v-if="displayScore(item) !== null">精选 {{ displayScore(item) }}</span>
             <span v-if="item.sourceCount > 1">多源 ×{{ item.sourceCount }}</span>
@@ -230,7 +232,11 @@ onBeforeUnmount(() => {
 .news-item:hover, .news-item:focus-within { transform: translateY(-1px); background: color-mix(in srgb, var(--workspace-accent-wash) 18%, transparent); border-color: color-mix(in srgb, var(--line-strong) 76%, var(--accent)); box-shadow: 0 8px 24px rgba(0,0,0,.03); }
 .news-item:hover::before, .news-item:focus-within::before { opacity: .7; transform: scaleY(1); }
 .news-index { padding-top: 2px; color: var(--subtle); font: 650 8px/1 ui-monospace, monospace; }
-.news-copy { min-width: 0; }
+.news-copy { position: relative; min-width: 0; overflow: hidden; }
+.market-news-board.translating .news-copy::before { content: ''; position: absolute; z-index: 3; inset: 0; background: linear-gradient(100deg, transparent 0%, color-mix(in srgb, var(--accent) 7%, transparent) 42%, color-mix(in srgb, var(--accent) 13%, transparent) 50%, transparent 60%); transform: translateX(-120%); animation: title-translate-shimmer 1.25s ease-in-out infinite; pointer-events: none; }
+@keyframes title-translate-shimmer { to { transform: translateX(120%); } }
+.title-swap-enter-active, .title-swap-leave-active { transition: opacity var(--news-motion-state) ease, transform var(--news-motion-state) var(--news-ease); }
+.title-swap-enter-from { opacity: 0; transform: translateY(2px); }.title-swap-leave-to { opacity: 0; transform: translateY(-2px); }
 .news-copy a, .news-copy > strong { display: block; color: var(--text); font-size: 10.5px; font-weight: 600; line-height: 1.5; text-decoration: none; }
 .news-copy a:hover { color: var(--accent-strong); }
 .intelligence-badges { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
