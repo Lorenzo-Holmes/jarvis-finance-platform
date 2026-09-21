@@ -166,3 +166,13 @@ test('news surfaces support keyboard search and visible focus states', () => {
   assert.match(page, /button:focus-visible/)
   assert.match(board, /button:focus-visible/)
 })
+
+test('news surfaces share workspace motion tokens and respect reduced motion', () => {
+  const page = read('pages/NewsCenterPage.vue')
+  const board = read('components/market/MarketNewsBoard.vue')
+  assert.match(page, /--news-motion-surface: var\(--ds-motion-surface/)
+  assert.match(page, /\.feed-panel > \.panel-title \{ position: sticky/)
+  assert.match(page, /prefers-reduced-motion: reduce/)
+  assert.match(board, /--news-motion-surface: var\(--ds-motion-surface/)
+  assert.match(board, /prefers-reduced-motion: reduce/)
+})
