@@ -371,7 +371,7 @@ onMounted(async () => {
 
     <div v-if="activeTab === 'feed'" class="feed-layout">
       <main>
-        <section class="composer-panel">
+        <section class="composer-panel" :style="{ '--composer-progress': `${Math.min(100, (postText.length / 4000) * 100)}%` }">
           <div class="section-label">PUBLIC NOTE</div>
           <textarea v-model="postText" maxlength="4000" placeholder="发布一条研究观察、反方证据或市场笔记…" rows="4"></textarea>
           <footer><span>{{ postText.length }}/4000</span><button type="button" :disabled="loading || !postText.trim()" @click="publishPost">发布动态</button></footer>
@@ -438,7 +438,7 @@ onMounted(async () => {
             </article>
           </div>
         </section>
-        <section v-if="selectedGroupJoined" class="group-composer"><textarea v-model="groupPostText" maxlength="4000" rows="3" placeholder="在小组内发布研究记录…"></textarea><button type="button" @click="publishGroupPost">发布到小组</button></section>
+        <section v-if="selectedGroupJoined" class="group-composer" :style="{ '--composer-progress': `${Math.min(100, (groupPostText.length / 4000) * 100)}%` }"><textarea v-model="groupPostText" maxlength="4000" rows="3" placeholder="在小组内发布研究记录…"></textarea><button type="button" @click="publishGroupPost">发布到小组</button></section>
         <div class="feed-list compact"><article v-for="post in groupPosts" :key="post.id" class="post-card"><header><button class="author" type="button" @click="openUser(post.author?.id); activeTab='users'"><span><strong>{{ post.author?.displayName }}</strong><small>{{ formatTime(post.createdAt) }}</small></span></button></header><p>{{ post.content }}</p><footer v-if="post.mine"><button class="danger-link" type="button" @click="deletePost(post)">删除</button></footer></article><div v-if="!groupPosts.length" class="empty-state">当前没有可展示的小组动态。</div><button v-if="groupPostHasMore" class="load-more" type="button" :disabled="loading" @click="loadGroupPosts(selectedGroup.id, false)">加载更早小组动态</button></div>
       </main>
       <main v-else class="empty-panel">从左侧选择一个研究小组。</main>
@@ -461,7 +461,7 @@ onMounted(async () => {
 
     <div v-else class="messages-layout">
       <aside class="conversation-list"><button v-for="item in conversations" :key="item.partner.id" type="button" :class="{ active: selectedPartner?.id === item.partner.id }" @click="openConversation(item.partner)"><span class="avatar"><img v-if="item.partner.avatarUrl" :src="item.partner.avatarUrl" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" /><b v-else>{{ (item.partner.displayName || '?').slice(0,1) }}</b></span><span><strong>{{ item.partner.displayName }}</strong><small>{{ item.lastMessage?.content }}</small></span><i v-if="item.unreadCount">{{ item.unreadCount }}</i></button><div v-if="!conversations.length" class="empty-state">暂无私信会话。</div></aside>
-      <main v-if="selectedPartner" class="message-room"><header><span>PRIVATE CHANNEL</span><h3>{{ selectedPartner.displayName }}</h3></header><div class="message-thread" role="log" aria-live="polite" aria-relevant="additions text"><button v-if="threadHasMore" class="load-older-messages" type="button" :disabled="loading" @click="loadOlderMessages">加载更早消息</button><article v-for="message in thread" :key="message.id" :class="{ mine: message.mine }"><p>{{ message.content }}</p><small>{{ formatTime(message.createdAt) }}<template v-if="message.mine"> · {{ message.readAt ? '已读' : '已发送' }}</template></small></article></div><footer><div class="message-compose"><textarea v-model="messageText" maxlength="2000" rows="3" :aria-label="`给 ${selectedPartner.displayName} 发送私信`" placeholder="发送站内私信…" @keydown.ctrl.enter.prevent="sendMessage" @keydown.meta.enter.prevent="sendMessage"></textarea><small>{{ messageText.length }}/2000 · Ctrl/⌘ + Enter 发送</small></div><button type="button" :disabled="!messageText.trim()" @click="sendMessage">发送</button></footer></main>
+      <main v-if="selectedPartner" class="message-room"><header><span>PRIVATE CHANNEL</span><h3>{{ selectedPartner.displayName }}</h3></header><div class="message-thread" role="log" aria-live="polite" aria-relevant="additions text"><button v-if="threadHasMore" class="load-older-messages" type="button" :disabled="loading" @click="loadOlderMessages">加载更早消息</button><article v-for="message in thread" :key="message.id" :class="{ mine: message.mine }"><p>{{ message.content }}</p><small>{{ formatTime(message.createdAt) }}<template v-if="message.mine"> · {{ message.readAt ? '已读' : '已发送' }}</template></small></article></div><footer><div class="message-compose" :style="{ '--composer-progress': `${Math.min(100, (messageText.length / 2000) * 100)}%` }"><textarea v-model="messageText" maxlength="2000" rows="3" :aria-label="`给 ${selectedPartner.displayName} 发送私信`" placeholder="发送站内私信…" @keydown.ctrl.enter.prevent="sendMessage" @keydown.meta.enter.prevent="sendMessage"></textarea><small>{{ messageText.length }}/2000 · Ctrl/⌘ + Enter 发送</small></div><button type="button" :disabled="!messageText.trim()" @click="sendMessage">发送</button></footer></main>
       <main v-else class="empty-panel">选择一个会话，或从“用户发现”中发起私信。</main>
     </div>
   </section>
@@ -487,6 +487,10 @@ onMounted(async () => {
 .feed-layout > main, .group-room, .profile-preview, .message-room { min-width: 0; display: grid; align-content: start; gap: 12px; }
 .composer-panel, .network-rail, .create-group, .group-directory, .group-room, .user-directory, .profile-preview, .conversation-list, .message-room, .empty-panel { border: 1px solid var(--line); border-radius: 11px; background: color-mix(in srgb, var(--surface) 92%, transparent); }
 .composer-panel, .create-group { padding: 12px; display: grid; gap: 9px; }
+.composer-panel, .group-composer, .message-compose { position: relative; overflow: hidden; transition: border-color var(--social-motion-state) ease, background var(--social-motion-state) ease, box-shadow var(--social-motion-surface) ease; }
+.composer-panel::after, .group-composer::after, .message-compose::after { content: ''; position: absolute; left: 0; bottom: 0; width: var(--composer-progress, 0%); height: 2px; background: color-mix(in srgb, var(--accent) 48%, transparent); opacity: .36; transition: width var(--social-motion-state) linear, opacity var(--social-motion-state) ease, background var(--social-motion-state) ease; pointer-events: none; }
+.composer-panel:focus-within, .group-composer:focus-within, .message-compose:focus-within { border-color: color-mix(in srgb, var(--accent) 24%, var(--line)); background: color-mix(in srgb, var(--surface) 86%, var(--workspace-accent-wash)); box-shadow: 0 10px 30px rgba(0,0,0,.06); }
+.composer-panel:focus-within::after, .group-composer:focus-within::after, .message-compose:focus-within::after { opacity: .95; background: var(--accent); }
 textarea, input, select { width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 8px; background: var(--workspace-control-bg, var(--panel)); color: var(--text); padding: 9px 10px; font: inherit; outline: none; }
 textarea:focus, input:focus, select:focus { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
 .composer-panel footer { display: flex; align-items: center; justify-content: space-between; color: var(--subtle); font-size: 8px; }

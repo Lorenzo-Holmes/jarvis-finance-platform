@@ -135,3 +135,10 @@ test('community tabs use a moving selection lens with mobile fallback', () => {
   assert.match(source, /\.community-tabs::before/)
   assert.match(source, /transform: translateX\(calc\(var\(--tab-index\) \* 100%\)\)/)
 })
+
+test('community composers expose focus-within and length progress feedback', () => {
+  const source = read('pages/CommunityPage.vue')
+  assert.match(source, /--composer-progress/)
+  assert.match(source, /\.composer-panel:focus-within/)
+  assert.match(source, /\.message-compose::after/)
+})
