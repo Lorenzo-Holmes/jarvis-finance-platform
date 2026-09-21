@@ -256,3 +256,9 @@ test('topic chips acknowledge selection with a single dot pulse', () => {
   assert.match(page, /topic-dot-pulse/)
   assert.match(page, /\.topic-choice\.active i/)
 })
+
+test('source credibility meters sweep in without changing their numeric width', () => {
+  const page = read('pages/NewsCenterPage.vue')
+  assert.match(page, /@keyframes credibility-sweep/)
+  assert.match(page, /transform-origin: left center/)
+})
