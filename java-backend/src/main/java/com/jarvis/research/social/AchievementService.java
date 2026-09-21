@@ -56,12 +56,12 @@ public class AchievementService {
     public Map<String, Object> overview(Long userId) {
         User user = userRepository.findById(userId).orElseThrow();
         Metrics metrics = metrics(user);
-        evaluate(user, metrics);
+        Map<String, LocalDateTime> unlocked = evaluate(user, metrics);
         return Map.of(
                 "streakDays", metrics.streakDays,
                 "researchCompleted", metrics.researchCompleted,
                 "automationCount", metrics.automationCount,
-                "items", catalogState(userId, metrics)
+                "items", catalogState(metrics, unlocked)
         );
     }
 
@@ -87,34 +87,43 @@ public class AchievementService {
         }).toList();
     }
 
-    private void evaluate(User user, Metrics m) {
-        maybeUnlock(user.getId(), "FIRST_LOGIN", m.loginDays >= 1, "完成首次登录");
-        maybeUnlock(user.getId(), "STREAK_3", m.streakDays >= 3, "连续登录达到 3 天");
-        maybeUnlock(user.getId(), "STREAK_7", m.streakDays >= 7, "连续登录达到 7 天");
-        maybeUnlock(user.getId(), "FIRST_RESEARCH", m.researchCompleted >= 1, "完成首个研究任务");
-        maybeUnlock(user.getId(), "RESEARCH_5", m.researchCompleted >= 5, "累计完成 5 个研究任务");
-        maybeUnlock(user.getId(), "FIRST_AUTOMATION", m.automationCount >= 1, "创建首个定时任务");
-        maybeUnlock(user.getId(), "TASK_ACHIEVER_5", m.successfulRuns >= 5, "自动化任务累计成功执行 5 次");
-        maybeUnlock(user.getId(), "FIRST_POST", m.postCount >= 1, "发布首条社区动态");
-        maybeUnlock(user.getId(), "FIRST_GROUP", m.groupCount >= 1, "加入首个研究小组");
-        maybeUnlock(user.getId(), "FIRST_MESSAGE", m.messageCount >= 1, "发送首条站内私信");
-        maybeUnlock(user.getId(), "PROFILE_COMPLETE", profileComplete(user), "完成个人档案");
+    private Map<String, LocalDateTime> evaluate(User user, Metrics m) {
+        Map<String, LocalDateTime> unlocked = unlockedMap(user.getId());
+        maybeUnlock(user.getId(), "FIRST_LOGIN", m.loginDays >= 1, "完成首次登录", unlocked);
+        maybeUnlock(user.getId(), "STREAK_3", m.streakDays >= 3, "连续登录达到 3 天", unlocked);
+        maybeUnlock(user.getId(), "STREAK_7", m.streakDays >= 7, "连续登录达到 7 天", unlocked);
+        maybeUnlock(user.getId(), "FIRST_RESEARCH", m.researchCompleted >= 1, "完成首个研究任务", unlocked);
+        maybeUnlock(user.getId(), "RESEARCH_5", m.researchCompleted >= 5, "累计完成 5 个研究任务", unlocked);
+        maybeUnlock(user.getId(), "FIRST_AUTOMATION", m.automationCount >= 1, "创建首个定时任务", unlocked);
+        maybeUnlock(user.getId(), "TASK_ACHIEVER_5", m.successfulRuns >= 5, "自动化任务累计成功执行 5 次", unlocked);
+        maybeUnlock(user.getId(), "FIRST_POST", m.postCount >= 1, "发布首条社区动态", unlocked);
+        maybeUnlock(user.getId(), "FIRST_GROUP", m.groupCount >= 1, "加入首个研究小组", unlocked);
+        maybeUnlock(user.getId(), "FIRST_MESSAGE", m.messageCount >= 1, "发送首条站内私信", unlocked);
+        maybeUnlock(user.getId(), "PROFILE_COMPLETE", profileComplete(user), "完成个人档案", unlocked);
+        return unlocked;
     }
 
-    private void maybeUnlock(Long userId, String key, boolean condition, String summary) {
-        if (!condition || achievementRepository.existsByUserIdAndAchievementKey(userId, key)) return;
+    private void maybeUnlock(Long userId, String key, boolean condition, String summary,
+                             Map<String, LocalDateTime> unlocked) {
+        if (!condition || unlocked.containsKey(key)) return;
+        LocalDateTime unlockedAt = LocalDateTime.now();
         achievementRepository.save(UserAchievement.builder()
-                .userId(userId).achievementKey(key).unlockedAt(LocalDateTime.now()).build());
+                .userId(userId).achievementKey(key).unlockedAt(unlockedAt).build());
+        unlocked.put(key, unlockedAt);
         activityRepository.save(UserActivity.builder()
                 .userId(userId).activityType("ACHIEVEMENT_UNLOCKED")
                 .summary("解锁成就：" + summary).referenceType("ACHIEVEMENT").referenceId(key)
                 .createdAt(LocalDateTime.now()).build());
     }
 
-    private List<Map<String, Object>> catalogState(Long userId, Metrics m) {
+    private Map<String, LocalDateTime> unlockedMap(Long userId) {
         Map<String, LocalDateTime> unlocked = new HashMap<>();
         achievementRepository.findByUserIdOrderByUnlockedAtAsc(userId)
                 .forEach(a -> unlocked.put(a.getAchievementKey(), a.getUnlockedAt()));
+        return unlocked;
+    }
+
+    private List<Map<String, Object>> catalogState(Metrics m, Map<String, LocalDateTime> unlocked) {
         List<Map<String, Object>> out = new ArrayList<>();
         for (Definition d : CATALOG) {
             int progress = progressFor(d.key, m);
