@@ -33,6 +33,8 @@ const inviteCandidates = ref([])
 
 const userQuery = ref('')
 const users = ref([])
+const usersPage = ref(0)
+const usersHasMore = ref(false)
 const selectedUser = ref(null)
 const selectedUserActivity = ref([])
 
@@ -210,10 +212,15 @@ async function removeGroupMember(userId) {
   })
 }
 
-async function searchUsers() {
+async function searchUsers(reset = true) {
+  if (typeof reset !== 'boolean') reset = true
   await run(async () => {
-    const response = await api.socialUsers(userQuery.value.trim(), 0, 30)
-    users.value = pageItems(response)
+    const nextPage = reset ? 0 : usersPage.value + 1
+    const response = await api.socialUsers(userQuery.value.trim(), nextPage, 20)
+    const data = pageMeta(response)
+    users.value = reset ? pageItems(response) : [...users.value, ...pageItems(response)]
+    usersPage.value = Number(data.page || nextPage)
+    usersHasMore.value = usersPage.value + 1 < Number(data.totalPages || 0)
   })
 }
 
@@ -387,6 +394,7 @@ onMounted(async () => {
       <aside class="user-directory">
         <div class="search-row"><input v-model="userQuery" placeholder="搜索昵称" @keyup.enter="searchUsers" /><button type="button" @click="searchUsers">搜索</button></div>
         <button v-for="item in users" :key="item.id" type="button" :class="{ active: selectedUser?.id === item.id }" @click="openUser(item.id)"><span class="avatar"><img v-if="item.avatarUrl" :src="item.avatarUrl" alt="" /><b v-else>{{ (item.displayName || '?').slice(0,1) }}</b></span><span><strong>{{ item.displayName }}</strong><small>{{ item.signature || (item.profilePublic ? '暂无签名' : '资料未公开') }}</small></span></button>
+        <button v-if="usersHasMore" class="directory-load-more" type="button" :disabled="loading" @click="searchUsers(false)">加载更多用户</button>
       </aside>
       <main v-if="selectedUser" class="profile-preview">
         <header><span class="avatar large"><img v-if="selectedUser.avatarUrl" :src="selectedUser.avatarUrl" alt="" /><b v-else>{{ (selectedUser.displayName || '?').slice(0,1) }}</b></span><div><span>USER / {{ selectedUser.id }}</span><h3>{{ selectedUser.displayName }}</h3><p>{{ selectedUser.signature || '该用户未公开个人签名。' }}</p></div><button v-if="!selectedUser.self" type="button" @click="openConversation(selectedUser)">发私信</button></header>
@@ -455,6 +463,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .invite-panel { display: grid; gap: 6px; }.invite-candidates { display: grid; margin: 0 12px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }.invite-candidates > button { display: flex; align-items: center; gap: 8px; padding: 8px 9px; border: 0; border-bottom: 1px solid var(--line); background: var(--panel); color: inherit; cursor: pointer; text-align: left; }.invite-candidates > button:last-child { border-bottom: 0; }.invite-candidates > button > span:nth-child(2) { min-width: 0; flex: 1; display: grid; gap: 3px; }.invite-candidates strong { font-size: 9px; }.invite-candidates small { color: var(--subtle); font-size: 8px; }.invite-candidates i { color: var(--accent-strong); font-size: 8px; font-style: normal; }
 .group-members-panel { display: grid; gap: 7px; padding: 0 12px; }.group-members-list { display: grid; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }.group-members-list article { display: flex; align-items: center; gap: 8px; padding: 8px 9px; border-bottom: 1px solid var(--line); }.group-members-list article:last-child { border-bottom: 0; }.group-members-list article > span:nth-child(2) { flex: 1; display: grid; gap: 2px; }.group-members-list strong { font-size: 9px; }.group-members-list small { color: var(--subtle); font-size: 7px; }.group-members-list button { border: 0; background: transparent; color: var(--bad); cursor: pointer; font-size: 8px; }
 .user-directory .search-row { padding: 10px; border-bottom: 1px solid var(--line); }
+.directory-load-more { justify-content: center !important; color: var(--accent-strong) !important; font-size: 8px; }
 .profile-preview > header { justify-content: flex-start; }.profile-preview > header > div { flex: 1; }.contact-card { margin: 0 14px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; display: grid; gap: 5px; }.contact-card span { color: var(--subtle); font-size: 8px; }.contact-card strong { font-size: 10px; }
 .achievement-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; padding: 0 14px; }.achievement-strip article { padding: 11px; border: 1px solid var(--line); border-radius: 9px; display: grid; gap: 5px; }.achievement-strip span, .achievement-strip small { color: var(--subtle); font-size: 7px; }.achievement-strip b { font-size: 9px; }
 .activity-list { display: grid; gap: 0; padding: 0 14px 14px; }.activity-list article { display: grid; grid-template-columns: 120px 1fr auto; gap: 8px; padding: 9px 0; border-bottom: 1px solid var(--line); }.activity-list article span, .activity-list article small { color: var(--subtle); font-size: 8px; }.activity-list article p { margin: 0; color: var(--muted); font-size: 9px; }
