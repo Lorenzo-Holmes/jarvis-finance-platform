@@ -191,6 +191,21 @@ class SocialServiceTest {
     }
 
     @Test
+    void closedGroupDetailsAreNotExposedToNonMembers() {
+        CommunityGroup group = CommunityGroup.builder()
+                .id(8L).ownerUserId(9L).name("Private Desk").visibility("CLOSED").build();
+        when(groupRepository.findById(8L)).thenReturn(Optional.of(group));
+        when(memberRepository.existsByGroupIdAndUserId(8L, 7L)).thenReturn(false);
+
+        ResponseStatusException error = assertThrows(ResponseStatusException.class,
+                () -> service.group(7L, 8L));
+
+        assertEquals(HttpStatus.FORBIDDEN, error.getStatusCode());
+        verify(userRepository, never()).findById(anyLong());
+        verify(memberRepository, never()).countByGroupId(anyLong());
+    }
+
+    @Test
     void feedBatchLoadsPostAuthorsAndGroups() {
         CommunityPost first = CommunityPost.builder().id(1L).authorUserId(7L).content("a").createdAt(LocalDateTime.now()).build();
         CommunityPost second = CommunityPost.builder().id(2L).authorUserId(8L).groupId(3L).content("b").createdAt(LocalDateTime.now()).build();

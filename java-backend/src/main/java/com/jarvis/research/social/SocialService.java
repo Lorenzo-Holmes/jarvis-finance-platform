@@ -167,7 +167,11 @@ public class SocialService {
 
     @Transactional(readOnly = true)
     public Map<String, Object> group(Long viewerId, Long groupId) {
-        return groupView(viewerId, requireGroup(groupId), true);
+        CommunityGroup group = requireGroup(groupId);
+        // Closed groups may be reached by a stale/direct URL, so the directory
+        // query alone is not enough to protect metadata and member lists.
+        requireGroupRead(viewerId, group);
+        return groupView(viewerId, group, true);
     }
 
     @Transactional
