@@ -343,6 +343,9 @@ export const api = {
   scheduledTasks: (type = '', page = 0, size = 20) => get(API_BASE, '/api/scheduled-tasks', { type: type || undefined, page, size }),
   scheduledTask: (id) => get(API_BASE, `/api/scheduled-tasks/${id}`),
   scheduledTaskTypes: () => get(API_BASE, '/api/scheduled-tasks/types'),
+  // 当前账号能否管理定时任务（TASK_MANAGE）。渲染阶段先问一次，用来把写操作置灰 ——
+  // 拿不到就保持"不置灰"，让后端在提交时兜底，避免把能用的用户误挡。
+  scheduledTaskCapabilities: () => get(API_BASE, '/api/scheduled-tasks/capabilities'),
   createScheduledTask: (body) => post(API_BASE, '/api/scheduled-tasks', body),
   updateScheduledTask: (id, body) => request(API_BASE, `/api/scheduled-tasks/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
   pauseScheduledTask: (id) => post(API_BASE, `/api/scheduled-tasks/${id}/pause`, {}),

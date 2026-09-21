@@ -13,6 +13,14 @@ const editingId = ref(null)
 const historyTask = ref(null)
 const runs = ref([])
 const runsLoading = ref(false)
+/**
+ * 当前账号能否管理定时任务（后端 TASK_MANAGE）。
+ *
+ * 默认 **true**（放行）：这个值只用来"提前置灰"，真正的门禁在服务端。
+ * 探测失败时若默认 false，会把本来能用的用户误挡在门外 —— 那比"点了才被拒"更糟。
+ * 因此只有后端明确返回 `can_manage: false` 才置灰。
+ */
+const canManage = ref(true)
 
 const form = reactive({
   name: '',
@@ -86,13 +94,15 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const [taskResponse, typeResponse] = await Promise.all([
+    const [taskResponse, typeResponse, capabilityResponse] = await Promise.all([
       api.scheduledTasks('', 0, 100),
       api.scheduledTaskTypes(),
+      api.scheduledTaskCapabilities(),
     ])
     if (taskResponse?.code !== 200) throw new Error(taskResponse?.message || '定时任务加载失败')
     tasks.value = Array.isArray(taskResponse?.data?.items) ? taskResponse.data.items : []
     types.value = Array.isArray(typeResponse?.data) ? typeResponse.data : []
+    canManage.value = capabilityResponse?.data?.can_manage !== false
   } catch (e) {
     error.value = e?.message || '定时任务暂不可用'
   } finally {
@@ -259,9 +269,13 @@ onMounted(load)
       </div>
       <div class="head-actions">
         <button type="button" @click="load">刷新</button>
-        <button type="button" class="primary" @click="openCreate">新建任务</button>
+        <button type="button" class="primary" :disabled="!canManage" @click="openCreate">新建任务</button>
       </div>
     </header>
+
+    <p v-if="!canManage" class="task-notice">
+      当前账号未开通「定时任务管理」权限：可以查看任务与执行历史、暂停或删除自己的任务，但新建、编辑、立即执行、恢复会被服务端拒绝，所以这里直接置灰。
+    </p>
 
     <p v-if="error" class="task-error">{{ error }}</p>
 
@@ -294,11 +308,11 @@ onMounted(load)
               </td>
               <td>
                 <div class="row-actions">
-                  <button type="button" @click="openEdit(task)">编辑</button>
+                  <button type="button" :disabled="!canManage" @click="openEdit(task)">编辑</button>
                   <button type="button" @click="showRuns(task)">历史</button>
-                  <button type="button" :disabled="actionId === task.id" @click="taskAction(task, 'run')">立即执行</button>
+                  <button type="button" :disabled="!canManage || actionId === task.id" @click="taskAction(task, 'run')">立即执行</button>
                   <button v-if="task.status === 'ACTIVE'" type="button" :disabled="actionId === task.id" @click="taskAction(task, 'pause')">暂停</button>
-                  <button v-else type="button" :disabled="actionId === task.id" @click="taskAction(task, 'resume')">恢复</button>
+                  <button v-else type="button" :disabled="!canManage || actionId === task.id" @click="taskAction(task, 'resume')">恢复</button>
                   <button type="button" class="danger" :disabled="actionId === task.id" @click="taskAction(task, 'delete')">删除</button>
                 </div>
               </td>
@@ -418,6 +432,7 @@ button:disabled { opacity: .45; cursor: default; }
 .head-actions button { min-height: 32px; padding: 0 11px; font-size: 9px; }
 button.primary { border-color: var(--workspace-action-border); background: var(--workspace-action-bg); color: var(--workspace-action-text); }
 .task-error { margin: 0; padding: 9px 11px; border: 1px solid color-mix(in srgb, var(--bad) 35%, var(--line)); color: var(--bad); font-size: 9px; }
+.task-notice { margin: 0; padding: 9px 11px; border: 1px solid color-mix(in srgb, var(--warn) 35%, var(--line)); color: var(--warn); font-size: 9px; line-height: 1.5; }
 .task-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
 .task-summary > div { min-height: 72px; display: grid; gap: 8px; align-content: center; padding: 11px 13px; border: 1px solid var(--line); border-radius: 9px; background: var(--workspace-panel-wash, var(--panel)); }
 .task-summary span { color: var(--subtle); font-size: 8px; }

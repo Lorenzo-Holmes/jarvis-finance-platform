@@ -195,6 +195,30 @@ class ScheduledTaskControllerTest {
         assertEquals(1, controller.types().getData().size());
     }
 
+    // ------------------------------------------------------------------ 能力探测
+
+    @Test
+    void capabilitiesReportsWhetherTheAccountMayManageTasks() {
+        when(permissions.allows(USER, "TASK_MANAGE")).thenReturn(true);
+
+        Map<String, Object> data = controller.capabilities().getData();
+
+        assertEquals("TASK_MANAGE", data.get("feature_key"));
+        assertEquals(Boolean.TRUE, data.get("can_manage"));
+    }
+
+    @Test
+    void capabilitiesAnswersFalseInsteadOfFailing() {
+        when(permissions.allows(USER, "TASK_MANAGE")).thenReturn(false);
+
+        Map<String, Object> data = controller.capabilities().getData();
+
+        assertEquals(Boolean.FALSE, data.get("can_manage"));
+        // 这个端点是渲染阶段问"能不能"用的：走 require 会在无权限时直接 403，
+        // 前端拿不到答案就没法置灰，只能等用户点了再失败。
+        verify(permissions, never()).require(any(), any());
+    }
+
     @Test
     void createToleratesAnEmptyBody() {
         when(service.create(eq(USER), any())).thenReturn(task());
