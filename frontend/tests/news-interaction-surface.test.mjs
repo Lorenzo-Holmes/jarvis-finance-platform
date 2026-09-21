@@ -183,3 +183,10 @@ test('news center ranking control uses a sliding selection lens', () => {
   assert.match(page, /\.ranking-switch::before/)
   assert.match(page, /transform: translateX\(calc\(var\(--ranking-index\) \* 100%\)\)/)
 })
+
+test('market ranking control mirrors the sliding selection lens language', () => {
+  const board = read('components/market/MarketNewsBoard.vue')
+  assert.match(board, /--ranking-index/)
+  assert.match(board, /\.ranking-switch::before/)
+  assert.match(board, /translateX\(calc\(var\(--ranking-index\) \* 100%\)\)/)
+})
