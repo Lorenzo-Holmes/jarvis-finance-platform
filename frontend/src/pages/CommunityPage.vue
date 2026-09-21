@@ -46,6 +46,13 @@ const threadPage = ref(0)
 const threadHasMore = ref(false)
 const messageText = ref('')
 
+let groupListSeq = 0
+let groupDetailSeq = 0
+let userSearchSeq = 0
+let userDetailSeq = 0
+let inviteSearchSeq = 0
+let conversationSeq = 0
+
 const selectedGroupRole = computed(() => selectedGroup.value?.role || '')
 const selectedGroupJoined = computed(() => Boolean(selectedGroup.value?.joined))
 
@@ -95,7 +102,9 @@ async function deletePost(post) {
 }
 
 async function loadGroups() {
+  const seq = ++groupListSeq
   const response = await api.communityGroups(groupQuery.value.trim(), 0, 50)
+  if (seq !== groupListSeq) return
   groups.value = pageItems(response)
 }
 
@@ -116,8 +125,10 @@ async function createGroup() {
 
 async function openGroup(groupId) {
   if (!groupId) return
+  const seq = ++groupDetailSeq
   await run(async () => {
     const detail = await api.communityGroup(groupId)
+    if (seq !== groupDetailSeq) return
     selectedGroup.value = responseData(detail)
     groupEdit.value = {
       name: selectedGroup.value?.name || '',
@@ -202,7 +213,9 @@ async function publishGroupPost() {
 async function searchInviteUsers() {
   const query = inviteQuery.value.trim()
   if (!query) { inviteCandidates.value = []; return }
+  const seq = ++inviteSearchSeq
   const response = await api.socialUsers(query, 0, 8)
+  if (seq !== inviteSearchSeq) return
   inviteCandidates.value = pageItems(response).filter(item =>
     !(selectedGroup.value?.members || []).some(member => member.user?.id === item.id))
 }
@@ -229,9 +242,11 @@ async function removeGroupMember(userId) {
 
 async function searchUsers(reset = true) {
   if (typeof reset !== 'boolean') reset = true
+  const seq = ++userSearchSeq
   await run(async () => {
     const nextPage = reset ? 0 : usersPage.value + 1
     const response = await api.socialUsers(userQuery.value.trim(), nextPage, 20)
+    if (seq !== userSearchSeq) return
     const data = pageMeta(response)
     users.value = reset ? pageItems(response) : [...users.value, ...pageItems(response)]
     usersPage.value = Number(data.page || nextPage)
@@ -240,13 +255,16 @@ async function searchUsers(reset = true) {
 }
 
 async function openUser(userId) {
+  const seq = ++userDetailSeq
   await run(async () => {
     const profile = await api.socialUser(userId)
+    if (seq !== userDetailSeq) return
     selectedUser.value = responseData(profile)
     selectedUserActivity.value = []
     if (selectedUser.value?.activityPublic) {
       try {
         const activity = await api.socialUserActivity(userId, 0, 20)
+        if (seq !== userDetailSeq) return
         selectedUserActivity.value = pageItems(activity)
       } catch (_) { /* private activity is represented by an empty list */ }
     }
@@ -261,10 +279,12 @@ async function loadConversations() {
 
 async function openConversation(user) {
   if (!user?.id) return
+  const seq = ++conversationSeq
   activeTab.value = 'messages'
   selectedPartner.value = user
   await run(async () => {
     const response = await api.socialThread(user.id, 0, 40)
+    if (seq !== conversationSeq) return
     const data = pageMeta(response)
     thread.value = pageItems(response)
     threadPage.value = Number(data.page || 0)
