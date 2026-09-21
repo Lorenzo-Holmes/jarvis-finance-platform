@@ -37,6 +37,7 @@ public class NewsController {
 
     private static final Pattern HAN_TEXT = Pattern.compile("\\p{IsHan}");
     private static final int MAX_TRANSLATION_CACHE = 2_000;
+    private static final int MAX_DAILY_LIMIT = 100;
 
     private final AiProxyService aiProxyService;
     private final AiRateLimitService aiRateLimitService;
@@ -74,6 +75,7 @@ public class NewsController {
                                      @RequestParam(defaultValue = "true") boolean refresh,
                                      @RequestParam(defaultValue = "false") boolean force,
                                      @RequestParam(defaultValue = "smart") String ranking) {
+        validateDailyLimit(limit);
         String rankingMode = ranking == null ? "smart" : ranking.trim().toLowerCase();
         if (!rankingMode.equals("smart") && !rankingMode.equals("latest")) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "ranking 仅支持 smart/latest");
@@ -284,6 +286,13 @@ public class NewsController {
 
     private static String text(Object value) {
         return value == null ? "" : String.valueOf(value).trim();
+    }
+
+    private static void validateDailyLimit(int limit) {
+        if (limit < 1 || limit > MAX_DAILY_LIMIT) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "limit 必须在 1~" + MAX_DAILY_LIMIT + " 之间");
+        }
     }
 
     private static String trim(String value, int max) {

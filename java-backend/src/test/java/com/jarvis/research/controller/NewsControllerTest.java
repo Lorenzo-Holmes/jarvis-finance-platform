@@ -11,8 +11,10 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.server.ResponseStatusException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -253,5 +255,19 @@ class NewsControllerTest {
         } finally {
             SecurityContextHolder.clearContext();
         }
+    }
+
+    @Test
+    void dailyRejectsUnboundedOrExcessiveLimit() {
+        StubProxy proxy = new StubProxy(digest("Market closes higher"), List.of(), false);
+        NewsController controller = new NewsController(proxy);
+
+        ResponseStatusException zero = assertThrows(
+                ResponseStatusException.class, () -> controller.daily(0, false, false));
+        assertEquals(400, zero.getStatusCode().value());
+
+        ResponseStatusException excessive = assertThrows(
+                ResponseStatusException.class, () -> controller.daily(101, false, false));
+        assertEquals(400, excessive.getStatusCode().value());
     }
 }
