@@ -119,3 +119,11 @@ test('news center ignores stale async preference and digest responses', () => {
   assert.match(page, /requestSeq !== digestRequestSeq/)
   assert.match(page, /onBeforeUnmount/)
 })
+
+test('refreshing keeps existing news visible with an in-place progress signal', () => {
+  const page = read('pages/NewsCenterPage.vue')
+  assert.match(page, /class="feed-panel panel" :class="\{ refreshing \}"/)
+  assert.match(page, /v-if="refreshing && articles\.length"/)
+  assert.match(page, /正在重新整理精选/)
+  assert.match(page, /\.feed-panel\.refreshing \.article-list/)
+})

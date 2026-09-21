@@ -271,13 +271,16 @@ onBeforeUnmount(() => {
         </div>
       </section>
 
-      <section class="feed-panel panel">
+      <section class="feed-panel panel" :class="{ refreshing }">
         <div class="panel-title">
           <div><b>每日要闻</b><span>{{ generatedAt ? `更新于 ${formatTime(generatedAt)}` : '等待抓取' }}</span></div>
           <div class="feed-actions">
             <button class="text-button" type="button" :disabled="analyzing || !articles.length" @click="analyzeArticles">{{ analyzing ? 'AI分析中…' : 'AI分析当前资讯' }}</button>
             <span class="feed-status" :class="{ muted: !available }">{{ available ? 'RSS READY' : 'RSS UNAVAILABLE' }}</span>
           </div>
+        </div>
+        <div v-if="refreshing && articles.length" class="refresh-indicator" role="status">
+          <i></i><span>{{ rankingMode === 'smart' ? '正在重新整理精选…' : '正在更新最新资讯…' }}</span>
         </div>
         <div v-if="qualityMetrics" class="quality-strip" aria-label="资讯质量摘要">
           <div><span>当前结果</span><b>{{ returnedCount }}</b></div>
@@ -372,7 +375,10 @@ onBeforeUnmount(() => {
 .subscription-actions { justify-content: space-between; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); color: var(--subtle); font-size: 9px; }
 .save-state { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; color: var(--subtle); font: 8px ui-monospace, monospace; }.save-state i { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); }.save-state i.dirty { background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 8%, transparent); }
 .feed-status { color: var(--ok); }
+.feed-panel { position: relative; }
 .feed-status.muted { color: var(--bad); }
+.refresh-indicator { position: absolute; z-index: 4; top: 53px; right: 13px; display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--line)); border-radius: 999px; background: color-mix(in srgb, var(--surface) 90%, transparent); color: var(--muted); font: 7px ui-monospace, monospace; backdrop-filter: blur(10px); pointer-events: none; }.refresh-indicator i { width: 6px; height: 6px; border: 1px solid var(--accent); border-top-color: transparent; border-radius: 50%; animation: news-spin .8s linear infinite; }.feed-panel .article-list { transition: opacity .16s ease, filter .16s ease; }.feed-panel.refreshing .article-list { opacity: .72; filter: saturate(.86); }
+@keyframes news-spin { to { transform: rotate(360deg); } }
 .quality-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) auto auto; gap: 7px; align-items: center; margin: 10px 0 4px; }
 .quality-strip > div { min-width: 0; display: grid; gap: 3px; padding: 8px 9px; border: 1px solid color-mix(in srgb, var(--line) 82%, transparent); border-radius: 7px; background: color-mix(in srgb, var(--surface) 72%, transparent); }
 .quality-strip span, .quality-strip small { color: var(--subtle); font: 7px ui-monospace, monospace; }
