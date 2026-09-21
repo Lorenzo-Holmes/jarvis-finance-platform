@@ -212,3 +212,10 @@ test('profile identity card behaves as a restrained hero surface', () => {
   assert.match(source, /\.identity-card:hover \.avatar\.large/)
   assert.match(source, /font-variant-numeric: tabular-nums/)
 })
+
+test('profile editor communicates mode entry with restrained staggered motion', () => {
+  const source = read('pages/ProfilePage.vue')
+  assert.match(source, /:class="\{ active: editing \}"/)
+  assert.match(source, /@keyframes social-editor-in/)
+  assert.match(source, /@keyframes social-editor-field-in/)
+})
