@@ -69,14 +69,25 @@ public class SocialService {
     @Transactional
     public Map<String, Object> updateProfile(Long userId, ProfileUpdateRequest request, String clientIp) {
         User user = requireUser(userId);
+        String displayName = request.getDisplayName().trim();
         String avatarUrl = trimToNull(request.getAvatarUrl());
+        String signature = trimToNull(request.getSignature());
+        String contactInfo = trimToNull(request.getContactInfo());
         if (avatarUrl != null && !avatarUrl.matches("(?i)^https://[^\\s]{1,492}$")) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "头像地址必须使用 HTTPS");
         }
-        user.setDisplayName(request.getDisplayName().trim());
+        boolean unchanged = Objects.equals(user.getDisplayName(), displayName)
+                && Objects.equals(user.getAvatarUrl(), avatarUrl)
+                && Objects.equals(user.getSignature(), signature)
+                && Objects.equals(user.getContactInfo(), contactInfo)
+                && user.isProfilePublic() == request.isProfilePublic()
+                && user.isContactPublic() == request.isContactPublic()
+                && user.isActivityPublic() == request.isActivityPublic();
+        if (unchanged) return profile(userId, userId);
+        user.setDisplayName(displayName);
         user.setAvatarUrl(avatarUrl);
-        user.setSignature(trimToNull(request.getSignature()));
-        user.setContactInfo(trimToNull(request.getContactInfo()));
+        user.setSignature(signature);
+        user.setContactInfo(contactInfo);
         user.setProfilePublic(request.isProfilePublic());
         user.setContactPublic(request.isContactPublic());
         user.setActivityPublic(request.isActivityPublic());

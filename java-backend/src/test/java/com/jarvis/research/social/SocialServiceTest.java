@@ -285,6 +285,34 @@ class SocialServiceTest {
         verify(postRepository, never()).save(any());
     }
 
+    @Test
+    void savingIdenticalProfileIsNoOp() {
+        User current = user(7L);
+        current.setAvatarUrl("https://example.test/a.png");
+        current.setSignature("sig");
+        current.setContactInfo("contact");
+        current.setProfilePublic(true);
+        current.setContactPublic(false);
+        current.setActivityPublic(true);
+        when(userRepository.findById(7L)).thenReturn(Optional.of(current));
+        when(achievementService.overview(7L)).thenReturn(Map.of("items", java.util.List.of()));
+        ProfileUpdateRequest request = new ProfileUpdateRequest();
+        request.setDisplayName(current.getDisplayName());
+        request.setAvatarUrl(current.getAvatarUrl());
+        request.setSignature(current.getSignature());
+        request.setContactInfo(current.getContactInfo());
+        request.setProfilePublic(true);
+        request.setContactPublic(false);
+        request.setActivityPublic(true);
+
+        service.updateProfile(7L, request, "127.0.0.1");
+
+        verify(userRepository, never()).save(any());
+        verify(activityRepository, never()).save(any());
+        verify(auditService, never()).record(eq(7L), eq("SOCIAL_PROFILE_UPDATE"), anyString(), anyString(), anyString());
+        verify(achievementService, never()).evaluateSocial(7L);
+    }
+
     private static User user(Long id) {
         return User.builder()
                 .id(id)
