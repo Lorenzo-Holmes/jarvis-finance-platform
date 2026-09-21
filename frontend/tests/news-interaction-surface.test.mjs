@@ -277,3 +277,10 @@ test('ranking reason disclosure animates both expansion and collapse', () => {
   assert.match(page, /\.reason-fold-enter-active/)
   assert.match(page, /\.reason-fold-leave-to/)
 })
+
+test('AI analysis disclosure animates both expansion and collapse', () => {
+  const page = read('pages/NewsCenterPage.vue')
+  assert.match(page, /<Transition name="analysis-fold">/)
+  assert.match(page, /\.analysis-fold-enter-active/)
+  assert.match(page, /\.analysis-fold-leave-to/)
+})

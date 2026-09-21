@@ -396,11 +396,13 @@ onBeforeUnmount(() => {
                 <p class="ai-summary">{{ articleAnalysis(article).summary }}</p>
                 <em class="ai-badge">AI · {{ articleAnalysis(article).sentiment || 'neutral' }} · 风险 {{ articleAnalysis(article).risk_level || 'low' }}</em>
                 <button v-if="analysisHasDetails(article)" type="button" class="analysis-toggle" :aria-expanded="analysisOpen(article)" @click="toggleAnalysis(article)">{{ analysisOpen(article) ? '收起分析' : '分析详情' }}</button>
+                <Transition name="analysis-fold">
                 <div v-if="analysisOpen(article)" class="analysis-details">
                   <div><span v-for="keyword in articleAnalysis(article).keywords || []" :key="`ai-${keyword}`" class="tag ai-tag">{{ keyword }}</span></div>
                   <small v-if="articleAnalysis(article).rationale" class="ai-rationale">依据：{{ articleAnalysis(article).rationale }}</small>
                   <div><button v-for="market in articleAnalysis(article).related_markets || []" :key="`market-${market}`" type="button" class="tag market-tag" @click="openMarket(market)">{{ market }} · 行情</button></div>
                 </div>
+                </Transition>
               </template>
             </div>
           </article>
@@ -509,8 +511,9 @@ onBeforeUnmount(() => {
 .ai-tag { color: var(--accent-strong); }
 .ai-badge { border-color: rgba(201,166,95,.35); color: var(--accent-strong); }
 .ai-rationale { flex-basis: 100%; color: var(--subtle); font-size: 8px; line-height: 1.45; }
-.analysis-toggle { border: 0; background: transparent; color: var(--muted); padding: 2px 0; cursor: pointer; font-size: 8px; }.analysis-toggle:hover { color: var(--text); }.analysis-details { flex-basis: 100%; display: grid; gap: 7px; padding: 8px 0 1px; animation: news-detail-in .18s cubic-bezier(.22,1,.36,1) both; }.analysis-details > div { display: flex; flex-wrap: wrap; gap: 5px; }
-@keyframes news-detail-in { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: translateY(0); } }
+.analysis-toggle { border: 0; background: transparent; color: var(--muted); padding: 2px 0; cursor: pointer; font-size: 8px; }.analysis-toggle:hover { color: var(--text); }.analysis-details { flex-basis: 100%; display: grid; gap: 7px; padding: 8px 0 1px; }.analysis-details > div { display: flex; flex-wrap: wrap; gap: 5px; }
+.analysis-fold-enter-active, .analysis-fold-leave-active { overflow: hidden; transition: opacity var(--news-motion-surface) ease, transform var(--news-motion-surface) var(--news-ease), max-height var(--news-motion-layout) var(--news-ease); max-height: 260px; }
+.analysis-fold-enter-from, .analysis-fold-leave-to { opacity: 0; transform: translateY(-3px); max-height: 0; }
 .market-tag { color: var(--ok); border-color: rgba(39,196,107,.24); cursor: pointer; }
 .reason-toggle { border: 0; background: transparent; color: var(--accent-strong); padding: 2px 0; cursor: pointer; font-size: 8px; }
 .reason-panel { flex-basis: 100%; display: grid; gap: 7px; padding: 9px 10px; border: 1px solid color-mix(in srgb, var(--accent) 16%, var(--line)); border-radius: 7px; background: color-mix(in srgb, var(--workspace-accent-wash) 26%, transparent); }
