@@ -72,18 +72,38 @@ public class NewsController {
     @GetMapping("/daily")
     public ApiResponse<Object> daily(@RequestParam(defaultValue = "12") int limit,
                                      @RequestParam(defaultValue = "true") boolean refresh,
-                                     @RequestParam(defaultValue = "false") boolean force) {
+                                     @RequestParam(defaultValue = "false") boolean force,
+                                     @RequestParam(defaultValue = "smart") String ranking) {
+        String rankingMode = ranking == null ? "smart" : ranking.trim().toLowerCase();
+        if (!rankingMode.equals("smart") && !rankingMode.equals("latest")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "ranking 仅支持 smart/latest");
+        }
         String path = "/internal/rss/digest?refresh=" + refresh + "&force=" + force;
         try {
             Map<String, Object> digest = aiProxyService.post(path, Map.of());
-            Map<String, Object> shaped = NewsDigest.fromDigest(digest, limit);
+            Map<String, Object> shaped = NewsDigest.fromDigest(digest, 0);
             if (newsSourceService != null && CurrentUser.isAuthenticated()) {
-                shaped = newsSourceService.filterDigest(CurrentUser.id(), shaped);
+                Long userId = CurrentUser.id();
+                shaped = newsSourceService.filterDigest(userId, shaped);
+                if (rankingMode.equals("smart")) {
+                    shaped = semanticRerank(shaped, newsSourceService.rankingQuery(userId));
+                }
             }
+            if (rankingMode.equals("latest")) shaped = NewsDigest.orderByRecency(shaped);
+            shaped = NewsDigest.limitItems(shaped, limit);
+            Map<String, Object> withCount = new LinkedHashMap<>(shaped);
+            Object finalItems = shaped.get("items");
+            withCount.put("returned_count", finalItems instanceof List<?> list ? list.size() : 0);
+            shaped = withCount;
             return ApiResponse.ok(localizeCachedTitles(shaped));
         } catch (Exception e) {
             return ApiResponse.ok(NewsDigest.unavailable(NewsDigest.REASON_UNAVAILABLE));
         }
+    }
+
+    /** 兼容现有直接调用单元测试与内部调用方。 */
+    public ApiResponse<Object> daily(int limit, boolean refresh, boolean force) {
+        return daily(limit, refresh, force, "smart");
     }
 
     /**
@@ -227,6 +247,39 @@ public class NewsController {
         Map<String, Object> out = new LinkedHashMap<>(shaped);
         out.put("items", items);
         return out;
+    }
+
+    /**
+     * 语义排序是纯增强：Python embedding/rerank 未部署、超时或格式异常时必须保持
+     * V1 intelligence 顺序，不允许把每日要闻整体降级为 unavailable。
+     */
+    private Map<String, Object> semanticRerank(Map<String, Object> shaped, String query) {
+        if (shaped == null || query == null || query.isBlank()) return shaped;
+        Object rawItems = shaped.get("items");
+        if (!(rawItems instanceof List<?> list) || list.isEmpty()) return shaped;
+
+        int candidateCount = Math.min(60, list.size());
+        List<Object> candidates = new ArrayList<>(list.subList(0, candidateCount));
+        try {
+            Map<String, Object> response = aiProxyService.post(
+                    "/internal/rss/rerank",
+                    Map.of("query", query, "articles", candidates));
+            if (response == null || !Boolean.TRUE.equals(response.get("available"))) return shaped;
+            Object rankedRaw = response.get("items");
+            if (!(rankedRaw instanceof List<?> ranked) || ranked.size() != candidateCount) return shaped;
+
+            List<Object> items = new ArrayList<>(ranked);
+            if (candidateCount < list.size()) items.addAll(list.subList(candidateCount, list.size()));
+            Map<String, Object> out = new LinkedHashMap<>(shaped);
+            out.put("items", items);
+            out.put("semantic_ranking", Map.of(
+                    "stage", text(response.get("ranking_stage")),
+                    "embedding_model", text(response.get("embedding_model")),
+                    "rerank_model", text(response.get("rerank_model"))));
+            return out;
+        } catch (Exception ignored) {
+            return shaped;
+        }
     }
 
     private static String text(Object value) {

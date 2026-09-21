@@ -121,6 +121,56 @@ class NewsDigestTest {
     }
 
     @Test
+    void limitItemsRunsAfterFilteringWithoutMutatingOriginalEnvelope() {
+        Map<String, Object> shaped = new LinkedHashMap<>();
+        shaped.put("available", true);
+        shaped.put("items", List.of(Map.of("title", "A"), Map.of("title", "B"), Map.of("title", "C")));
+
+        Map<String, Object> limited = NewsDigest.limitItems(shaped, 2);
+
+        assertEquals(2, ((List<?>) limited.get("items")).size());
+        assertEquals(true, limited.get("available"));
+        assertEquals(3, ((List<?>) shaped.get("items")).size());
+    }
+
+    @Test
+    void latestModeOrdersByNormalizedRecencyTimestamp() {
+        Map<String, Object> shaped = new LinkedHashMap<>();
+        shaped.put("items", List.of(
+                Map.of("title", "older", "recency_timestamp", 100.0),
+                Map.of("title", "newest", "recency_timestamp", 300.0),
+                Map.of("title", "middle", "recency_timestamp", 200.0)));
+
+        Map<String, Object> ordered = NewsDigest.orderByRecency(shaped);
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> result = (List<Map<String, Object>>) ordered.get("items");
+        assertEquals(List.of("newest", "middle", "older"),
+                result.stream().map(item -> String.valueOf(item.get("title"))).toList());
+        assertEquals("latest", ordered.get("rank_mode"));
+    }
+
+    @Test
+    void intelligenceFieldsArePassedThroughForFrontendAuditability() {
+        Map<String, Object> intelligent = article("高质量资讯", "https://a.example.com/1", "s", "");
+        intelligent.put("rank_score", 0.91);
+        intelligent.put("source_ids", List.of("s", "wire"));
+        intelligent.put("source_count", 2);
+        intelligent.put("selection_reason", List.of("来源可信度 88", "2 个来源确认"));
+
+        Map<String, Object> raw = digestOf(List.of(source("s", "S")), List.of(intelligent));
+        raw.put("rank_mode", "intelligence_v1");
+        raw.put("quality_metrics", Map.of("article_count", 1, "source_diversity", 2));
+        Map<String, Object> shaped = NewsDigest.fromDigest(raw, 10);
+
+        assertEquals(0.91, items(shaped).get(0).get("rank_score"));
+        assertEquals(List.of("s", "wire"), items(shaped).get(0).get("source_ids"));
+        assertEquals(2, items(shaped).get(0).get("source_count"));
+        assertEquals("intelligence_v1", shaped.get("rank_mode"));
+        assertEquals(1, ((Map<?, ?>) shaped.get("quality_metrics")).get("article_count"));
+    }
+
+    @Test
     void entriesWithoutTitleOrWithWrongTypeAreDropped() {
         List<Object> articles = new ArrayList<>();
         articles.add(article("", "https://a.example.com/1", "s", ""));

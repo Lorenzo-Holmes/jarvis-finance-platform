@@ -32,6 +32,7 @@ from backend.app.rss import (  # noqa: E402
     RSSSourceNotFound,
     RSSStore,
     RSSValidationError,
+    _canonical_url,
 )
 
 
@@ -164,7 +165,16 @@ def test_crawl_normalizes_entries(monkeypatch):
     assert article["analysis"]["direction"] == "neutral"
     assert article["published"] == "2026-09-16"
     assert len(article["id"]) == 64                      # sha256 十六进制
+    assert article["canonical_url"] == "https://example.com/a"
+    assert article["source_ids"] == ["s1"]
+    assert article["source_count"] == 1
+    assert len(article["near_duplicate_hash"]) == 16
     assert article["created_at"]
+
+
+def test_canonical_url_removes_tracking_but_keeps_business_query():
+    url = "HTTPS://Example.COM:443/news?id=7&utm_source=rss&b=2&a=1#top"
+    assert _canonical_url(url) == "https://example.com/news?a=1&b=2&id=7"
 
 
 def test_crawl_uses_content_tags_and_explainable_impact(monkeypatch):
@@ -198,6 +208,7 @@ def test_crawl_deduplicates_across_runs(monkeypatch):
     assert second["skipped"] == 1
     assert second["fetched"] == 1
     assert len(store.list_articles()) == 1               # 未重复入库
+    assert store.list_articles()[0]["duplicate_count"] == 0  # 同源轮询不惩罚 novelty
 
 
 def test_crawl_skips_entries_without_title_and_link(monkeypatch):
@@ -301,9 +312,8 @@ def test_crawl_deduplicates_same_article_across_sources(monkeypatch):
     """跨源去重：同一篇文章被多个 feed 转载时只入库一次。
 
     这是信息聚合的**有意行为**（避免同一篇新闻重复出现），不是缺陷。
-    代价是文章只归属于首个抓到的源，因此 `list_articles(source_id)` 不会
-    在其他转载源下再列出它。若 Phase 3 需要「谁转载了这篇」，应改为记录
-    多个来源而非放宽去重键。
+    V1 intelligence pipeline 会保留所有确认来源，因此聚合事件在两个来源
+    的 source 过滤下都应可见。
     """
     store = RSSStore()
     store.add_source({"id": "s1", "url": "https://example.com/one"})
@@ -316,8 +326,34 @@ def test_crawl_deduplicates_same_article_across_sources(monkeypatch):
     assert len(first["added"]) == 1
     assert len(second["added"]) == 0              # 同标题+同链接 → 命中已有去重键
     assert second["skipped"] == 1
+    assert second["merged"] == 1
     assert store.list_articles("s1") != []
-    assert store.list_articles("s2") == []
+    assert store.list_articles("s2") != []
+    article = store.list_articles()[0]
+    assert article["source_ids"] == ["s1", "s2"]
+    assert article["source_count"] == 2
+    assert article["duplicate_count"] == 1
+
+
+def test_crawl_merges_tracking_variants_and_title_punctuation(monkeypatch):
+    store = RSSStore(seed_defaults=False)
+    store.add_source({"id": "s1", "url": "https://example.com/one"})
+    store.add_source({"id": "s2", "url": "https://example.com/two"})
+
+    _patch_feed(monkeypatch, _fake_feed(entries=[_entry(
+        title="Fed keeps rates unchanged",
+        link="https://news.example.com/story?id=7&utm_source=wire",
+    )]))
+    store.crawl("s1")
+    _patch_feed(monkeypatch, _fake_feed(entries=[_entry(
+        title="Fed keeps rates unchanged!",
+        link="https://news.example.com/story?utm_medium=rss&id=7#latest",
+    )]))
+    result = store.crawl("s2")
+
+    assert result["merged"] == 1
+    assert len(store.list_articles()) == 1
+    assert store.list_articles()[0]["source_count"] == 2
 
 
 # ---- HTTP 语义 ----
@@ -357,6 +393,7 @@ def test_rss_endpoints_are_registered_and_token_protected():
         "/internal/rss/fetch/{source_id}",
         "/internal/rss/articles",
         "/internal/rss/digest",
+        "/internal/rss/rerank",
     }
 
     for path, route in rss_paths.items():

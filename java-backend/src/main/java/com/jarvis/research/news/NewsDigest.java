@@ -77,6 +77,20 @@ public final class NewsDigest {
             item.put("tags", article.get("tags") instanceof List<?> tags ? tags : List.of());
             item.put("analysis", article.get("analysis") instanceof Map<?, ?> analysis
                     ? analysis : Map.of());
+            copyIfPresent(article, item, "canonical_url");
+            copyIfPresent(article, item, "event_cluster_id");
+            copyIfPresent(article, item, "source_ids");
+            copyIfPresent(article, item, "source_count");
+            copyIfPresent(article, item, "duplicate_count");
+            copyIfPresent(article, item, "source_credibility");
+            copyIfPresent(article, item, "source_health_score");
+            copyIfPresent(article, item, "content_quality_score");
+            copyIfPresent(article, item, "freshness_score");
+            copyIfPresent(article, item, "novelty_score");
+            copyIfPresent(article, item, "confirmation_score");
+            copyIfPresent(article, item, "rank_score");
+            copyIfPresent(article, item, "selection_reason");
+            copyIfPresent(article, item, "recency_timestamp");
             items.add(item);
         }
 
@@ -84,11 +98,52 @@ public final class NewsDigest {
         out.put("available", true);
         out.put("reason", null);
         out.put("generated_at", text(raw.get("generated_at")));
+        out.put("rank_mode", text(raw.get("rank_mode")));
         out.put("total_sources", number(raw.get("total_sources")));
         out.put("ok_sources", number(raw.get("ok_sources")));
         out.put("sources", asList(raw.get("sources")));
+        if (raw.get("quality_metrics") instanceof Map<?, ?> metrics) {
+            out.put("quality_metrics", stringKeyMap(metrics));
+        }
+        String rankMode = text(raw.get("rank_mode"));
+        if (!rankMode.isEmpty()) out.put("rank_mode", rankMode);
         out.put("items", items);
         return out;
+    }
+
+    private static Map<String, Object> stringKeyMap(Map<?, ?> source) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        source.forEach((key, value) -> out.put(String.valueOf(key), value));
+        return out;
+    }
+
+    /** 在所有用户筛选完成后执行 Top-K，避免全局截断提前丢掉订阅命中的候选。 */
+    public static Map<String, Object> limitItems(Map<String, Object> shaped, int limit) {
+        if (shaped == null || limit <= 0) return shaped;
+        Object rawItems = shaped.get("items");
+        if (!(rawItems instanceof List<?> list) || list.size() <= limit) return shaped;
+        Map<String, Object> out = new LinkedHashMap<>(shaped);
+        out.put("items", new ArrayList<>(list.subList(0, limit)));
+        return out;
+    }
+
+    /** 时间流模式：按 Python 已规范化的 recency timestamp 倒序；相同时间保持稳定顺序。 */
+    public static Map<String, Object> orderByRecency(Map<String, Object> shaped) {
+        if (shaped == null) return null;
+        Object rawItems = shaped.get("items");
+        if (!(rawItems instanceof List<?> list) || list.size() < 2) return shaped;
+        List<Object> ordered = new ArrayList<>(list);
+        ordered.sort((left, right) -> Double.compare(
+                doubleValue(right instanceof Map<?, ?> map ? map.get("recency_timestamp") : null),
+                doubleValue(left instanceof Map<?, ?> map ? map.get("recency_timestamp") : null)));
+        Map<String, Object> out = new LinkedHashMap<>(shaped);
+        out.put("items", ordered);
+        out.put("rank_mode", "latest");
+        return out;
+    }
+
+    private static void copyIfPresent(Map<?, ?> source, Map<String, Object> target, String key) {
+        if (source.containsKey(key)) target.put(key, source.get(key));
     }
 
     /** source_id → 可读名称；缺名称时回退为 id，不产生空标签。 */
@@ -124,6 +179,15 @@ public final class NewsDigest {
             return Integer.parseInt(text(value));
         } catch (NumberFormatException ignored) {
             return 0;
+        }
+    }
+
+    private static double doubleValue(Object value) {
+        if (value instanceof Number num) return num.doubleValue();
+        try {
+            return Double.parseDouble(text(value));
+        } catch (NumberFormatException ignored) {
+            return 0.0;
         }
     }
 }

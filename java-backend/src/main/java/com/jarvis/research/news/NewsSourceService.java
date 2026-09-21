@@ -133,12 +133,16 @@ public class NewsSourceService {
                 .filter(value -> value != null && !value.isBlank()).collect(Collectors.toSet());
         List<Map<String, Object>> items = new ArrayList<>();
         Object rawItems = shaped.get("items");
+        int beforeCount = rawItems instanceof List<?> list ? list.size() : 0;
         if (rawItems instanceof List<?> list) {
             for (Object value : list) {
                 if (!(value instanceof Map<?, ?> raw)) continue;
                 String sourceKey = text(raw.get("source_id"));
                 String category = text(raw.get("category"));
-                if (sourceKeys.contains(sourceKey) || topics.contains(category)) {
+                boolean sourceMatch = sourceKeys.isEmpty() || sourceKeys.contains(sourceKey)
+                        || sourceIds(raw.get("source_ids")).stream().anyMatch(sourceKeys::contains);
+                boolean topicMatch = topics.isEmpty() || topics.contains(category);
+                if (sourceMatch && topicMatch) {
                     Map<String, Object> item = new LinkedHashMap<>();
                     raw.forEach((key, itemValue) -> item.put(String.valueOf(key), itemValue));
                     items.add(item);
@@ -147,7 +151,48 @@ public class NewsSourceService {
         }
         Map<String, Object> filtered = new LinkedHashMap<>(shaped);
         filtered.put("items", items);
+        filtered.put("filter_stats", Map.of(
+                "filter_before_count", beforeCount,
+                "filter_after_count", items.size()));
         return filtered;
+    }
+
+    /**
+     * 给语义排序层构造稳定的“研究意图 query”。来源订阅本身只限定数据边界，
+     * 主题才描述内容偏好；没有主题时使用通用财经研究意图，不虚构用户兴趣。
+     */
+    @Transactional(readOnly = true)
+    public String rankingQuery(Long userId) {
+        List<NewsSubscription> rows = subscriptionRepository
+                .findByUserIdAndEnabledTrueOrderBySourceKeyAscTopicAsc(userId);
+        List<String> topics = rows.stream()
+                .map(NewsSubscription::getTopic)
+                .map(this::clean)
+                .filter(value -> !value.isBlank())
+                .distinct()
+                .toList();
+        if (topics.isEmpty()) {
+            return "财经投研重要资讯 市场变化 宏观经济 公司事件 资产价格 风险";
+        }
+        return "财经投研重要资讯 " + topics.stream()
+                .map(this::topicTerms)
+                .collect(Collectors.joining(" "));
+    }
+
+    private String topicTerms(String topic) {
+        return switch (topic) {
+            case "markets" -> "市场行情 股票 债券 指数 交易";
+            case "global" -> "全球宏观 经济 央行 利率 通胀";
+            case "crypto" -> "加密资产 比特币 以太坊 区块链";
+            case "gold" -> "黄金 贵金属 大宗商品";
+            case "policy" -> "政策 监管 财政 货币政策";
+            default -> topic;
+        };
+    }
+
+    private Set<String> sourceIds(Object value) {
+        if (!(value instanceof List<?> list)) return Set.of();
+        return list.stream().map(this::text).filter(item -> !item.isBlank()).collect(Collectors.toSet());
     }
 
     private void apply(NewsSource source, SourceRequest request, String sourceKey) {

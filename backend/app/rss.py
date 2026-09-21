@@ -14,10 +14,14 @@ from datetime import datetime
 from email.utils import parsedate_to_datetime
 from concurrent.futures import ThreadPoolExecutor
 from hashlib import sha256
+import html
+import math
 import os
 import re
+from threading import RLock
+import unicodedata
 from typing import Dict, List, Optional
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import feedparser
 import requests
@@ -29,6 +33,20 @@ _RSS_TIMEOUT = (
     float(os.getenv("RSS_READ_TIMEOUT_SECONDS", "6")),
 )
 _RSS_USER_AGENT = "JARVIS-Finance-Research/1.0 (+https://f.shengxia.me)"
+_TRACKING_QUERY_KEYS = {
+    "fbclid", "gclid", "dclid", "msclkid", "mc_cid", "mc_eid",
+    "igshid", "vero_conv", "vero_id", "oly_anon_id", "oly_enc_id",
+}
+_NEAR_DUPLICATE_WINDOW_SECONDS = 72 * 3600
+_NEAR_DUPLICATE_SCAN_LIMIT = 600
+
+
+def _positive_int_env(name: str, default: int) -> int:
+    try:
+        value = int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+    return value if value > 0 else default
 
 #: 预置财经资讯源。让"每日要闻"开箱可用，而不必先手工登记源。
 #:
@@ -127,6 +145,86 @@ def _clean_text(value: object) -> str:
     return str(value).strip()
 
 
+def _canonical_url(value: object) -> str:
+    """生成用于去重的稳定 URL，不改变前端最终跳转使用的原始链接。
+
+    只移除公认 tracking 参数和 fragment；业务 query 保留并排序，避免为了去重
+    把真正不同的财经页面误合并。
+    """
+    text = _clean_text(value)
+    if not text:
+        return ""
+    try:
+        parsed = urlparse(text)
+        scheme = parsed.scheme.lower()
+        if scheme not in _ALLOWED_SCHEMES or not parsed.hostname:
+            return text
+        host = parsed.hostname.lower().rstrip(".")
+        try:
+            port = parsed.port
+        except ValueError:
+            return text
+        if port and not ((scheme == "http" and port == 80) or (scheme == "https" and port == 443)):
+            host = f"{host}:{port}"
+        path = re.sub(r"/{2,}", "/", parsed.path or "/")
+        query = []
+        for key, item in parse_qsl(parsed.query, keep_blank_values=True):
+            lowered = key.lower()
+            if lowered.startswith("utm_") or lowered in _TRACKING_QUERY_KEYS:
+                continue
+            query.append((key, item))
+        query.sort(key=lambda pair: (pair[0].lower(), pair[1]))
+        return urlunparse((scheme, host, path, "", urlencode(query, doseq=True), ""))
+    except (TypeError, ValueError):
+        return text
+
+
+def _plain_text(value: object) -> str:
+    text = html.unescape(_clean_text(value))
+    text = re.sub(r"<[^>]+>", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _normalize_title(value: object) -> str:
+    text = unicodedata.normalize("NFKC", _plain_text(value)).lower()
+    text = re.sub(r"[^\w\u4e00-\u9fff]+", " ", text, flags=re.UNICODE)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _simhash_tokens(value: str) -> List[str]:
+    normalized = unicodedata.normalize("NFKC", value).lower()
+    tokens = re.findall(r"[a-z0-9]+", normalized)
+    for run in re.findall(r"[\u4e00-\u9fff]+", normalized):
+        if len(run) == 1:
+            tokens.append(run)
+        else:
+            tokens.extend(run[index:index + 2] for index in range(len(run) - 1))
+    return tokens[:2_000]
+
+
+def _simhash64(value: str) -> str:
+    vector = [0] * 64
+    tokens = _simhash_tokens(value)
+    if not tokens:
+        return "0" * 16
+    for token in tokens:
+        bits = int.from_bytes(sha256(token.encode("utf-8")).digest()[:8], "big")
+        for index in range(64):
+            vector[index] += 1 if bits & (1 << index) else -1
+    fingerprint = 0
+    for index, weight in enumerate(vector):
+        if weight >= 0:
+            fingerprint |= 1 << index
+    return f"{fingerprint:016x}"
+
+
+def _hamming_distance(left: str, right: str) -> int:
+    try:
+        return (int(left, 16) ^ int(right, 16)).bit_count()
+    except (TypeError, ValueError):
+        return 64
+
+
 def _fetch_feed(url: str):
     """在有限时限内下载并解析 RSS，避免单个外部源拖住整条新闻接口。"""
     response = requests.get(
@@ -223,20 +321,23 @@ def _market_impact(title: str, body: str) -> Dict[str, str]:
 class RSSStore:
     """内存版资讯源仓库。
 
-    已知限制（有意保留，不做过度设计）：
-      - 无持久化：进程重启后 sources / articles 清空；
-      - 无容量上限：长期运行会持续占用内存。
-    两者都应由 Java 主后端接入后接管，本模块不自行发明淘汰策略。
+    文章仍不做业务持久化（进程重启后清空），但作为在线筛选工作集必须有明确
+    retention/cap，避免长期运行后历史噪声持续占内存并拖慢近重复扫描和 rerank。
+    真正的历史归档仍应由 Java 主后端接管。
     """
 
     #: 同一资讯源在 digest 中的最小抓取间隔（秒）。
     #: 前端每次打开行情页都会问一次要闻，不设间隔就会把外部 feed 打爆。
     DIGEST_MIN_INTERVAL_SECONDS = 300
+    ARTICLE_RETENTION_DAYS = _positive_int_env("RSS_ARTICLE_RETENTION_DAYS", 30)
+    MAX_ARTICLES = _positive_int_env("RSS_MAX_ARTICLES", 5_000)
 
     def __init__(self, seed_defaults: bool = True):
         self.sources: Dict[str, Dict] = {}
         self.articles: Dict[str, Dict] = {}
         self._last_crawled: Dict[str, datetime] = {}
+        self._source_health: Dict[str, Dict] = {}
+        self._state_lock = RLock()
         if seed_defaults:
             self._seed_default_sources()
 
@@ -332,6 +433,7 @@ class RSSStore:
         try:
             feed = _fetch_feed(source["url"])
         except Exception as exc:  # requests/解析库的异常都按单源降级
+            self._record_source_health(source["id"], success_weight=0.0, fetched=0, accepted=0)
             return {
                 "source_id": source["id"],
                 "ok": False,
@@ -345,16 +447,33 @@ class RSSStore:
 
         added: List[Dict] = []
         skipped = 0
+        merged = 0
         for item in entries:
             article = self._normalize(source["id"], item)
             if article is None:
                 skipped += 1
                 continue
-            if article["id"] in self.articles:
-                skipped += 1
-                continue
-            self.articles[article["id"]] = article
-            added.append(article)
+            # digest 会并行抓多个来源；查重与写入必须处于同一临界区，否则两个
+            # 来源同时返回同一事件时可能都“未命中”后各写一份。
+            with self._state_lock:
+                existing = self.articles.get(article["id"]) or self._find_near_duplicate(article)
+                if existing is not None:
+                    self._merge_duplicate(existing, article)
+                    skipped += 1
+                    merged += 1
+                    continue
+                self.articles[article["id"]] = article
+                added.append(article)
+
+        partial = bool(error and error.startswith("部分解析告警"))
+        success_weight = 1.0 if error is None else 0.5 if partial else 0.0
+        self._record_source_health(
+            source["id"], success_weight=success_weight,
+            fetched=len(entries), accepted=len(added) + merged,
+        )
+        health = self._source_health_score(source["id"])
+        for article in added:
+            article["source_health_score"] = health
 
         return {
             "source_id": source["id"],
@@ -362,6 +481,7 @@ class RSSStore:
             "fetched": len(entries),
             "added": added,
             "skipped": skipped,
+            "merged": merged,
             "error": error,
         }
 
@@ -395,28 +515,194 @@ class RSSStore:
         if not title and not url:
             return None
 
-        key = sha256(f"{title}|{url}".encode("utf-8")).hexdigest()
+        body = _entry_body(item)
+        normalized_title = _normalize_title(title)
+        canonical_url = _canonical_url(url)
+        exact_material = f"{normalized_title}|{canonical_url}"
+        key = sha256(exact_material.encode("utf-8")).hexdigest()
+        near_hash = _simhash64(f"{normalized_title} {normalized_title} {_plain_text(body)[:1_200]}")
+        event_material = normalized_title or canonical_url or key
         return {
             "id": key,
             "source_id": source_id,
+            "source_ids": [source_id],
+            "source_count": 1,
+            "duplicate_count": 0,
             "title": title,
             "url": url,
-            "summary": _entry_body(item),
+            "canonical_url": canonical_url,
+            "normalized_title": normalized_title,
+            "exact_hash": sha256(exact_material.encode("utf-8")).hexdigest(),
+            "near_duplicate_hash": near_hash,
+            "event_cluster_id": "evt_" + sha256(event_material.encode("utf-8")).hexdigest()[:16],
+            "summary": body,
             "published": _clean_text(item.get("published")),
             "category": source.get("category", "general"),
             "tags": _entry_tags(item, source.get("category", "general")),
-            "analysis": _market_impact(title, _entry_body(item)),
+            "analysis": _market_impact(title, body),
+            "source_credibility": int(source.get("credibility", 50)),
+            "source_health_score": self._source_health_score(source_id),
             "created_at": datetime.now().isoformat(),
         }
+
+    def _find_near_duplicate(self, article: Dict) -> Optional[Dict]:
+        candidates = list(self.articles.values())[-_NEAR_DUPLICATE_SCAN_LIMIT:]
+        incoming_url = article.get("canonical_url") or ""
+        incoming_title = article.get("normalized_title") or ""
+        incoming_hash = article.get("near_duplicate_hash") or ""
+        incoming_time = _published_timestamp(article.get("published")) or _published_timestamp(article.get("created_at"))
+        for existing in reversed(candidates):
+            existing_url = existing.get("canonical_url") or ""
+            if incoming_url and existing_url and incoming_url == existing_url:
+                return existing
+
+            existing_time = _published_timestamp(existing.get("published")) or _published_timestamp(existing.get("created_at"))
+            if incoming_time and existing_time and abs(incoming_time - existing_time) > _NEAR_DUPLICATE_WINDOW_SECONDS:
+                continue
+
+            existing_title = existing.get("normalized_title") or ""
+            if incoming_title and incoming_title == existing_title:
+                return existing
+
+            if len(incoming_title) >= 18 and len(existing_title) >= 18:
+                if _hamming_distance(incoming_hash, existing.get("near_duplicate_hash") or "") <= 3:
+                    return existing
+        return None
+
+    def _merge_duplicate(self, existing: Dict, incoming: Dict) -> None:
+        sources = list(existing.get("source_ids") or [existing.get("source_id")])
+        source_id = incoming.get("source_id")
+        new_source = bool(source_id and source_id not in sources)
+        if source_id and source_id not in sources:
+            sources.append(source_id)
+        existing["source_ids"] = [item for item in sources if item]
+        existing["source_count"] = len(existing["source_ids"])
+        # duplicate_count 表示“其它独立来源的重复报道”，不能因为同一个 RSS
+        # 每 5 分钟继续返回同一条文章就不断降低 novelty。
+        if new_source:
+            existing["duplicate_count"] = max(
+                int(existing.get("duplicate_count") or 0) + 1,
+                existing["source_count"] - 1,
+            )
+        existing["source_credibility"] = max(
+            int(existing.get("source_credibility") or 0),
+            int(incoming.get("source_credibility") or 0),
+        )
+        existing["source_health_score"] = max(
+            float(existing.get("source_health_score") or 0),
+            float(incoming.get("source_health_score") or 0),
+        )
+
+    def _record_source_health(self, source_id: str, success_weight: float, fetched: int, accepted: int) -> None:
+        with self._state_lock:
+            stats = self._source_health.setdefault(source_id, {
+                "attempts": 0, "success_weight": 0.0, "fetched": 0, "accepted": 0,
+            })
+            stats["attempts"] += 1
+            stats["success_weight"] += max(0.0, min(1.0, float(success_weight)))
+            stats["fetched"] += max(0, int(fetched))
+            stats["accepted"] += max(0, int(accepted))
+
+    def _source_health_score(self, source_id: str) -> float:
+        with self._state_lock:
+            stats = self._source_health.get(source_id)
+            if not stats:
+                return 80.0
+            # Beta-style smoothing：新来源先验约 80，避免第一次短暂失败就被永久打低。
+            return round((stats["success_weight"] + 4.0) / (stats["attempts"] + 5.0) * 100.0, 2)
+
+    def _score_article(self, article: Dict, now: datetime) -> None:
+        credibility = max(0.0, min(100.0, float(article.get("source_credibility") or 50)))
+        health = max(0.0, min(100.0, float(article.get("source_health_score") or 80)))
+
+        timestamp = _published_timestamp(article.get("published")) or _published_timestamp(article.get("created_at"))
+        if timestamp is None:
+            freshness = 22.0
+            age_hours = None
+        else:
+            age_hours = max(0.0, (now.timestamp() - timestamp) / 3600.0)
+            freshness = max(0.0, min(100.0, (2 ** (-age_hours / 18.0)) * 100.0))
+        article["recency_timestamp"] = round(float(timestamp or 0.0), 3)
+
+        quality = 0.0
+        quality += 30.0 if _clean_text(article.get("title")) else 0.0
+        quality += 18.0 if _clean_text(article.get("canonical_url")) else 0.0
+        summary_length = len(_plain_text(article.get("summary")))
+        quality += min(27.0, summary_length / 320.0 * 27.0)
+        quality += 15.0 if _published_timestamp(article.get("published")) is not None else 0.0
+        quality += 10.0 if article.get("tags") else 0.0
+        quality = max(0.0, min(100.0, quality))
+
+        source_count = max(1, int(article.get("source_count") or 1))
+        confirmation = 0.0 if source_count <= 1 else min(100.0, math.log2(source_count) / math.log2(5) * 100.0)
+        duplicates = max(0, int(article.get("duplicate_count") or 0))
+        novelty = max(55.0, 100.0 - min(45.0, duplicates * 7.0))
+
+        rank = (
+            credibility * 0.24
+            + freshness * 0.26
+            + quality * 0.14
+            + confirmation * 0.14
+            + novelty * 0.12
+            + health * 0.10
+        )
+
+        reasons: List[str] = [f"来源可信度 {int(round(credibility))}"]
+        if source_count > 1:
+            reasons.append(f"{source_count} 个来源确认")
+        if age_hours is not None and age_hours <= 6:
+            reasons.append("6 小时内发布")
+        elif age_hours is not None and age_hours <= 24:
+            reasons.append("24 小时内发布")
+        if quality >= 75:
+            reasons.append("信息字段完整")
+
+        article["content_quality_score"] = round(quality, 2)
+        article["freshness_score"] = round(freshness, 2)
+        article["novelty_score"] = round(novelty, 2)
+        article["confirmation_score"] = round(confirmation, 2)
+        article["rank_score"] = round(rank, 2)
+        article["selection_reason"] = reasons[:4]
+
+    def _prune_articles(self, now: datetime) -> None:
+        cutoff = now.timestamp() - max(1, int(self.ARTICLE_RETENTION_DAYS)) * 86400
+        expired = []
+        for article_id, article in self.articles.items():
+            timestamp = (
+                _published_timestamp(article.get("published"))
+                or _published_timestamp(article.get("created_at"))
+            )
+            if timestamp is not None and timestamp < cutoff:
+                expired.append(article_id)
+        for article_id in expired:
+            self.articles.pop(article_id, None)
+
+        cap = max(1, int(self.MAX_ARTICLES))
+        if len(self.articles) <= cap:
+            return
+        ordered = sorted(
+            self.articles.values(),
+            key=lambda article: (
+                _published_timestamp(article.get("published"))
+                or _published_timestamp(article.get("created_at"))
+                or 0.0
+            ),
+            reverse=True,
+        )
+        keep = {article["id"] for article in ordered[:cap] if article.get("id")}
+        for article_id in list(self.articles):
+            if article_id not in keep:
+                self.articles.pop(article_id, None)
 
     # ---- 文章 ----
 
     def list_articles(self, source_id: Optional[str] = None) -> List[Dict]:
-        articles = list(self.articles.values())
+        with self._state_lock:
+            articles = list(self.articles.values())
         if source_id is None:
             return articles
         wanted = _clean_text(source_id)
-        return [a for a in articles if a["source_id"] == wanted]
+        return [a for a in articles if wanted in (a.get("source_ids") or [a.get("source_id")])]
 
     # ---- 每日要闻 ----
 
@@ -451,6 +737,7 @@ class RSSStore:
                     "category": source.get("category", "general"),
                     "ok": True, "crawled": False,
                     "fetched": 0, "added": 0, "error": None,
+                    "health_score": self._source_health_score(source_id),
                 })
                 continue
             due_sources.append(source)
@@ -468,16 +755,46 @@ class RSSStore:
                     "category": source.get("category", "general"),
                     "ok": bool(result["ok"]), "crawled": True,
                     "fetched": result["fetched"], "added": len(result["added"]),
+                    "merged": int(result.get("merged") or 0),
                     "error": result["error"],
+                    "health_score": self._source_health_score(source_id),
                 })
 
+        self._prune_articles(now)
         articles = self.list_articles()
-        articles.sort(key=_article_sort_key, reverse=True)
+        for article in articles:
+            self._score_article(article, now)
+        articles.sort(key=lambda article: (float(article.get("rank_score") or 0), _article_sort_key(article)), reverse=True)
+        source_ids = {
+            source_id
+            for article in articles
+            for source_id in (article.get("source_ids") or [article.get("source_id")])
+            if source_id
+        }
+        article_count = len(articles)
+        quality_metrics = {
+            "article_count": article_count,
+            "confirmed_event_count": sum(
+                1 for article in articles if int(article.get("source_count") or 1) > 1
+            ),
+            "duplicate_merge_count": sum(
+                int(article.get("duplicate_count") or 0) for article in articles
+            ),
+            "source_diversity": len(source_ids),
+            "average_rank_score": round(
+                sum(float(article.get("rank_score") or 0) for article in articles) / article_count, 2
+            ) if article_count else 0.0,
+            "average_content_quality_score": round(
+                sum(float(article.get("content_quality_score") or 0) for article in articles) / article_count, 2
+            ) if article_count else 0.0,
+        }
         return {
             "generated_at": now.isoformat(),
             "refreshed": sum(1 for item in statuses if item["crawled"]),
             "ok_sources": sum(1 for item in statuses if item["ok"]),
             "total_sources": len(statuses),
+            "rank_mode": "intelligence_v1",
+            "quality_metrics": quality_metrics,
             "sources": statuses,
             "articles": articles,
         }
