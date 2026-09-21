@@ -276,17 +276,10 @@ public class SocialService {
 
     @Transactional(readOnly = true)
     public List<Map<String, Object>> conversations(Long userId) {
-        List<DirectMessage> messages = messageRepository.findRecentForUser(userId, PageRequest.of(0, 300));
+        List<DirectMessage> messages = messageRepository.findLatestConversationMessages(userId, PageRequest.of(0, 100));
         Map<Long, DirectMessage> latest = new LinkedHashMap<>();
-        Map<Long, Integer> unread = new HashMap<>();
-        for (DirectMessage message : messages) {
-            Long partner = Objects.equals(message.getSenderUserId(), userId)
-                    ? message.getRecipientUserId() : message.getSenderUserId();
-            latest.putIfAbsent(partner, message);
-            if (Objects.equals(message.getRecipientUserId(), userId) && message.getReadAt() == null) {
-                unread.merge(partner, 1, Integer::sum);
-            }
-        }
+        for (DirectMessage message : messages) latest.put(partnerId(userId, message), message);
+        Map<Long, Long> unread = countMap(messageRepository.countUnreadBySender(userId));
         Map<Long, User> partners = new HashMap<>();
         userRepository.findAllById(latest.keySet()).forEach(user -> partners.put(user.getId(), user));
         List<Map<String, Object>> out = new ArrayList<>();
@@ -296,10 +289,15 @@ public class SocialService {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("partner", publicUser(userId, partner));
             row.put("lastMessage", messageView(userId, entry.getValue()));
-            row.put("unreadCount", unread.getOrDefault(entry.getKey(), 0));
+            row.put("unreadCount", unread.getOrDefault(entry.getKey(), 0L));
             out.add(row);
         }
         return out;
+    }
+
+    private static Long partnerId(Long userId, DirectMessage message) {
+        return Objects.equals(message.getSenderUserId(), userId)
+                ? message.getRecipientUserId() : message.getSenderUserId();
     }
 
     @Transactional

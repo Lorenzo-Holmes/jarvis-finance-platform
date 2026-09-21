@@ -295,7 +295,8 @@ class SocialServiceTest {
         DirectMessage second = DirectMessage.builder()
                 .id(2L).senderUserId(9L).recipientUserId(7L).content("b")
                 .createdAt(LocalDateTime.now().minusMinutes(1)).build();
-        when(messageRepository.findRecentForUser(eq(7L), any())).thenReturn(java.util.List.of(first, second));
+        when(messageRepository.findLatestConversationMessages(eq(7L), any())).thenReturn(java.util.List.of(first, second));
+        when(messageRepository.countUnreadBySender(7L)).thenReturn(java.util.List.<Object[]>of(new Object[]{9L, 1L}));
         when(userRepository.findAllById(any())).thenReturn(java.util.List.of(user(8L), user(9L)));
 
         java.util.List<Map<String, Object>> rows = service.conversations(7L);
