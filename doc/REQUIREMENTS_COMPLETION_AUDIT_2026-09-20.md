@@ -30,7 +30,7 @@
 - 浏览器：Playwright `financial-import` 项目通过，验证财报 Markdown 文件导入替换/追加、失败导入保留原文，以及选择文件不会提前请求分析接口；预览模式下夜间多市场图表和财报输入面板也已实际检查。2026-09-21 使用真实生产账号执行 Agent 专项浏览器用例 3 条全部通过：真实 SSE 的工具生命周期、Markdown 结论、历史运行抽屉，以及停止状态和失败提示回归。
 - 测试 Agent：`node tools/test-agent/test-agent.mjs --run --project smoke` 在本地 managed Vite 环境通过，6 条 smoke 浏览器用例无失败；未把 smoke 结果冒充真实登录、真实 AI 或生产验收。
 
-## Gitee PR 审核（2026-09-20）
+## Gitee PR 审核（2026-09-21）
 
 - Gitee 当前没有 open PR；最新 PR#15（`feat: 补 DAILY_DIGEST 执行器，定时任务 4 个类型全部可用`）已处于 merged 状态，提交 `3db902a` 已包含日报执行器、参数边界、来源不可用降级和 wiring 测试。本轮复核 PR 详情、文件差异和评论后，没有可再次修改或合并的待审 PR。
 - Agent 生命周期修复提交 `0ffc751`、生产烟测门禁提交 `f344f0d`、前端取消状态与浏览器验收提交 `3b35893` 已同步到 Gitee `main` 和 GitHub `main`；本次复核仍没有 open PR。后续新增 PR 仍应先做 diff/测试审查，再合并到 `main`。
