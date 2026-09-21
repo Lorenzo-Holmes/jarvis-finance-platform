@@ -471,4 +471,22 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .empty-state, .empty-panel { padding: 24px; color: var(--subtle); font-size: 9px; }.empty-panel { display: grid; place-items: center; }
 .load-more { justify-self: center; border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--muted); padding: 7px 13px; cursor: pointer; font-size: 8px; }
 @media (max-width: 980px) { .feed-layout { grid-template-columns: 1fr; }.network-rail { display: none; }.groups-layout, .users-layout, .messages-layout { grid-template-columns: 1fr; }.group-directory, .user-directory, .conversation-list { max-height: 320px; } }
+@media (max-width: 700px) {
+  .page-head { align-items: flex-start; flex-direction: column; }
+  .community-tabs { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+  .community-tabs::-webkit-scrollbar { display: none; }
+  .community-tabs button { min-height: 40px; flex: 0 0 auto; padding: 0 12px; }
+  .group-directory, .user-directory, .conversation-list { max-height: 250px; }
+  .group-room > header, .profile-preview > header { flex-wrap: wrap; }
+  .group-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+  .message-thread article { max-width: 88%; }
+  .message-room > footer { align-items: stretch; flex-direction: column; }
+  .message-room > footer button { min-height: 40px; }
+}
+@media (max-width: 620px) {
+  .community-page { gap: 10px; }
+  .composer-panel, .network-rail, .create-group, .group-directory, .group-room, .user-directory, .profile-preview, .conversation-list, .message-room, .empty-panel { border-radius: 8px; }
+  .group-metrics { grid-template-columns: 1fr; }
+  .post-card { padding: 11px; }
+}
 </style>
