@@ -250,3 +250,9 @@ test('source cards acknowledge selection with a single restrained pulse', () => 
   assert.match(page, /\.choice\.active::after/)
   assert.match(page, /@keyframes source-select-pulse/)
 })
+
+test('topic chips acknowledge selection with a single dot pulse', () => {
+  const page = read('pages/NewsCenterPage.vue')
+  assert.match(page, /topic-dot-pulse/)
+  assert.match(page, /\.topic-choice\.active i/)
+})
