@@ -3,6 +3,8 @@ package com.jarvis.research.schedule;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -32,4 +34,8 @@ public interface ScheduledTaskRunRepository extends JpaRepository<ScheduledTaskR
     List<ScheduledTaskRun> findByStatusAndStartedAtBefore(TaskRunStatus status, LocalDateTime threshold);
 
     long countByTaskId(Long taskId);
+
+    @Query("select count(r) from ScheduledTaskRun r, ScheduledTask t " +
+            "where r.taskId = t.id and t.userId = :userId and r.status = :status")
+    long countByUserIdAndStatus(@Param("userId") Long userId, @Param("status") TaskRunStatus status);
 }

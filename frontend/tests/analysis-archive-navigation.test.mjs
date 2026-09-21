@@ -12,12 +12,13 @@ import {
 } from '../src/analysis-os/motion/archiveMomentum.js'
 
 test('module archive defines the stable workspace modules', () => {
-  assert.equal(JARVIS_MODULES.length, 15)
-  assert.deepEqual(JARVIS_MODULES.map(module => module.no), [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15])
-  assert.equal(new Set(JARVIS_MODULES.map(module => module.routeKey)).size, 15)
-  assert.equal(modulesForLane(1).length, 3)
+  assert.equal(JARVIS_MODULES.length, 17)
+  assert.deepEqual(JARVIS_MODULES.map(module => module.no), [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,17,18])
+  assert.equal(new Set(JARVIS_MODULES.map(module => module.routeKey)).size, 17)
+  assert.equal(modulesForLane(1).length, 4)
   assert.equal(moduleAtCell(1, 2).key, 'financial')
-  assert.equal(moduleAtCell(1, 5).key, 'financial')
+  assert.equal(moduleAtCell(1, 3).key, 'community')
+  assert.equal(moduleAtCell(1, 6).key, 'financial')
 })
 
 test('module targeting chooses a nearby periodic occurrence instead of resetting the archive', () => {

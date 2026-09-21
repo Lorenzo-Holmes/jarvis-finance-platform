@@ -507,6 +507,7 @@ onBeforeUnmount(() => {
                 </div>
               </template>
               <button v-else type="button" @click="editingProfile = true">修改昵称</button>
+              <button type="button" @click="requestModule(props.modules.find(item => item.routeKey === '个人中心'))">个人中心</button>
               <button
                 type="button"
                 class="theme-menu-button"

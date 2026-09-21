@@ -150,6 +150,18 @@ export const JARVIS_MODULES = [
     code: 'IN-15', summary: '聚合多来源财经资讯，按来源与主题订阅并保留抓取状态。',
     capabilities: ['10+ SOURCES', 'SUBSCRIPTIONS', 'DIGEST'], availability: 'ready',
   },
+  {
+    id: 'module:community', no: 17, lane: 1, row: 3, key: 'community',
+    labelEn: 'COMMUNITY', labelZh: '社区', category: 'RESEARCH', routeKey: '社区',
+    code: 'RS-17', summary: '围绕研究主题建立小组、公开观点、用户连接与站内私信。',
+    capabilities: ['GROUPS', 'FEED', 'MESSAGES', 'SHARE'], availability: 'ready',
+  },
+  {
+    id: 'module:profile', no: 18, lane: 4, row: 3, key: 'profile',
+    labelEn: 'PROFILE', labelZh: '个人中心', category: 'SYSTEM', routeKey: '个人中心',
+    code: 'SY-18', summary: '维护个人档案、隐私设置、研究动态与长期成就。',
+    capabilities: ['PROFILE', 'PRIVACY', 'ACHIEVEMENTS'], availability: 'ready',
+  },
 ]
 
 export function wrap(value, count) {
