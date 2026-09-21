@@ -25,7 +25,7 @@
 ### 2.1 品牌图标
 - [x] 使用透明背景的金色 J + K 线 + 上升曲线图标。
 - [x] 顶部品牌、登录页、浏览器 favicon 切换到新图标。
-- [ ] 后续补齐同源 PNG：32 / 64 / 192 / 512px，用于旧浏览器与 PWA / Apple Touch Icon。
+- [x] 补齐同源 PNG：32 / 64 / 192 / 512px，并接入 PWA / Apple Touch Icon。
 
 ### 2.2 多市场 K 线挤在左侧
 根因：`CrossMarketView` 在 `v-show` 隐藏状态下初始化 ECharts，初始容器宽度接近 0；切换到“多市场”后没有主动 resize。

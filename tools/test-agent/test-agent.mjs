@@ -100,11 +100,14 @@ function extractRequirements(markdown, maxCases) {
 function projectHints(title) {
   const value = String(title)
   const hints = []
-  if (/登录|注册|权限|账号|配额/.test(value)) hints.push('auth')
-  if (/财报|文件|PDF|DOCX|Markdown|图片|识别/.test(value)) hints.push('financial-import')
-  if (/首页|工作台|行情|交易|模拟盘|页面|主题|夜间/.test(value)) hints.push('visual')
+  if (/登录|注册|OAuth|Github|GitHub|邮箱|权限|账号|配额|管理员|审计/.test(value)) hints.push('auth')
+  if (/财报|文件|PDF|DOCX|Markdown|图片|识别|原文|上传|导入/.test(value)) hints.push('financial-import')
+  if (/Agent|智能体|AI|工具调用|Tool Calling|Trace|执行过程|研究|分析|资讯|新闻|风险|舆情/.test(value)) hints.push('agent')
+  if (/定时|调度|任务|运行历史|断线|恢复|通知|日报|提醒/.test(value)) hints.push('tasks')
+  if (/定时任务|任务权限|权限置灰/.test(value)) hints.push('permissions')
+  if (/首页|工作台|行情|交易|模拟盘|页面|主题|夜间|响应式|图表|K线|UI/.test(value)) hints.push('visual')
   if (!hints.length) hints.push('smoke')
-  return hints
+  return [...new Set(hints)]
 }
 
 function runPlaywright(project, baseUrl) {
