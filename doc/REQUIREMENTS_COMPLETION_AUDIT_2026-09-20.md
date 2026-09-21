@@ -43,7 +43,7 @@
 
 - GitHub Pages 已发布前端；本轮 `Deploy Frontend to GitHub Pages` 成功，发布后的 `https://f.shengxia.me/version.json` 已复核为功能资源构建输入 `84a6fea`；随后仅追加审计文档提交 `2bbb8a9`，不改变前端资源，四种 favicon PNG 与 `manifest.webmanifest` 均可正常返回。
 - 后端已通过原子发布切换到 `20260921-230800-84a6feaec689`；旧版本 `20260921-dabe37f` 保留用于回滚。本轮没有 Java/Python 业务代码变更，但按发布流程重新构建并验证了后端包、依赖和 readiness；监控栈在 release 外独立运行。
-- 远端 `jarvis-ai.service`、`jarvis-java.service`、`postgresql` 均为 active；Java readiness、Python 内部 token readiness、Flyway v14 和公网 Java readiness 均返回成功。
+- 远端 `jarvis-ai.service`、`jarvis-java.service`、`postgresql` 均为 active；Java readiness、Python 内部 token readiness、Flyway v17 和公网 Java readiness 均返回成功。
 - 公网数据库健康接口返回 401（该接口受认证保护），属于预期安全行为。
 - 使用真实生产烟测账号完成：登录、数据库详情、行情、1Hz 行情 SSE、日 K、模拟盘、AI capabilities、Agent SSE、Agent PostgreSQL 事件回放、可复现回测和退出登录均通过；Agent SSE 的代理连接关闭码已按事件终态校验处理，不影响业务事件完整性。
 - 2026-09-21 05:35 运行升级后的 `CHECK_AGENT_STREAM=1 CHECK_AGENT_RECOVERY=1` 专项烟测：除 Agent 真实工作流、`tool_call`、PostgreSQL 事件回放、断线取消/重订阅和回测登出外，烟测脚本还强制验证每个运行中工具步骤的 `step_started → tool_call → tool_result → step_completed` 顺序、共享 `stepId` 与终态事件；全部通过，此前可复现的断线取消 409 已不再出现。
@@ -70,4 +70,4 @@
 
 ## 结论
 
-核心业务功能已持续补齐，RSS AI/资讯链路和 Agent 的真实工具调用、取消、断线重订阅成功流已发布并完成生产烟测，Agent 的真实登录浏览器成功/失败/停止流也已验收；当前仍不能宣称“全部需求已生产验收完成”。剩余工作集中在管理员 OAuth/审计完整验收、RSS 通知与 usage 的真实业务触发、测试 Agent 的真实账号自动编排、监控告警导入以及视觉人工确认，不应通过伪造数据或跳过认证来标记完成。
+核心业务功能已持续补齐，RSS AI/资讯链路和 Agent 的真实工具调用、取消、断线重订阅成功流已发布并完成生产烟测，Agent 的真实登录浏览器成功/失败/停止流也已验收；当前仍不能宣称“全部需求已生产验收完成”。剩余工作集中在管理员 OAuth/审计完整验收、RSS 通知与 usage 的真实业务触发、监控告警在真实业务流量下的 firing/恢复验证以及视觉人工确认，不应通过伪造数据或跳过认证来标记完成。

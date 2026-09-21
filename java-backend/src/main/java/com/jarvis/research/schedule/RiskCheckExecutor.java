@@ -85,8 +85,8 @@ public class RiskCheckExecutor implements ScheduledTaskExecutor {
         String artifacts = writeJson(artifacts(account, warnBelowPct));
 
         if (isAlert(riskStatus, maintPct, warnBelowPct)) {
-            // 命中只在日志里留一行，不推外部渠道 —— 通知属于 PRD「站内通知」那条线，
-            // 尚未实现前先靠执行历史的 FAILED/摘要呈现，别在这里私接一个推送通道。
+            // 执行器只负责产出风险结果；站内提醒由 ScheduledTaskNotificationListener
+            // 统一消费 RISK_ALERT 事件，避免在各个执行器里重复接入通知通道。
             log.warn("定时风险检测命中。taskId={} userId={} maintMarginPct={} riskStatus={}",
                     task.getId(), task.getUserId(), maintPct, riskStatus);
         }
