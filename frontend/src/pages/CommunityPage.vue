@@ -19,6 +19,8 @@ const postText = ref('')
 const groups = ref([])
 const groupQuery = ref('')
 const selectedGroup = ref(null)
+const editingGroup = ref(false)
+const groupEdit = ref({ name: '', description: '', visibility: 'OPEN' })
 const groupPosts = ref([])
 const groupPostText = ref('')
 const newGroup = ref({ name: '', description: '', visibility: 'OPEN' })
@@ -96,7 +98,26 @@ async function openGroup(groupId) {
       api.communityGroup(groupId), api.communityGroupPosts(groupId, 0, 30).catch(() => null),
     ])
     selectedGroup.value = responseData(detail)
+    groupEdit.value = {
+      name: selectedGroup.value?.name || '',
+      description: selectedGroup.value?.description || '',
+      visibility: selectedGroup.value?.visibility || 'OPEN',
+    }
     groupPosts.value = posts ? pageItems(posts) : []
+  })
+}
+
+async function saveGroupEdit() {
+  if (!selectedGroup.value?.id || !groupEdit.value.name.trim()) return
+  await run(async () => {
+    await api.communityUpdateGroup(selectedGroup.value.id, {
+      name: groupEdit.value.name.trim(),
+      description: groupEdit.value.description.trim(),
+      visibility: groupEdit.value.visibility,
+    })
+    editingGroup.value = false
+    await Promise.all([openGroup(selectedGroup.value.id), loadGroups()])
+    setNotice('小组资料已更新')
   })
 }
 
@@ -293,7 +314,7 @@ onMounted(async () => {
         </div>
       </aside>
       <main v-if="selectedGroup" class="group-room">
-        <header><div><span>{{ selectedGroup.visibility }}</span><h3>{{ selectedGroup.name }}</h3><p>{{ selectedGroup.description || '暂无小组简介。' }}</p></div><div class="group-actions"><button v-if="!selectedGroupJoined && selectedGroup.visibility === 'OPEN'" type="button" @click="joinGroup(selectedGroup.id)">加入</button><button v-else-if="selectedGroupJoined && selectedGroupRole !== 'OWNER'" type="button" @click="leaveGroup(selectedGroup.id)">退出</button></div></header>
+        <header><div v-if="!editingGroup"><span>{{ selectedGroup.visibility }}</span><h3>{{ selectedGroup.name }}</h3><p>{{ selectedGroup.description || '暂无小组简介。' }}</p></div><div v-else class="group-edit-fields"><input v-model="groupEdit.name" maxlength="80" /><textarea v-model="groupEdit.description" maxlength="500" rows="2"></textarea><select v-model="groupEdit.visibility"><option value="OPEN">OPEN</option><option value="CLOSED">CLOSED</option></select></div><div class="group-actions"><button v-if="selectedGroupRole === 'OWNER' && !editingGroup" type="button" @click="editingGroup = true">编辑</button><button v-if="selectedGroupRole === 'OWNER' && editingGroup" type="button" @click="saveGroupEdit">保存</button><button v-if="selectedGroupRole === 'OWNER' && editingGroup" type="button" @click="editingGroup = false">取消</button><button v-if="!selectedGroupJoined && selectedGroup.visibility === 'OPEN'" type="button" @click="joinGroup(selectedGroup.id)">加入</button><button v-else-if="selectedGroupJoined && selectedGroupRole !== 'OWNER'" type="button" @click="leaveGroup(selectedGroup.id)">退出</button></div></header>
         <div class="group-metrics"><div><span>成员</span><b>{{ selectedGroup.memberCount }}</b></div><div><span>动态</span><b>{{ selectedGroup.postCount }}</b></div><div><span>我的角色</span><b>{{ selectedGroup.role || '访客' }}</b></div></div>
         <section v-if="selectedGroupRole === 'OWNER'" class="invite-panel">
           <div class="invite-row"><input v-model="inviteQuery" placeholder="按昵称搜索成员" @keyup.enter="searchInviteUsers" /><button type="button" @click="searchInviteUsers">搜索</button></div>
@@ -375,6 +396,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .group-list > button.active, .user-directory > button.active, .conversation-list > button.active { background: var(--workspace-accent-wash); }
 .group-list > button > span, .user-directory > button > span:nth-child(2), .conversation-list > button > span:nth-child(2) { min-width: 0; flex: 1; display: grid; gap: 3px; }.group-list strong, .user-directory strong, .conversation-list strong { font-size: 9px; }.group-list small, .user-directory small, .conversation-list small { color: var(--subtle); font-size: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.group-list i, .conversation-list i { color: var(--accent-strong); font-size: 8px; font-style: normal; }
 .group-room > header, .profile-preview > header, .message-room > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 16px; border-bottom: 1px solid var(--line); }.group-room h3, .profile-preview h3, .message-room h3 { margin: 5px 0; font-size: 18px; }.group-room p, .profile-preview p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.6; }
+.group-edit-fields { flex: 1; display: grid; gap: 7px; }
 .group-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 0 12px; }.group-metrics div { padding: 10px; border: 1px solid var(--line); border-radius: 8px; display: grid; gap: 5px; }.group-metrics span { color: var(--subtle); font-size: 8px; }.group-metrics b { font-size: 13px; }
 .invite-row, .search-row { display: flex; gap: 7px; padding: 0 12px; }.invite-row input, .search-row input { flex: 1; }.group-composer { display: grid; gap: 7px; padding: 0 12px; }.group-composer button { justify-self: end; }
 .invite-panel { display: grid; gap: 6px; }.invite-candidates { display: grid; margin: 0 12px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }.invite-candidates > button { display: flex; align-items: center; gap: 8px; padding: 8px 9px; border: 0; border-bottom: 1px solid var(--line); background: var(--panel); color: inherit; cursor: pointer; text-align: left; }.invite-candidates > button:last-child { border-bottom: 0; }.invite-candidates > button > span:nth-child(2) { min-width: 0; flex: 1; display: grid; gap: 3px; }.invite-candidates strong { font-size: 9px; }.invite-candidates small { color: var(--subtle); font-size: 8px; }.invite-candidates i { color: var(--accent-strong); font-size: 8px; font-style: normal; }

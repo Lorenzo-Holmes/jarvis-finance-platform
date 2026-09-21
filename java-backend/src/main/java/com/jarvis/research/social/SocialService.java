@@ -122,6 +122,18 @@ public class SocialService {
         return groupView(userId, group, true);
     }
 
+    @Transactional
+    public Map<String, Object> updateGroup(Long userId, Long groupId, GroupRequest request, String clientIp) {
+        CommunityGroup group = requireGroup(groupId);
+        requireOwner(userId, group);
+        group.setName(request.getName().trim());
+        group.setDescription(trimToNull(request.getDescription()));
+        group.setVisibility(request.getVisibility() == null ? "OPEN" : request.getVisibility().trim().toUpperCase());
+        groupRepository.save(group);
+        auditService.record(userId, "COMMUNITY_GROUP_UPDATE", "group:" + groupId, clientIp, group.getName());
+        return groupView(userId, group, true);
+    }
+
     @Transactional(readOnly = true)
     public Map<String, Object> group(Long viewerId, Long groupId) {
         return groupView(viewerId, requireGroup(groupId), true);

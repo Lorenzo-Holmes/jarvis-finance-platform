@@ -135,6 +135,19 @@ class SocialServiceTest {
         verify(groupRepository).findByNameContainingIgnoreCaseOrderByUpdatedAtDesc(eq("gold"), any(PageRequest.class));
     }
 
+    @Test
+    void onlyOwnerCanEditGroup() {
+        CommunityGroup group = CommunityGroup.builder().id(8L).ownerUserId(9L).name("A").visibility("OPEN").build();
+        when(groupRepository.findById(8L)).thenReturn(Optional.of(group));
+        SocialDtos.GroupRequest request = new SocialDtos.GroupRequest();
+        request.setName("B");
+        request.setVisibility("OPEN");
+
+        ResponseStatusException error = assertThrows(ResponseStatusException.class,
+                () -> service.updateGroup(7L, 8L, request, "127.0.0.1"));
+        assertEquals(HttpStatus.FORBIDDEN, error.getStatusCode());
+    }
+
     private static User user(Long id) {
         return User.builder()
                 .id(id)

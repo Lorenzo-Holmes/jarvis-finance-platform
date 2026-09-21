@@ -73,6 +73,12 @@ public class SocialController {
         return ApiResponse.ok(socialService.group(CurrentUser.id(), groupId));
     }
 
+    @PatchMapping("/groups/{groupId}")
+    public ApiResponse<Object> updateGroup(@PathVariable Long groupId, @Valid @RequestBody GroupRequest body,
+                                           HttpServletRequest request) {
+        return ApiResponse.ok(socialService.updateGroup(CurrentUser.id(), groupId, body, clientIp(request)), "研究小组已更新");
+    }
+
     @PostMapping("/groups/{groupId}/join")
     public ApiResponse<Object> join(@PathVariable Long groupId, HttpServletRequest request) {
         return ApiResponse.ok(socialService.joinGroup(CurrentUser.id(), groupId, clientIp(request)), "已加入研究小组");
