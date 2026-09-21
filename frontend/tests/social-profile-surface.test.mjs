@@ -170,3 +170,10 @@ test('social directories expose a stable selection rail without layout shift', (
   assert.match(source, /\.conversation-list > button\.active::before/)
   assert.match(source, /transform: scaleY\(1\)/)
 })
+
+test('group room hierarchy separates hero context from metrics', () => {
+  const source = read('pages/CommunityPage.vue')
+  assert.match(source, /\.group-room > header \{ position: relative/)
+  assert.match(source, /\.group-metrics div:hover/)
+  assert.match(source, /\.group-metrics div:last-child b/)
+})
