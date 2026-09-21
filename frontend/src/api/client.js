@@ -360,6 +360,7 @@ export const api = {
 
   // 当前用户审计事件。
   auditRecent: (limit = 50) => get(API_BASE, '/api/audit/recent', { limit }),
+  auditReport: (days = 7) => get(API_BASE, '/api/audit/report', { days }),
 
   // 管理员账户、配额和功能权限
   adminUsers: (query = '', limit = 50) => get(API_BASE, '/api/admin/users', { query, limit }),
