@@ -57,9 +57,10 @@ public class SocialController {
     }
 
     @GetMapping("/groups")
-    public ApiResponse<Object> groups(@RequestParam(defaultValue = "0") int page,
+    public ApiResponse<Object> groups(@RequestParam(defaultValue = "") String query,
+                                      @RequestParam(defaultValue = "0") int page,
                                       @RequestParam(defaultValue = "20") int size) {
-        return ApiResponse.ok(socialService.groups(CurrentUser.id(), page, size));
+        return ApiResponse.ok(socialService.groups(CurrentUser.id(), query, page, size));
     }
 
     @PostMapping("/groups")

@@ -17,6 +17,7 @@ const notice = ref('')
 const feed = ref([])
 const postText = ref('')
 const groups = ref([])
+const groupQuery = ref('')
 const selectedGroup = ref(null)
 const groupPosts = ref([])
 const groupPostText = ref('')
@@ -68,7 +69,7 @@ async function publishPost() {
 }
 
 async function loadGroups() {
-  const response = await api.communityGroups(0, 50)
+  const response = await api.communityGroups(groupQuery.value.trim(), 0, 50)
   groups.value = pageItems(response)
 }
 
@@ -268,6 +269,7 @@ onMounted(async () => {
 
     <div v-else-if="activeTab === 'groups'" class="groups-layout">
       <aside class="group-directory">
+        <div class="search-row group-search"><input v-model="groupQuery" placeholder="搜索研究小组" @keyup.enter="loadGroups" /><button type="button" @click="loadGroups">搜索</button></div>
         <section class="create-group">
           <div class="section-label">CREATE GROUP</div>
           <input v-model="newGroup.name" maxlength="80" placeholder="小组名称" />
@@ -350,6 +352,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .network-rail { padding: 12px; align-self: start; display: grid; gap: 7px; }.network-rail > button { display: flex; align-items: center; justify-content: space-between; gap: 9px; padding: 9px 3px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: inherit; cursor: pointer; text-align: left; }.network-rail span { display: grid; gap: 4px; }.network-rail strong { font-size: 9px; }.network-rail small { color: var(--subtle); font-size: 8px; }
 .groups-layout, .users-layout, .messages-layout { display: grid; grid-template-columns: 290px minmax(0, 1fr); gap: 14px; min-height: 520px; }
 .group-directory, .user-directory, .conversation-list { min-height: 0; overflow: auto; }
+.group-search { padding: 10px; border-bottom: 1px solid var(--line); }
 .group-list, .user-directory, .conversation-list { display: grid; align-content: start; }
 .group-list > button, .user-directory > button, .conversation-list > button { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 10px 12px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: inherit; cursor: pointer; text-align: left; }
 .group-list > button.active, .user-directory > button.active, .conversation-list > button.active { background: var(--workspace-accent-wash); }

@@ -223,7 +223,7 @@ export const api = {
   socialUserActivity: (userId, page = 0, size = 20) => get(API_BASE, `/api/social/users/${userId}/activity`, { page, size }),
   communityFeed: (page = 0, size = 20) => get(API_BASE, '/api/social/feed', { page, size }),
   communityCreatePost: (body) => post(API_BASE, '/api/social/posts', body),
-  communityGroups: (page = 0, size = 30) => get(API_BASE, '/api/social/groups', { page, size }),
+  communityGroups: (query = '', page = 0, size = 30) => get(API_BASE, '/api/social/groups', { query, page, size }),
   communityGroup: (groupId) => get(API_BASE, `/api/social/groups/${groupId}`),
   communityCreateGroup: (body) => post(API_BASE, '/api/social/groups', body),
   communityJoinGroup: (groupId) => post(API_BASE, `/api/social/groups/${groupId}/join`, {}),

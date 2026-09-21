@@ -6,4 +6,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface CommunityGroupRepository extends JpaRepository<CommunityGroup, Long> {
     Page<CommunityGroup> findAllByOrderByUpdatedAtDesc(Pageable pageable);
+    Page<CommunityGroup> findByNameContainingIgnoreCaseOrderByUpdatedAtDesc(String name, Pageable pageable);
 }

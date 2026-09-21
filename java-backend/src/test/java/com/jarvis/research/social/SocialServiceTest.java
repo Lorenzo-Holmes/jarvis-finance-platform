@@ -14,6 +14,7 @@ import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.Optional;
 import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -122,6 +123,16 @@ class SocialServiceTest {
         when(messageRepository.countByRecipientUserIdAndReadAtIsNull(7L)).thenReturn(4L);
 
         assertEquals(4L, service.unreadMessageCount(7L).get("count"));
+    }
+
+    @Test
+    void groupSearchUsesCaseInsensitiveNameQueryWhenProvided() {
+        when(groupRepository.findByNameContainingIgnoreCaseOrderByUpdatedAtDesc(eq("gold"), any(PageRequest.class)))
+                .thenReturn(new PageImpl<>(java.util.List.of()));
+
+        service.groups(7L, " gold ", 0, 20);
+
+        verify(groupRepository).findByNameContainingIgnoreCaseOrderByUpdatedAtDesc(eq("gold"), any(PageRequest.class));
     }
 
     private static User user(Long id) {

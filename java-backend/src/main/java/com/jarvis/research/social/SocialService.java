@@ -98,9 +98,12 @@ public class SocialService {
     }
 
     @Transactional(readOnly = true)
-    public Map<String, Object> groups(Long viewerId, int page, int size) {
-        return pageView(groupRepository.findAllByOrderByUpdatedAtDesc(pageRequest(page, size))
-                .map(group -> groupView(viewerId, group, false)));
+    public Map<String, Object> groups(Long viewerId, String query, int page, int size) {
+        PageRequest request = pageRequest(page, size);
+        Page<CommunityGroup> groups = query == null || query.isBlank()
+                ? groupRepository.findAllByOrderByUpdatedAtDesc(request)
+                : groupRepository.findByNameContainingIgnoreCaseOrderByUpdatedAtDesc(query.trim(), request);
+        return pageView(groups.map(group -> groupView(viewerId, group, false)));
     }
 
     @Transactional
