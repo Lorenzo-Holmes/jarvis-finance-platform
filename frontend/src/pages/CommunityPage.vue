@@ -467,7 +467,7 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.community-page { display: grid; gap: 14px; min-height: 620px; color: var(--text); }
+.community-page { --social-motion-press: var(--ds-motion-press, 100ms); --social-motion-state: var(--ds-motion-state, 160ms); --social-motion-surface: var(--ds-motion-surface, 220ms); --social-motion-layout: var(--ds-motion-layout, 340ms); --social-ease: var(--ds-ease, cubic-bezier(.22,1,.36,1)); display: grid; gap: 14px; min-height: 620px; color: var(--text); }
 .page-head { display: flex; align-items: end; justify-content: space-between; gap: 18px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
 .page-head > div:first-child > span, .section-label, .group-room > header span, .profile-preview > header div > span, .message-room > header span { color: var(--subtle); font: 650 8px/1.2 ui-monospace, monospace; letter-spacing: .1em; }
 .page-head h2 { margin: 5px 0 4px; font-size: 24px; letter-spacing: -.025em; }
@@ -543,5 +543,9 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   .composer-panel, .network-rail, .create-group, .group-directory, .group-room, .user-directory, .profile-preview, .conversation-list, .message-room, .empty-panel { border-radius: 8px; }
   .group-metrics { grid-template-columns: 1fr; }
   .post-card { padding: 11px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .community-page, .community-page * { scroll-behavior: auto !important; }
+  .community-page *, .community-page *::before, .community-page *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
 }
 </style>

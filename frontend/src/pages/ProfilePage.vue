@@ -185,7 +185,7 @@ onMounted(load)
 </template>
 
 <style scoped>
-.profile-page { display: grid; gap: 14px; min-height: 620px; color: var(--text); }
+.profile-page { --social-motion-press: var(--ds-motion-press, 100ms); --social-motion-state: var(--ds-motion-state, 160ms); --social-motion-surface: var(--ds-motion-surface, 220ms); --social-motion-layout: var(--ds-motion-layout, 340ms); --social-ease: var(--ds-ease, cubic-bezier(.22,1,.36,1)); display: grid; gap: 14px; min-height: 620px; color: var(--text); }
 .page-head { display: flex; align-items: end; justify-content: space-between; gap: 18px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
 .page-head > div > span, .identity-copy > span, .edit-panel header span, .achievement-section header span, .activity-section header span { color: var(--subtle); font: 650 8px/1.2 ui-monospace, monospace; letter-spacing: .1em; }
 .page-head h2 { margin: 5px 0 4px; font-size: 24px; letter-spacing: -.025em; }.page-head p { margin: 0; color: var(--muted); font-size: 11px; }
@@ -213,4 +213,8 @@ input, textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--l
 .empty-state { padding: 18px 0; color: var(--subtle); font-size: 8px; }
 @media (max-width: 980px) { .profile-grid { grid-template-columns: 1fr; }.profile-grid > aside { grid-template-columns: repeat(3, 1fr); }.privacy-summary { grid-column: 1 / -1; } }
 @media (max-width: 700px) { .page-head { align-items: flex-start; flex-direction: column; }.page-head > button { min-height: 40px; }.identity-card { grid-template-columns: auto 1fr; }.completion { grid-column: 1 / -1; }.form-grid, .privacy-grid, .profile-grid > aside { grid-template-columns: 1fr; }.activity-list article { grid-template-columns: 1fr; }.achievement-filters, .activity-filters { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 3px; }.achievement-filters button, .activity-filters button { flex: 0 0 auto; min-height: 34px; } }
+@media (prefers-reduced-motion: reduce) {
+  .profile-page, .profile-page * { scroll-behavior: auto !important; }
+  .profile-page *, .profile-page *::before, .profile-page *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+}
 </style>

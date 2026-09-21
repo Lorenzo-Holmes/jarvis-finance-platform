@@ -104,3 +104,11 @@ test('all social avatar images suppress referrers and decode lazily', () => {
     }
   }
 })
+
+test('social surfaces inherit workspace motion tokens and respect reduced motion', () => {
+  for (const relative of ['pages/CommunityPage.vue', 'pages/ProfilePage.vue']) {
+    const source = read(relative)
+    assert.match(source, /--social-motion-surface: var\(--ds-motion-surface/)
+    assert.match(source, /prefers-reduced-motion: reduce/)
+  }
+})
