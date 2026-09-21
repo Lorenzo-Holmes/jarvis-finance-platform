@@ -166,6 +166,18 @@ public class SocialService {
     }
 
     @Transactional
+    public void removeMember(Long ownerId, Long groupId, Long userId, String clientIp) {
+        CommunityGroup group = requireGroup(groupId);
+        requireOwner(ownerId, group);
+        if (Objects.equals(group.getOwnerUserId(), userId)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "不能移除小组 OWNER");
+        }
+        if (!memberRepository.existsByGroupIdAndUserId(groupId, userId)) return;
+        memberRepository.deleteByGroupIdAndUserId(groupId, userId);
+        auditService.record(ownerId, "COMMUNITY_GROUP_MEMBER_REMOVE", "group:" + groupId, clientIp, "user=" + userId);
+    }
+
+    @Transactional
     public void leaveGroup(Long userId, Long groupId, String clientIp) {
         CommunityGroup group = requireGroup(groupId);
         if (Objects.equals(group.getOwnerUserId(), userId)) {

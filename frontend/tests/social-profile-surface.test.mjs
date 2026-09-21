@@ -25,7 +25,7 @@ test('frontend client exposes social, group, messaging, profile and achievement 
   for (const token of [
     'socialProfile:', 'updateSocialProfile:', 'socialAchievements:', 'socialUsers:',
     'communityFeed:', 'communityGroups:', 'communityCreateGroup:', 'communityCreatePost:',
-    'communityUpdateGroup:', 'communityJoinGroup:', 'communityAddMember:', 'socialConversations:', 'socialThread:',
+    'communityUpdateGroup:', 'communityJoinGroup:', 'communityAddMember:', 'communityRemoveMember:', 'socialConversations:', 'socialThread:',
     'socialMessageUnreadCount:', 'socialSendMessage:',
   ]) assert.match(client, new RegExp(token))
 })

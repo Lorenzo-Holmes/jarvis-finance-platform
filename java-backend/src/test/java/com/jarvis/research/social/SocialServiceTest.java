@@ -148,6 +148,17 @@ class SocialServiceTest {
         assertEquals(HttpStatus.FORBIDDEN, error.getStatusCode());
     }
 
+    @Test
+    void ownerCannotRemoveSelfFromMemberList() {
+        CommunityGroup group = CommunityGroup.builder().id(8L).ownerUserId(9L).name("A").visibility("OPEN").build();
+        when(groupRepository.findById(8L)).thenReturn(Optional.of(group));
+
+        ResponseStatusException error = assertThrows(ResponseStatusException.class,
+                () -> service.removeMember(9L, 8L, 9L, "127.0.0.1"));
+        assertEquals(HttpStatus.BAD_REQUEST, error.getStatusCode());
+        verify(memberRepository, never()).deleteByGroupIdAndUserId(anyLong(), anyLong());
+    }
+
     private static User user(Long id) {
         return User.builder()
                 .id(id)

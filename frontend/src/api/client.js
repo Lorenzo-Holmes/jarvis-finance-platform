@@ -232,6 +232,7 @@ export const api = {
   communityJoinGroup: (groupId) => post(API_BASE, `/api/social/groups/${groupId}/join`, {}),
   communityLeaveGroup: (groupId) => request(API_BASE, `/api/social/groups/${groupId}/leave`, { method: 'DELETE' }),
   communityAddMember: (groupId, userId) => post(API_BASE, `/api/social/groups/${groupId}/members/${userId}`, {}),
+  communityRemoveMember: (groupId, userId) => request(API_BASE, `/api/social/groups/${groupId}/members/${userId}`, { method: 'DELETE' }),
   communityGroupPosts: (groupId, page = 0, size = 20) => get(API_BASE, `/api/social/groups/${groupId}/posts`, { page, size }),
   communityCreateGroupPost: (groupId, body) => post(API_BASE, `/api/social/groups/${groupId}/posts`, body),
   socialConversations: () => get(API_BASE, '/api/social/messages/conversations'),

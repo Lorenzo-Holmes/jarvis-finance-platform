@@ -169,6 +169,15 @@ async function addGroupMember(userId) {
   })
 }
 
+async function removeGroupMember(userId) {
+  if (!selectedGroup.value?.id || !userId) return
+  await run(async () => {
+    await api.communityRemoveMember(selectedGroup.value.id, userId)
+    await openGroup(selectedGroup.value.id)
+    setNotice('成员已移除')
+  })
+}
+
 async function searchUsers() {
   await run(async () => {
     const response = await api.socialUsers(userQuery.value.trim(), 0, 30)
@@ -325,6 +334,16 @@ onMounted(async () => {
             </button>
           </div>
         </section>
+        <section class="group-members-panel">
+          <div class="section-label">MEMBERS</div>
+          <div class="group-members-list">
+            <article v-for="member in selectedGroup.members || []" :key="member.user?.id">
+              <span class="avatar"><img v-if="member.user?.avatarUrl" :src="member.user.avatarUrl" alt="" /><b v-else>{{ (member.user?.displayName || '?').slice(0,1) }}</b></span>
+              <span><strong>{{ member.user?.displayName }}</strong><small>{{ member.role }}</small></span>
+              <button v-if="selectedGroupRole === 'OWNER' && member.role !== 'OWNER'" type="button" @click="removeGroupMember(member.user?.id)">移除</button>
+            </article>
+          </div>
+        </section>
         <section v-if="selectedGroupJoined" class="group-composer"><textarea v-model="groupPostText" maxlength="4000" rows="3" placeholder="在小组内发布研究记录…"></textarea><button type="button" @click="publishGroupPost">发布到小组</button></section>
         <div class="feed-list compact"><article v-for="post in groupPosts" :key="post.id" class="post-card"><header><button class="author" type="button" @click="openUser(post.author?.id); activeTab='users'"><span><strong>{{ post.author?.displayName }}</strong><small>{{ formatTime(post.createdAt) }}</small></span></button></header><p>{{ post.content }}</p></article><div v-if="!groupPosts.length" class="empty-state">当前没有可展示的小组动态。</div></div>
       </main>
@@ -400,6 +419,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .group-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 0 12px; }.group-metrics div { padding: 10px; border: 1px solid var(--line); border-radius: 8px; display: grid; gap: 5px; }.group-metrics span { color: var(--subtle); font-size: 8px; }.group-metrics b { font-size: 13px; }
 .invite-row, .search-row { display: flex; gap: 7px; padding: 0 12px; }.invite-row input, .search-row input { flex: 1; }.group-composer { display: grid; gap: 7px; padding: 0 12px; }.group-composer button { justify-self: end; }
 .invite-panel { display: grid; gap: 6px; }.invite-candidates { display: grid; margin: 0 12px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }.invite-candidates > button { display: flex; align-items: center; gap: 8px; padding: 8px 9px; border: 0; border-bottom: 1px solid var(--line); background: var(--panel); color: inherit; cursor: pointer; text-align: left; }.invite-candidates > button:last-child { border-bottom: 0; }.invite-candidates > button > span:nth-child(2) { min-width: 0; flex: 1; display: grid; gap: 3px; }.invite-candidates strong { font-size: 9px; }.invite-candidates small { color: var(--subtle); font-size: 8px; }.invite-candidates i { color: var(--accent-strong); font-size: 8px; font-style: normal; }
+.group-members-panel { display: grid; gap: 7px; padding: 0 12px; }.group-members-list { display: grid; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }.group-members-list article { display: flex; align-items: center; gap: 8px; padding: 8px 9px; border-bottom: 1px solid var(--line); }.group-members-list article:last-child { border-bottom: 0; }.group-members-list article > span:nth-child(2) { flex: 1; display: grid; gap: 2px; }.group-members-list strong { font-size: 9px; }.group-members-list small { color: var(--subtle); font-size: 7px; }.group-members-list button { border: 0; background: transparent; color: var(--bad); cursor: pointer; font-size: 8px; }
 .user-directory .search-row { padding: 10px; border-bottom: 1px solid var(--line); }
 .profile-preview > header { justify-content: flex-start; }.profile-preview > header > div { flex: 1; }.contact-card { margin: 0 14px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; display: grid; gap: 5px; }.contact-card span { color: var(--subtle); font-size: 8px; }.contact-card strong { font-size: 10px; }
 .achievement-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; padding: 0 14px; }.achievement-strip article { padding: 11px; border: 1px solid var(--line); border-radius: 9px; display: grid; gap: 5px; }.achievement-strip span, .achievement-strip small { color: var(--subtle); font-size: 7px; }.achievement-strip b { font-size: 9px; }

@@ -96,6 +96,13 @@ public class SocialController {
         return ApiResponse.ok(socialService.addMember(CurrentUser.id(), groupId, userId, clientIp(request)), "成员已加入");
     }
 
+    @DeleteMapping("/groups/{groupId}/members/{userId}")
+    public ApiResponse<Object> removeMember(@PathVariable Long groupId, @PathVariable Long userId,
+                                            HttpServletRequest request) {
+        socialService.removeMember(CurrentUser.id(), groupId, userId, clientIp(request));
+        return ApiResponse.ok(Map.of("groupId", groupId, "userId", userId), "成员已移除");
+    }
+
     @GetMapping("/feed")
     public ApiResponse<Object> feed(@RequestParam(defaultValue = "0") int page,
                                     @RequestParam(defaultValue = "20") int size) {
