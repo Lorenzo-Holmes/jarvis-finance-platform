@@ -49,6 +49,7 @@
 - 使用真实生产烟测账号完成：登录、数据库详情、行情、1Hz 行情 SSE、日 K、模拟盘、AI capabilities、Agent SSE、Agent PostgreSQL 事件回放、可复现回测和退出登录均通过；Agent SSE 的代理连接关闭码已按事件终态校验处理，不影响业务事件完整性。
 - 2026-09-21 05:35 运行升级后的 `CHECK_AGENT_STREAM=1 CHECK_AGENT_RECOVERY=1` 专项烟测：除 Agent 真实工作流、`tool_call`、PostgreSQL 事件回放、断线取消/重订阅和回测登出外，烟测脚本还强制验证每个运行中工具步骤的 `step_started → tool_call → tool_result → step_completed` 顺序、共享 `stepId` 与终态事件；全部通过，此前可复现的断线取消 409 已不再出现。
 - 使用真实生产会话对 `/api/news/analyze` 提交一条资讯联调通过，返回 `code=200`、1 条结构化分析并带有模型标识；未输出模型正文或任何凭据。
+- 使用生产 smoke 账号执行 Agent SSE 后复核 `ai_quota`：月度 Token usage 从 `20218` 增加到 `20926`（+708），确认本次上游 usage 事件已由 Java 计入 PostgreSQL；日请求计数按新周期重置为 1。
 - 使用生产 smoke 账号执行 `CHECK_RSS_NOTIFICATION=1`：临时 `DAILY_DIGEST(analyze=true)` 任务创建、立即执行、执行历史落库、站内通知读取和任务清理均通过；本次抓取没有 medium/high 风险资讯，因此没有触发 `NEWS_ALERT`，未将“没有命中”误报为通知成功。
 - 使用真实生产账号执行 Agent 浏览器验收 3/3 通过：真实 SSE/工具生命周期/Markdown 结论/历史运行通过；受控长连接验证 `run_cancelled → STOPPED` 和 `run_failed → FAILED`，生产实际取消接口与失败事件由后端专项烟测覆盖。
 - 远端监控已启用 Prometheus/Grafana Docker Compose：Prometheus 监听本机 `127.0.0.1:9090`，Grafana 监听本机 `127.0.0.1:3000`，Java Actuator 监听 `127.0.0.1:8201`；目标、告警组和 2 个 JARVIS dashboard 均已通过 HTTP API 复核。当前已有 stale quote / 风险跳过等真实指标告警状态，需继续按业务窗口观察，不把告警状态本身误判为代码故障。
@@ -63,8 +64,8 @@
 
 ### P1/P2
 
-- 流式 AI 响应的精确月度 Token usage 仍依赖上游稳定返回 usage 事件；当前非流式统计已完成。
-- PRD V1.2 的 RSS 信息源管理、10 源配置、用户订阅、AI 分析、重要事件提醒和多市场入口已发布；全局每日自动刷新已由 Java 调度器负责。生产日报执行链已通过 smoke，但当前业务窗口没有 medium/high 资讯，`NEWS_ALERT` 实际触发和上游模型返回 usage 仍需真实业务数据验收。
+- 流式 AI 响应的精确月度 Token usage 已在本次生产 Agent smoke 中观察到真实 usage 事件并完成计入；后续仍需持续监控不同上游模型的兼容性。
+- PRD V1.2 的 RSS 信息源管理、10 源配置、用户订阅、AI 分析、重要事件提醒和多市场入口已发布；全局每日自动刷新已由 Java 调度器负责。生产日报执行链已通过 smoke，但当前业务窗口没有 medium/high 资讯，`NEWS_ALERT` 实际触发仍需等待真实高/中风险资讯或用户验收窗口。
 - 测试 Agent 已支持真实账号下的 Agent 自动编排并执行通过；当前已补齐主要业务域的显式 project 映射，后续新增 PRD 仍需补充对应浏览器用例与映射规则。
 - Grafana/Prometheus 的仓库模板已补齐并完成生产导入；仍需在真实业务流量下继续验证 5xx、429/502、Hikari、行情源熔断等告警是否按预期 firing/恢复。
 - 视觉规范文档中关于档案海景深、玻璃层次、长时间循环、移动端逐页像素审阅的 checklist 仍属于人工设计验收，不能用单元测试代替。
