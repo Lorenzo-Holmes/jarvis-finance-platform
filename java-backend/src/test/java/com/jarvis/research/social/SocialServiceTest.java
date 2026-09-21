@@ -110,6 +110,19 @@ class SocialServiceTest {
     }
 
     @Test
+    void directMessageRejectsInvisibleControlCharactersBeforePersisting() {
+        when(userRepository.findById(8L)).thenReturn(Optional.of(user(8L)));
+        MessageRequest request = new MessageRequest();
+        request.setContent("hello\u0000world");
+
+        ResponseStatusException error = assertThrows(ResponseStatusException.class,
+                () -> service.sendMessage(7L, 8L, request, "127.0.0.1"));
+
+        assertEquals(HttpStatus.BAD_REQUEST, error.getStatusCode());
+        verify(messageRepository, never()).save(any());
+    }
+
+    @Test
     void profileRejectsNonHttpsAvatarBeforePersisting() {
         User current = user(3L);
         when(userRepository.findById(3L)).thenReturn(Optional.of(current));

@@ -69,6 +69,9 @@ public class SocialService {
     @Transactional
     public Map<String, Object> updateProfile(Long userId, ProfileUpdateRequest request, String clientIp) {
         User user = requireUser(userId);
+        validateUserText("displayName", request.getDisplayName());
+        validateUserText("signature", request.getSignature());
+        validateUserText("contactInfo", request.getContactInfo());
         String displayName = request.getDisplayName().trim();
         String avatarUrl = trimToNull(request.getAvatarUrl());
         String signature = trimToNull(request.getSignature());
@@ -119,6 +122,8 @@ public class SocialService {
 
     @Transactional
     public Map<String, Object> createGroup(Long userId, GroupRequest request, String clientIp) {
+        validateUserText("group.name", request.getName());
+        validateUserText("group.description", request.getDescription());
         CommunityGroup group = groupRepository.save(CommunityGroup.builder()
                 .ownerUserId(userId)
                 .name(request.getName().trim())
@@ -137,6 +142,8 @@ public class SocialService {
     public Map<String, Object> updateGroup(Long userId, Long groupId, GroupRequest request, String clientIp) {
         CommunityGroup group = requireGroup(groupId);
         requireOwner(userId, group);
+        validateUserText("group.name", request.getName());
+        validateUserText("group.description", request.getDescription());
         group.setName(request.getName().trim());
         group.setDescription(trimToNull(request.getDescription()));
         group.setVisibility(request.getVisibility() == null ? "OPEN" : request.getVisibility().trim().toUpperCase());
@@ -247,6 +254,7 @@ public class SocialService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "不能给自己发送私信");
         }
         requireActiveUser(recipientId);
+        validateUserText("message.content", request.getContent());
         DirectMessage message = messageRepository.save(DirectMessage.builder()
                 .senderUserId(senderId).recipientUserId(recipientId).content(request.getContent().trim())
                 .createdAt(LocalDateTime.now()).build());
@@ -300,6 +308,9 @@ public class SocialService {
     }
 
     private Map<String, Object> createPost(Long userId, Long groupId, PostRequest request, String clientIp) {
+        validateUserText("post.content", request.getContent());
+        validateUserText("post.referenceType", request.getReferenceType());
+        validateUserText("post.referenceId", request.getReferenceId());
         String referenceType = trimToNull(request.getReferenceType());
         String referenceId = trimToNull(request.getReferenceId());
         if ((referenceType == null) != (referenceId == null)) {
@@ -517,5 +528,15 @@ public class SocialService {
         if (value == null) return "";
         String text = value.trim().replaceAll("\\s+", " ");
         return text.length() <= max ? text : text.substring(0, max) + "…";
+    }
+
+    private static void validateUserText(String field, String value) {
+        if (value == null) return;
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            if (Character.isISOControl(ch) && ch != '\n' && ch != '\r' && ch != '\t') {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, field + " 包含不允许的控制字符");
+            }
+        }
     }
 }
