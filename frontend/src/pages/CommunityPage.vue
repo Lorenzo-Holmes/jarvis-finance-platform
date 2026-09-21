@@ -15,6 +15,8 @@ const error = ref('')
 const notice = ref('')
 
 const feed = ref([])
+const feedPage = ref(0)
+const feedHasMore = ref(false)
 const postText = ref('')
 const groups = ref([])
 const groupQuery = ref('')
@@ -43,6 +45,7 @@ const selectedGroupJoined = computed(() => Boolean(selectedGroup.value?.joined))
 
 function responseData(response) { return response?.data ?? response }
 function pageItems(response) { return responseData(response)?.items || [] }
+function pageMeta(response) { return responseData(response) || {} }
 
 function setNotice(value) {
   notice.value = value
@@ -55,9 +58,13 @@ async function run(task) {
   try { return await task() } catch (e) { error.value = e?.message || String(e); throw e } finally { loading.value = false }
 }
 
-async function loadFeed() {
-  const response = await api.communityFeed(0, 30)
-  feed.value = pageItems(response)
+async function loadFeed(reset = true) {
+  const nextPage = reset ? 0 : feedPage.value + 1
+  const response = await api.communityFeed(nextPage, 20)
+  const data = pageMeta(response)
+  feed.value = reset ? pageItems(response) : [...feed.value, ...pageItems(response)]
+  feedPage.value = Number(data.page || nextPage)
+  feedHasMore.value = feedPage.value + 1 < Number(data.totalPages || 0)
 }
 
 async function publishPost() {
@@ -66,7 +73,7 @@ async function publishPost() {
   await run(async () => {
     await api.communityCreatePost({ content })
     postText.value = ''
-    await loadFeed()
+    await loadFeed(true)
     setNotice('动态已发布')
   })
 }
@@ -76,7 +83,7 @@ async function deletePost(post) {
   await run(async () => {
     await api.communityDeletePost(post.id)
     if (selectedGroup.value?.id && post.groupId === selectedGroup.value.id) await openGroup(selectedGroup.value.id)
-    await loadFeed()
+    await loadFeed(true)
     setNotice('动态已删除')
   })
 }
@@ -306,6 +313,7 @@ onMounted(async () => {
             <footer><button type="button" @click="share(post, 'weibo')">微博</button><button type="button" @click="share(post, 'xiaohongshu')">小红书</button><button v-if="post.mine" class="danger-link" type="button" @click="deletePost(post)">删除</button></footer>
           </article>
           <div v-if="!feed.length && !loading" class="empty-state">还没有公开研究动态。</div>
+          <button v-if="feedHasMore" class="load-more" type="button" :disabled="loading" @click="loadFeed(false)">加载更早动态</button>
         </section>
       </main>
       <aside class="network-rail">
@@ -437,5 +445,6 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .activity-list { display: grid; gap: 0; padding: 0 14px 14px; }.activity-list article { display: grid; grid-template-columns: 120px 1fr auto; gap: 8px; padding: 9px 0; border-bottom: 1px solid var(--line); }.activity-list article span, .activity-list article small { color: var(--subtle); font-size: 8px; }.activity-list article p { margin: 0; color: var(--muted); font-size: 9px; }
 .message-room { grid-template-rows: auto minmax(280px, 1fr) auto; }.message-thread { padding: 14px; overflow: auto; display: flex; flex-direction: column; gap: 8px; }.message-thread article { max-width: 72%; align-self: flex-start; padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); }.message-thread article.mine { align-self: flex-end; background: var(--workspace-accent-wash); }.message-thread p { margin: 0 0 5px; font-size: 10px; line-height: 1.55; }.message-thread small { color: var(--subtle); font-size: 7px; }.message-room > footer { display: flex; gap: 8px; padding: 12px; border-top: 1px solid var(--line); }.message-room > footer textarea { flex: 1; }
 .empty-state, .empty-panel { padding: 24px; color: var(--subtle); font-size: 9px; }.empty-panel { display: grid; place-items: center; }
+.load-more { justify-self: center; border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--muted); padding: 7px 13px; cursor: pointer; font-size: 8px; }
 @media (max-width: 980px) { .feed-layout { grid-template-columns: 1fr; }.network-rail { display: none; }.groups-layout, .users-layout, .messages-layout { grid-template-columns: 1fr; }.group-directory, .user-directory, .conversation-list { max-height: 320px; } }
 </style>
