@@ -103,7 +103,7 @@ public class SocialService {
         Page<CommunityGroup> groups = query == null || query.isBlank()
                 ? groupRepository.findVisibleToUser(viewerId, request)
                 : groupRepository.findVisibleToUserByName(viewerId, query.trim(), request);
-        return pageView(groups.map(group -> groupView(viewerId, group, false)));
+        return groupPageView(viewerId, groups);
     }
 
     @Transactional
@@ -330,6 +330,46 @@ public class SocialService {
                             "user", publicUser(viewerId, users.get(member.getUserId()))
                     )).toList());
         } else out.put("members", List.of());
+        return out;
+    }
+
+    private Map<String, Object> groupPageView(Long viewerId, Page<CommunityGroup> page) {
+        List<CommunityGroup> groups = page.getContent();
+        if (groups.isEmpty()) return pageView(page, List.of());
+        List<Long> groupIds = groups.stream().map(CommunityGroup::getId).toList();
+        Set<Long> ownerIds = groups.stream().map(CommunityGroup::getOwnerUserId)
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        Map<Long, User> owners = new HashMap<>();
+        userRepository.findAllById(ownerIds).forEach(user -> owners.put(user.getId(), user));
+        Map<Long, CommunityGroupMember> memberships = new HashMap<>();
+        memberRepository.findByGroupIdInAndUserId(groupIds, viewerId)
+                .forEach(member -> memberships.put(member.getGroupId(), member));
+        Map<Long, Long> memberCounts = countMap(memberRepository.countByGroupIds(groupIds));
+        Map<Long, Long> postCounts = countMap(postRepository.countByGroupIds(groupIds));
+        List<Map<String, Object>> items = groups.stream().map(group -> {
+            CommunityGroupMember membership = memberships.get(group.getId());
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("id", group.getId()); out.put("name", group.getName()); out.put("description", group.getDescription());
+            out.put("visibility", group.getVisibility()); out.put("createdAt", group.getCreatedAt()); out.put("updatedAt", group.getUpdatedAt());
+            out.put("memberCount", memberCounts.getOrDefault(group.getId(), 0L));
+            out.put("postCount", postCounts.getOrDefault(group.getId(), 0L));
+            User owner = owners.get(group.getOwnerUserId());
+            if (owner != null) out.put("owner", publicUser(viewerId, owner));
+            out.put("joined", membership != null);
+            out.put("role", membership == null ? null : membership.getRole());
+            out.put("members", List.of());
+            return out;
+        }).toList();
+        return pageView(page, items);
+    }
+
+    private static Map<Long, Long> countMap(List<Object[]> rows) {
+        Map<Long, Long> out = new HashMap<>();
+        for (Object[] row : rows) {
+            if (row != null && row.length >= 2 && row[0] instanceof Number id && row[1] instanceof Number count) {
+                out.put(id.longValue(), count.longValue());
+            }
+        }
         return out;
     }
 

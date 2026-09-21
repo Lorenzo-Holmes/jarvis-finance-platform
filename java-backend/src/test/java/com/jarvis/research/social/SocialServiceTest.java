@@ -181,6 +181,26 @@ class SocialServiceTest {
     }
 
     @Test
+    void groupDirectoryBatchLoadsCountsOwnersAndMemberships() {
+        CommunityGroup first = CommunityGroup.builder().id(1L).ownerUserId(8L).name("A").visibility("OPEN").build();
+        CommunityGroup second = CommunityGroup.builder().id(2L).ownerUserId(9L).name("B").visibility("OPEN").build();
+        when(groupRepository.findVisibleToUser(eq(7L), any())).thenReturn(new PageImpl<>(java.util.List.of(first, second)));
+        when(userRepository.findAllById(any())).thenReturn(java.util.List.of(user(8L), user(9L)));
+        when(memberRepository.findByGroupIdInAndUserId(any(), eq(7L))).thenReturn(java.util.List.of(
+                CommunityGroupMember.builder().groupId(1L).userId(7L).role("MEMBER").build()));
+        when(memberRepository.countByGroupIds(any())).thenReturn(java.util.List.of(new Object[]{1L, 3L}, new Object[]{2L, 5L}));
+        when(postRepository.countByGroupIds(any())).thenReturn(java.util.List.of(new Object[]{1L, 4L}, new Object[]{2L, 6L}));
+
+        Map<String, Object> result = service.groups(7L, "", 0, 20);
+
+        assertEquals(2, ((java.util.List<?>) result.get("items")).size());
+        verify(userRepository, times(1)).findAllById(any());
+        verify(memberRepository, never()).countByGroupId(anyLong());
+        verify(postRepository, never()).countByGroupId(anyLong());
+        verify(memberRepository, never()).findByGroupIdAndUserId(anyLong(), eq(7L));
+    }
+
+    @Test
     void onlyOwnerCanEditGroup() {
         CommunityGroup group = CommunityGroup.builder().id(8L).ownerUserId(9L).name("A").visibility("OPEN").build();
         when(groupRepository.findById(8L)).thenReturn(Optional.of(group));
