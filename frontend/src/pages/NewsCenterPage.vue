@@ -23,6 +23,8 @@ const filterStats = ref(null)
 const returnedCount = ref(0)
 const semanticRanking = ref(null)
 const expandedReasons = ref([])
+const savedSources = ref([])
+const savedTopics = ref([])
 
 const topicOptions = [
   { key: 'markets', label: '市场行情' },
@@ -34,6 +36,11 @@ const topicOptions = [
 
 const sourceCountLabel = computed(() => `${sources.value.length} 个可用来源`)
 const isAllSources = computed(() => selectedSources.value.length === 0)
+const stableList = value => [...value].map(String).sort().join('|')
+const subscriptionDirty = computed(() => (
+  stableList(selectedSources.value) !== stableList(savedSources.value)
+  || stableList(selectedTopics.value) !== stableList(savedTopics.value)
+))
 
 function responseError(response, fallback) {
   if (response?.code !== 200) throw new Error(response?.message || fallback)
@@ -49,6 +56,8 @@ async function loadPreferences() {
   sources.value = sourceResponse.data?.items || []
   selectedSources.value = [...(subscriptionResponse.data?.sourceKeys || [])]
   selectedTopics.value = [...(subscriptionResponse.data?.topics || [])]
+  savedSources.value = [...selectedSources.value]
+  savedTopics.value = [...selectedTopics.value]
 }
 
 async function loadDigest(force = false) {
@@ -118,6 +127,8 @@ async function saveSubscriptions() {
       topics: selectedTopics.value,
     })
     responseError(response, '资讯订阅保存失败')
+    savedSources.value = [...selectedSources.value]
+    savedTopics.value = [...selectedTopics.value]
     message.value = '资讯订阅已保存'
     await loadDigest(false)
   } catch (e) {
@@ -239,7 +250,8 @@ onMounted(load)
         </div>
         <div class="subscription-actions">
           <span>已选 {{ selectedSources.length || '全部' }} 个来源 · {{ selectedTopics.length || '全部' }} 个主题</span>
-          <button class="action-button primary" type="button" :disabled="saving" @click="saveSubscriptions">{{ saving ? '保存中…' : '保存订阅' }}</button>
+          <div class="save-state"><i :class="{ dirty: subscriptionDirty }"></i>{{ subscriptionDirty ? '有未保存更改' : '已同步' }}</div>
+          <button class="action-button primary" type="button" :disabled="saving || !subscriptionDirty" @click="saveSubscriptions">{{ saving ? '保存中…' : '保存订阅' }}</button>
         </div>
       </section>
 
@@ -337,6 +349,7 @@ onMounted(load)
 .topic-row { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; margin-top: 12px; color: var(--muted); font-size: 9px; }
 .topic-choice { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); cursor: pointer; }
 .subscription-actions { justify-content: space-between; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); color: var(--subtle); font-size: 9px; }
+.save-state { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; color: var(--subtle); font: 8px ui-monospace, monospace; }.save-state i { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); }.save-state i.dirty { background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 8%, transparent); }
 .feed-status { color: var(--ok); }
 .feed-status.muted { color: var(--bad); }
 .quality-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) auto auto; gap: 7px; align-items: center; margin: 10px 0 4px; }

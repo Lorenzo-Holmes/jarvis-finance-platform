@@ -71,3 +71,11 @@ test('news rows use restrained hover and focus-within interaction rails', () => 
   assert.match(board, /\.news-item::before/)
   assert.match(board, /\.news-item:hover, \.news-item:focus-within/)
 })
+
+test('subscription editor exposes deterministic unsaved state', () => {
+  const page = read('pages/NewsCenterPage.vue')
+  assert.match(page, /const savedSources = ref\(\[\]\)/)
+  assert.match(page, /const subscriptionDirty = computed/)
+  assert.match(page, /有未保存更改/)
+  assert.match(page, /:disabled="saving \|\| !subscriptionDirty"/)
+})
