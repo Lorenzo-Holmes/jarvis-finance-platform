@@ -236,6 +236,17 @@ class SocialServiceTest {
     }
 
     @Test
+    void deletingOwnPostAlsoRemovesItsActivityReference() {
+        CommunityPost post = CommunityPost.builder().id(12L).authorUserId(7L).content("x").build();
+        when(postRepository.findById(12L)).thenReturn(Optional.of(post));
+
+        service.deletePost(7L, 12L, "127.0.0.1");
+
+        verify(activityRepository).deleteByUserIdAndReferenceTypeAndReferenceId(7L, "POST", "12");
+        verify(postRepository).delete(post);
+    }
+
+    @Test
     void conversationsBatchLoadPartnerProfilesInsteadOfNPlusOneLookups() {
         DirectMessage first = DirectMessage.builder()
                 .id(1L).senderUserId(7L).recipientUserId(8L).content("a")

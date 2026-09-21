@@ -219,6 +219,7 @@ public class SocialService {
         if (!Objects.equals(post.getAuthorUserId(), userId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "只能删除自己发布的动态");
         }
+        activityRepository.deleteByUserIdAndReferenceTypeAndReferenceId(userId, "POST", String.valueOf(postId));
         postRepository.delete(post);
         auditService.record(userId, "COMMUNITY_POST_DELETE", "post:" + postId, clientIp, "deleted");
     }
