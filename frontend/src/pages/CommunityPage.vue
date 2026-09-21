@@ -24,6 +24,8 @@ const selectedGroup = ref(null)
 const editingGroup = ref(false)
 const groupEdit = ref({ name: '', description: '', visibility: 'OPEN' })
 const groupPosts = ref([])
+const groupPostPage = ref(0)
+const groupPostHasMore = ref(false)
 const groupPostText = ref('')
 const newGroup = ref({ name: '', description: '', visibility: 'OPEN' })
 const inviteQuery = ref('')
@@ -111,17 +113,30 @@ async function createGroup() {
 async function openGroup(groupId) {
   if (!groupId) return
   await run(async () => {
-    const [detail, posts] = await Promise.all([
-      api.communityGroup(groupId), api.communityGroupPosts(groupId, 0, 30).catch(() => null),
-    ])
+    const detail = await api.communityGroup(groupId)
     selectedGroup.value = responseData(detail)
     groupEdit.value = {
       name: selectedGroup.value?.name || '',
       description: selectedGroup.value?.description || '',
       visibility: selectedGroup.value?.visibility || 'OPEN',
     }
-    groupPosts.value = posts ? pageItems(posts) : []
+    await loadGroupPosts(groupId, true)
   })
+}
+
+async function loadGroupPosts(groupId = selectedGroup.value?.id, reset = true) {
+  if (!groupId) return
+  const nextPage = reset ? 0 : groupPostPage.value + 1
+  try {
+    const response = await api.communityGroupPosts(groupId, nextPage, 15)
+    const data = pageMeta(response)
+    groupPosts.value = reset ? pageItems(response) : [...groupPosts.value, ...pageItems(response)]
+    groupPostPage.value = Number(data.page || nextPage)
+    groupPostHasMore.value = groupPostPage.value + 1 < Number(data.totalPages || 0)
+  } catch (_) {
+    if (reset) groupPosts.value = []
+    groupPostHasMore.value = false
+  }
 }
 
 async function saveGroupEdit() {
@@ -363,7 +378,7 @@ onMounted(async () => {
           </div>
         </section>
         <section v-if="selectedGroupJoined" class="group-composer"><textarea v-model="groupPostText" maxlength="4000" rows="3" placeholder="在小组内发布研究记录…"></textarea><button type="button" @click="publishGroupPost">发布到小组</button></section>
-        <div class="feed-list compact"><article v-for="post in groupPosts" :key="post.id" class="post-card"><header><button class="author" type="button" @click="openUser(post.author?.id); activeTab='users'"><span><strong>{{ post.author?.displayName }}</strong><small>{{ formatTime(post.createdAt) }}</small></span></button></header><p>{{ post.content }}</p><footer v-if="post.mine"><button class="danger-link" type="button" @click="deletePost(post)">删除</button></footer></article><div v-if="!groupPosts.length" class="empty-state">当前没有可展示的小组动态。</div></div>
+        <div class="feed-list compact"><article v-for="post in groupPosts" :key="post.id" class="post-card"><header><button class="author" type="button" @click="openUser(post.author?.id); activeTab='users'"><span><strong>{{ post.author?.displayName }}</strong><small>{{ formatTime(post.createdAt) }}</small></span></button></header><p>{{ post.content }}</p><footer v-if="post.mine"><button class="danger-link" type="button" @click="deletePost(post)">删除</button></footer></article><div v-if="!groupPosts.length" class="empty-state">当前没有可展示的小组动态。</div><button v-if="groupPostHasMore" class="load-more" type="button" :disabled="loading" @click="loadGroupPosts(selectedGroup.id, false)">加载更早小组动态</button></div>
       </main>
       <main v-else class="empty-panel">从左侧选择一个研究小组。</main>
     </div>

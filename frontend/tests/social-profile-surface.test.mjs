@@ -40,6 +40,8 @@ test('community surface contains groups, user discovery, direct messages and exp
   assert.match(page, /按昵称搜索成员/)
   assert.match(page, /feedHasMore/)
   assert.match(page, /加载更早动态/)
+  assert.match(page, /groupPostHasMore/)
+  assert.match(page, /加载更早小组动态/)
   assert.match(page, /shareToWeibo/)
   assert.match(page, /shareToXiaohongshu/)
 })
