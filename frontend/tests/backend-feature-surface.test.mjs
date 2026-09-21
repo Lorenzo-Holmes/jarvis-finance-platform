@@ -36,6 +36,29 @@ test('backend scheduled-task capabilities have a visible frontend workspace', ()
   assert.match(page, /analyzeNews/)
 })
 
+test('scheduled-task write actions are gated by the TASK_MANAGE capability', () => {
+  const client = read('api/client.js')
+  const page = read('pages/ScheduledTasksPage.vue')
+
+  // 后端只拦"会消耗资源"的动作，前端要在点下去之前就把它们置灰 ——
+  // 只靠 403 的话，用户填完整个表单才被告知没权限。
+  assert.match(client, /scheduledTaskCapabilities:/)
+  assert.match(client, /\/api\/scheduled-tasks\/capabilities/)
+  assert.match(page, /const canManage = ref\(true\)/)
+  // 默认放行：探测失败不能把本来能用的用户误挡在门外，门禁仍在服务端。
+  assert.match(page, /canManage\.value = capabilityResponse\?\.data\?\.can_manage !== false/)
+
+  // 四个消耗资源的动作按能力置灰……
+  assert.match(page, /:disabled="!canManage" @click="openCreate"/)
+  assert.match(page, /:disabled="!canManage" @click="openEdit\(task\)"/)
+  assert.match(page, /:disabled="!canManage \|\| actionId === task\.id" @click="taskAction\(task, 'run'\)"/)
+  assert.match(page, /:disabled="!canManage \|\| actionId === task\.id" @click="taskAction\(task, 'resume'\)"/)
+
+  // ……而暂停与删除刻意不加：被收回权限的账号仍必须能关掉自己还在跑的任务。
+  assert.match(page, /:disabled="actionId === task\.id" @click="taskAction\(task, 'pause'\)"/)
+  assert.match(page, /:disabled="actionId === task\.id" @click="taskAction\(task, 'delete'\)"/)
+})
+
 test('admin backend is surfaced as an ADMIN-only SYSTEM workspace instead of a legacy tab', () => {
   const app = read('App.vue')
   const modules = read('analysis-os/data/modules.js')

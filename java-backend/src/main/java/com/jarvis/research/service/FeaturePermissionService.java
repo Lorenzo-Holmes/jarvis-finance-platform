@@ -23,14 +23,35 @@ public class FeaturePermissionService {
 
     @Transactional(readOnly = true)
     public void require(Long userId, String featureKey) {
+        String reason = denyReason(userId, featureKey);
+        if (reason != null) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, reason);
+        }
+    }
+
+    /**
+     * 是否具备某功能权限，<strong>不抛异常</strong>。
+     *
+     * <p>给「动手之前先置灰」这类只读判断用：让用户在点下去之前就看到不可用，
+     * 比收到一个 403 更好（与 {@code ScheduledTaskController#types()} 同一取舍）。</p>
+     */
+    @Transactional(readOnly = true)
+    public boolean allows(Long userId, String featureKey) {
+        return denyReason(userId, featureKey) == null;
+    }
+
+    /**
+     * 权限判定，返回 {@code null} 表示放行，否则返回拒绝原因。
+     *
+     * <p>顺序：用户级配置优先（配过就按用户白名单），未配置则回落到用户组白名单，
+     * 两处都没配置过则放行 —— 保持对历史用户的兼容。</p>
+     */
+    private String denyReason(Long userId, String featureKey) {
         if (repository.countByUserId(userId) > 0) {
             boolean enabled = repository.findByUserIdAndFeatureKey(userId, featureKey)
                     .map(permission -> permission.isEnabled())
                     .orElse(false);
-            if (!enabled) {
-                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "当前账号未开通功能：" + featureKey);
-            }
-            return;
+            return enabled ? null : "当前账号未开通功能：" + featureKey;
         }
 
         Long groupId = groupMemberRepository.findByUserId(userId)
@@ -38,12 +59,10 @@ public class FeaturePermissionService {
                 .filter(UserGroup::isEnabled)
                 .map(UserGroup::getId)
                 .orElse(null);
-        if (groupId == null || groupPermissionRepository.countByGroupId(groupId) == 0) return;
+        if (groupId == null || groupPermissionRepository.countByGroupId(groupId) == 0) return null;
         boolean enabled = groupPermissionRepository.findByGroupIdAndFeatureKey(groupId, featureKey)
                 .map(permission -> permission.isEnabled())
                 .orElse(false);
-        if (!enabled) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "当前账号所属用户组未开通功能：" + featureKey);
-        }
+        return enabled ? null : "当前账号所属用户组未开通功能：" + featureKey;
     }
 }

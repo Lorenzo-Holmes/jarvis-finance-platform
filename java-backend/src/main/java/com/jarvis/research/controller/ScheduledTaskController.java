@@ -144,6 +144,24 @@ public class ScheduledTaskController {
         return ApiResponse.ok(service.typeCatalog());
     }
 
+    /**
+     * 当前账号对定时任务可用的能力。
+     *
+     * <p>前端据此把「新建 / 编辑 / 立即执行 / 恢复」置灰 —— 这四个动作后端会用
+     * {@link #FEATURE_KEY} 拦下，但让用户在点下去之前就看到不可用，比收到一个 403 更好
+     * （与 {@link #types()} 把未就绪类型置灰是同一取舍）。</p>
+     *
+     * <p>注意<strong>不</strong>包含列表 / 详情 / 暂停 / 删除：那四项刻意只做归属校验，
+     * 以便用户被收回功能权限后仍能关掉自己还在跑的任务。</p>
+     */
+    @GetMapping("/capabilities")
+    public ApiResponse<Map<String, Object>> capabilities() {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("feature_key", FEATURE_KEY);
+        payload.put("can_manage", featurePermissionService.allows(CurrentUser.id(), FEATURE_KEY));
+        return ApiResponse.ok(payload);
+    }
+
     private Map<String, Object> taskView(ScheduledTask task) {
         Map<String, Object> view = new LinkedHashMap<>();
         view.put("id", task.getId());
