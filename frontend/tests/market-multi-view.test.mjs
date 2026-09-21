@@ -66,6 +66,11 @@ test('market news accepts the Java daily-news payload shape instead of dropping 
         url: 'https://example.com/news/1',
         source: 'Example Wire',
         published: '2026-09-18T17:08:01Z',
+        source_ids: ['wire-a', 'wire-b'],
+        source_count: 2,
+        rank_score: 88.4,
+        hybrid_score: 91.2,
+        selection_reason: ['2 个来源确认'],
       },
     ],
   }, 12)
@@ -74,6 +79,10 @@ test('market news accepts the Java daily-news payload shape instead of dropping 
   assert.equal(items[0].title, 'Market headline')
   assert.equal(items[0].source, 'Example Wire')
   assert.equal(items[0].linkable, true)
+  assert.equal(items[0].sourceCount, 2)
+  assert.equal(items[0].rankScore, 88.4)
+  assert.equal(items[0].hybridScore, 91.2)
+  assert.deepEqual(items[0].selectionReason, ['2 个来源确认'])
 })
 
 test('market news is a dedicated section below the watchlist', () => {

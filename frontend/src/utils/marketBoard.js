@@ -72,6 +72,7 @@ export function normalizeNewsItem(raw, index = 0) {
   const url = String(raw?.url || raw?.link || '').trim()
   const source = String(raw?.source || raw?.source_name || raw?.source_id || '').trim()
   const published = String(raw?.published || raw?.published_at || raw?.added_at || '').trim()
+  const numeric = value => Number.isFinite(Number(value)) ? Number(value) : null
   if (!title) return null
   return {
     id: `${index}:${url || title}`,
@@ -81,6 +82,18 @@ export function normalizeNewsItem(raw, index = 0) {
     url,
     source,
     published,
+    category: String(raw?.category || '').trim(),
+    tags: Array.isArray(raw?.tags) ? raw.tags.map(item => String(item).trim()).filter(Boolean).slice(0, 12) : [],
+    sourceIds: Array.isArray(raw?.source_ids) ? raw.source_ids.map(item => String(item).trim()).filter(Boolean) : [],
+    sourceCount: Math.max(1, Number(raw?.source_count) || 1),
+    rankScore: numeric(raw?.rank_score),
+    hybridScore: numeric(raw?.hybrid_score),
+    semanticScore: numeric(raw?.semantic_score),
+    rerankScore: numeric(raw?.rerank_score),
+    rankingStage: String(raw?.ranking_stage || '').trim(),
+    selectionReason: Array.isArray(raw?.selection_reason)
+      ? raw.selection_reason.map(item => String(item).trim()).filter(Boolean).slice(0, 6)
+      : [],
     linkable: /^https?:\/\//i.test(url),
     host: newsHost(url),
   }

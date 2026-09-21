@@ -35,3 +35,12 @@ test('news center surfaces quality telemetry without requiring it', () => {
   assert.match(page, /来源覆盖/)
   assert.match(page, /v-if="qualityMetrics"/)
 })
+
+test('market news normalization preserves explainable intelligence fields', () => {
+  const utils = read('utils/marketBoard.js')
+  assert.match(utils, /sourceIds:/)
+  assert.match(utils, /sourceCount:/)
+  assert.match(utils, /rankScore:/)
+  assert.match(utils, /hybridScore:/)
+  assert.match(utils, /selectionReason:/)
+})
