@@ -44,3 +44,11 @@ test('market news normalization preserves explainable intelligence fields', () =
   assert.match(utils, /hybridScore:/)
   assert.match(utils, /selectionReason:/)
 })
+
+test('market news renders optional score and cross-source confirmation badges', () => {
+  const board = read('components/market/MarketNewsBoard.vue')
+  assert.match(board, /function displayScore/)
+  assert.match(board, /精选 \{\{ displayScore\(item\) \}\}/)
+  assert.match(board, /多源 ×\{\{ item\.sourceCount \}\}/)
+  assert.match(board, /class="intelligence-badges"/)
+})

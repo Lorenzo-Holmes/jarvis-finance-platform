@@ -98,6 +98,11 @@ function displayTitle(item) {
   return showOriginal.value ? (item.titleOriginal || item.title) : (item.titleZh || item.title)
 }
 
+function displayScore(item) {
+  const value = item?.hybridScore ?? item?.rankScore
+  return Number.isFinite(Number(value)) ? Math.round(Number(value)) : null
+}
+
 function previousPage() {
   page.value = Math.max(1, page.value - 1)
 }
@@ -170,6 +175,10 @@ onBeforeUnmount(() => {
         <div class="news-copy">
           <a v-if="item.linkable" :href="item.url" target="_blank" rel="noopener noreferrer">{{ displayTitle(item) }}</a>
           <strong v-else>{{ displayTitle(item) }}</strong>
+          <div v-if="displayScore(item) !== null || item.sourceCount > 1" class="intelligence-badges">
+            <span v-if="displayScore(item) !== null">精选 {{ displayScore(item) }}</span>
+            <span v-if="item.sourceCount > 1">多源 ×{{ item.sourceCount }}</span>
+          </div>
           <footer>
             <span>{{ item.source || item.host || '来源未知' }}</span>
             <time v-if="item.published">{{ formatNewsTime(item.published) }}</time>
@@ -209,6 +218,8 @@ onBeforeUnmount(() => {
 .news-copy { min-width: 0; }
 .news-copy a, .news-copy > strong { display: block; color: var(--text); font-size: 10.5px; font-weight: 600; line-height: 1.5; text-decoration: none; }
 .news-copy a:hover { color: var(--accent-strong); }
+.intelligence-badges { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.intelligence-badges span { padding: 2px 5px; border: 1px solid color-mix(in srgb, var(--accent) 16%, var(--line)); border-radius: 999px; background: color-mix(in srgb, var(--workspace-accent-wash) 34%, transparent); color: var(--muted); font: 650 7px/1 ui-monospace, monospace; letter-spacing: .02em; }
 .news-copy footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 7px; color: var(--subtle); font: 600 7.5px/1 ui-monospace, monospace; }
 .news-copy footer span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .news-copy time { flex: 0 0 auto; }
