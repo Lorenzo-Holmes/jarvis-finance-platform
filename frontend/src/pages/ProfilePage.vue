@@ -11,6 +11,7 @@ const saving = ref(false)
 const error = ref('')
 const notice = ref('')
 const achievementCategory = ref('ALL')
+const achievementStatus = ref('ALL')
 const form = ref({
   displayName: '', avatarUrl: '', signature: '', contactInfo: '',
   profilePublic: true, contactPublic: false, activityPublic: true,
@@ -23,6 +24,11 @@ const achievementCategories = computed(() => ['ALL', ...new Set((achievements.va
 const categoryAchievements = computed(() => achievementCategory.value === 'ALL'
   ? achievements.value.items || []
   : (achievements.value.items || []).filter(item => item.category === achievementCategory.value))
+const displayedAchievements = computed(() => {
+  if (achievementStatus.value === 'UNLOCKED') return categoryAchievements.value.filter(item => item.unlocked)
+  if (achievementStatus.value === 'IN_PROGRESS') return categoryAchievements.value.filter(item => !item.unlocked)
+  return categoryAchievements.value
+})
 const profileProgress = computed(() => {
   const fields = [form.value.displayName, form.value.avatarUrl, form.value.signature, form.value.contactInfo]
   return Math.round(fields.filter(value => String(value || '').trim()).length / fields.length * 100)
@@ -145,8 +151,13 @@ onMounted(load)
           <nav class="achievement-filters" aria-label="成就分类">
             <button v-for="category in achievementCategories" :key="category" type="button" :class="{ active: achievementCategory === category }" @click="achievementCategory = category">{{ category === 'ALL' ? '全部' : category }}</button>
           </nav>
+          <nav class="achievement-status" aria-label="成就状态">
+            <button type="button" :class="{ active: achievementStatus === 'ALL' }" @click="achievementStatus = 'ALL'">全部</button>
+            <button type="button" :class="{ active: achievementStatus === 'UNLOCKED' }" @click="achievementStatus = 'UNLOCKED'">已解锁</button>
+            <button type="button" :class="{ active: achievementStatus === 'IN_PROGRESS' }" @click="achievementStatus = 'IN_PROGRESS'">进行中</button>
+          </nav>
           <div class="achievement-grid">
-            <article v-for="item in categoryAchievements" :key="item.key" :class="{ unlocked: item.unlocked }">
+            <article v-for="item in displayedAchievements" :key="item.key" :class="{ unlocked: item.unlocked }">
               <div class="badge-mark"><span>{{ item.category }}</span><b>{{ item.unlocked ? '◆' : '◇' }}</b></div>
               <h4>{{ item.title }}</h4><p>{{ item.description }}</p>
               <div class="progress"><i><em :style="{ width: `${Math.min(100, ((item.progress || 0) / Math.max(1, item.target || 1)) * 100)}%` }"></em></i><small>{{ item.progress || 0 }}/{{ item.target || 1 }}</small></div>
@@ -188,6 +199,7 @@ input, textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--l
 .privacy-note { margin: -3px 0 0; padding: 8px 10px; border-left: 2px solid var(--accent); background: var(--workspace-accent-wash); color: var(--muted); font-size: 8px; line-height: 1.5; }
 .achievement-section, .activity-section { padding: 14px; }.achievement-section header strong { color: var(--accent-strong); font: 650 11px/1 ui-monospace, monospace; }
 .achievement-filters { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }.achievement-filters button { border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--subtle); padding: 5px 8px; cursor: pointer; font-size: 7px; }.achievement-filters button.active { color: var(--accent-strong); border-color: color-mix(in srgb, var(--accent) 36%, var(--line)); background: var(--workspace-accent-wash); }
+.achievement-status { display: flex; gap: 6px; margin-top: 7px; }.achievement-status button { border: 0; background: transparent; color: var(--subtle); padding: 3px 0; cursor: pointer; font-size: 8px; }.achievement-status button.active { color: var(--accent-strong); text-decoration: underline; text-underline-offset: 3px; }
 .achievement-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; margin-top: 12px; }.achievement-grid article { min-height: 135px; display: grid; align-content: start; gap: 7px; padding: 12px; border: 1px solid var(--line); border-radius: 9px; opacity: .52; }.achievement-grid article.unlocked { opacity: 1; border-color: color-mix(in srgb, var(--accent) 28%, var(--line)); background: color-mix(in srgb, var(--workspace-accent-wash) 28%, transparent); }.badge-mark { display: flex; align-items: center; justify-content: space-between; color: var(--subtle); font: 650 7px/1 ui-monospace, monospace; }.badge-mark b { color: var(--accent-strong); font-size: 12px; }.achievement-grid h4 { margin: 0; font-size: 10px; }.achievement-grid p { margin: 0; color: var(--muted); font-size: 8px; line-height: 1.5; }.achievement-grid time { color: var(--subtle); font-size: 7px; }.progress { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 7px; }.progress small { color: var(--subtle); font-size: 7px; }
 .activity-list { display: grid; margin-top: 8px; }.activity-list article { display: grid; grid-template-columns: 140px 1fr auto; gap: 9px; padding: 10px 0; border-bottom: 1px solid var(--line); }.activity-list span, .activity-list time { color: var(--subtle); font-size: 8px; }.activity-list p { margin: 0; color: var(--muted); font-size: 9px; }
 .metric-card { padding: 14px; display: grid; grid-template-columns: 1fr auto; gap: 5px; }.metric-card > span { color: var(--subtle); font-size: 8px; }.metric-card strong { grid-row: 2; font-size: 28px; line-height: 1; }.metric-card small { grid-row: 2; align-self: end; color: var(--accent-strong); font: 650 7px/1 ui-monospace, monospace; }.metric-card p { grid-column: 1 / -1; margin: 5px 0 0; color: var(--muted); font-size: 8px; line-height: 1.5; }.metric-card.primary { background: color-mix(in srgb, var(--workspace-accent-wash) 42%, var(--surface)); }
