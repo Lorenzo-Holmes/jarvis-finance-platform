@@ -25,7 +25,7 @@ test('frontend client exposes social, group, messaging, profile and achievement 
   for (const token of [
     'socialProfile:', 'updateSocialProfile:', 'socialAchievements:', 'socialUsers:',
     'communityFeed:', 'communityGroups:', 'communityCreateGroup:', 'communityCreatePost:', 'communityDeletePost:',
-    'communityUpdateGroup:', 'communityJoinGroup:', 'communityAddMember:', 'communityRemoveMember:', 'socialConversations:', 'socialThread:',
+    'communityUpdateGroup:', 'communityDeleteGroup:', 'communityJoinGroup:', 'communityAddMember:', 'communityRemoveMember:', 'socialConversations:', 'socialThread:',
     'socialMessageUnreadCount:', 'socialSendMessage:',
   ]) assert.match(client, new RegExp(token))
 })
@@ -48,6 +48,7 @@ test('community surface contains groups, user discovery, direct messages and exp
   assert.match(page, /message\.readAt \? '已读' : '已发送'/)
   assert.match(page, /threadHasMore/)
   assert.match(page, /加载更早消息/)
+  assert.match(page, /删除小组/)
   assert.match(page, /shareToWeibo/)
   assert.match(page, /shareToXiaohongshu/)
 })

@@ -229,6 +229,7 @@ export const api = {
   communityUpdateGroup: (groupId, body) => request(API_BASE, `/api/social/groups/${groupId}`, {
     method: 'PATCH', body: JSON.stringify(body),
   }),
+  communityDeleteGroup: (groupId) => request(API_BASE, `/api/social/groups/${groupId}`, { method: 'DELETE' }),
   communityCreateGroup: (body) => post(API_BASE, '/api/social/groups', body),
   communityJoinGroup: (groupId) => post(API_BASE, `/api/social/groups/${groupId}/join`, {}),
   communityLeaveGroup: (groupId) => request(API_BASE, `/api/social/groups/${groupId}/leave`, { method: 'DELETE' }),

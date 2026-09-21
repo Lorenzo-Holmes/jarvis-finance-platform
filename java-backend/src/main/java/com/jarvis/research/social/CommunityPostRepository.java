@@ -16,6 +16,9 @@ public interface CommunityPostRepository extends JpaRepository<CommunityPost, Lo
     @Query("select p.groupId, count(p) from CommunityPost p where p.groupId in :groupIds group by p.groupId")
     List<Object[]> countByGroupIds(@Param("groupIds") Collection<Long> groupIds);
 
+    @Query("select p.id from CommunityPost p where p.groupId = :groupId")
+    List<Long> findIdsByGroupId(@Param("groupId") Long groupId);
+
     @Query("select p from CommunityPost p where p.groupId is null " +
             "or p.groupId in (select g.id from CommunityGroup g where g.visibility = 'OPEN') " +
             "or p.groupId in (select m.groupId from CommunityGroupMember m where m.userId = :userId) " +

@@ -152,6 +152,17 @@ public class SocialService {
         return groupView(userId, group, true);
     }
 
+    @Transactional
+    public void deleteGroup(Long userId, Long groupId, String clientIp) {
+        CommunityGroup group = requireGroup(groupId);
+        requireOwner(userId, group);
+        List<String> postIds = postRepository.findIdsByGroupId(groupId).stream().map(String::valueOf).toList();
+        if (!postIds.isEmpty()) activityRepository.deleteByReferenceTypeAndReferenceIdIn("POST", postIds);
+        activityRepository.deleteByReferenceTypeAndReferenceId("GROUP", String.valueOf(groupId));
+        groupRepository.delete(group);
+        auditService.record(userId, "COMMUNITY_GROUP_DELETE", "group:" + groupId, clientIp, group.getName());
+    }
+
     @Transactional(readOnly = true)
     public Map<String, Object> group(Long viewerId, Long groupId) {
         return groupView(viewerId, requireGroup(groupId), true);

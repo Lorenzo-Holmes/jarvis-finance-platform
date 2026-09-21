@@ -242,6 +242,19 @@ class SocialServiceTest {
     }
 
     @Test
+    void deletingGroupCleansGroupAndPostActivityReferences() {
+        CommunityGroup group = CommunityGroup.builder().id(8L).ownerUserId(9L).name("Desk").visibility("OPEN").build();
+        when(groupRepository.findById(8L)).thenReturn(Optional.of(group));
+        when(postRepository.findIdsByGroupId(8L)).thenReturn(java.util.List.of(11L, 12L));
+
+        service.deleteGroup(9L, 8L, "127.0.0.1");
+
+        verify(activityRepository).deleteByReferenceTypeAndReferenceIdIn(eq("POST"), eq(java.util.List.of("11", "12")));
+        verify(activityRepository).deleteByReferenceTypeAndReferenceId("GROUP", "8");
+        verify(groupRepository).delete(group);
+    }
+
+    @Test
     void ownerCannotRemoveSelfFromMemberList() {
         CommunityGroup group = CommunityGroup.builder().id(8L).ownerUserId(9L).name("A").visibility("OPEN").build();
         when(groupRepository.findById(8L)).thenReturn(Optional.of(group));
