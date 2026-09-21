@@ -41,8 +41,8 @@
 
 ## 生产发布验收（2026-09-21 更新）
 
-- GitHub Pages 已发布前端；本轮合并 PR#21 后将重新触发 Pages 发布，并在发布后以 `version.json` 的 Git SHA 复核。
-- 后端当前仍运行已验收 release `20260921-0ffc751`；本轮没有 Java/Python 业务代码变更，监控栈在 release 外独立启用。若本轮构建仅包含前端资源、测试 Agent 与文档，则无需无意义地重启后端；仍会复核 Java/Python readiness。
+- GitHub Pages 已发布前端；本轮 `Deploy Frontend to GitHub Pages` 成功，发布后的 `https://f.shengxia.me/version.json` 已复核与 GitHub `main` 对齐，四种 favicon PNG 与 `manifest.webmanifest` 均可正常返回；本次功能资源构建输入为 `84a6fea`。
+- 后端已通过原子发布切换到 `20260921-230800-84a6feaec689`；旧版本 `20260921-dabe37f` 保留用于回滚。本轮没有 Java/Python 业务代码变更，但按发布流程重新构建并验证了后端包、依赖和 readiness；监控栈在 release 外独立运行。
 - 远端 `jarvis-ai.service`、`jarvis-java.service`、`postgresql` 均为 active；Java readiness、Python 内部 token readiness、Flyway v14 和公网 Java readiness 均返回成功。
 - 公网数据库健康接口返回 401（该接口受认证保护），属于预期安全行为。
 - 使用真实生产烟测账号完成：登录、数据库详情、行情、1Hz 行情 SSE、日 K、模拟盘、AI capabilities、Agent SSE、Agent PostgreSQL 事件回放、可复现回测和退出登录均通过；Agent SSE 的代理连接关闭码已按事件终态校验处理，不影响业务事件完整性。
