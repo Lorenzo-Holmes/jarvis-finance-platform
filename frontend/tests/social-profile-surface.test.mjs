@@ -121,3 +121,9 @@ test('social controls expose hover press and keyboard focus feedback', () => {
   assert.match(profile, /button:active:not\(:disabled\)/)
   assert.match(profile, /input:focus-visible/)
 })
+
+test('social workspaces use restrained surface entry motion', () => {
+  assert.match(read('pages/CommunityPage.vue'), /@keyframes social-surface-in/)
+  assert.match(read('pages/CommunityPage.vue'), /post-card:nth-child\(6\)/)
+  assert.match(read('pages/ProfilePage.vue'), /@keyframes social-profile-in/)
+})
