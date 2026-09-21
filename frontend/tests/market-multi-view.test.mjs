@@ -66,6 +66,11 @@ test('market news accepts the Java daily-news payload shape instead of dropping 
         url: 'https://example.com/news/1',
         source: 'Example Wire',
         published: '2026-09-18T17:08:01Z',
+        source_ids: ['wire-a', 'wire-b'],
+        source_count: 2,
+        rank_score: 88.4,
+        hybrid_score: 91.2,
+        selection_reason: ['2 个来源确认'],
       },
     ],
   }, 12)
@@ -74,6 +79,10 @@ test('market news accepts the Java daily-news payload shape instead of dropping 
   assert.equal(items[0].title, 'Market headline')
   assert.equal(items[0].source, 'Example Wire')
   assert.equal(items[0].linkable, true)
+  assert.equal(items[0].sourceCount, 2)
+  assert.equal(items[0].rankScore, 88.4)
+  assert.equal(items[0].hybridScore, 91.2)
+  assert.deepEqual(items[0].selectionReason, ['2 个来源确认'])
 })
 
 test('market news is a dedicated section below the watchlist', () => {
@@ -81,7 +90,7 @@ test('market news is a dedicated section below the watchlist', () => {
 
   assert.match(board, /NEWS_FETCH_LIMIT = 40/)
   assert.match(board, /PAGE_SIZE = 8/)
-  assert.match(board, /api\.newsDaily\(NEWS_FETCH_LIMIT, force\)/)
+  assert.match(board, /api\.newsDaily\(NEWS_FETCH_LIMIT, force, rankingMode\.value\)/)
   assert.match(board, /api\.newsTranslate\(titles\)/)
   assert.match(board, /translationSequence/)
   assert.match(board, /正在中文化标题/)
@@ -110,9 +119,9 @@ test('market news links are external-safe and guarded by the normalized linkable
 test('api client exposes daily news and non-blocking title translation endpoints', () => {
   const client = read('api/client.js')
 
-  assert.match(client, /newsDaily: \(limit = 12, force = false\) => get\(API_BASE, '\/api\/news\/daily'/)
+  assert.match(client, /newsDaily: \(limit = 12, force = false, ranking = 'smart'\) => get\(API_BASE, '\/api\/news\/daily'/)
   // 必须带 refresh/force，否则后端不会触发抓取，前端"抓取"按钮会假成功
-  assert.match(client, /refresh: true, force/)
+  assert.match(client, /refresh: true, force, ranking/)
   assert.match(client, /newsTranslate: \(titles\) => post\(API_BASE, '\/api\/news\/translate'/)
 })
 
