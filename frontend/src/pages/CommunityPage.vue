@@ -504,17 +504,19 @@ textarea:focus, input:focus, select:focus { background: color-mix(in srgb, var(-
 .composer-panel button, .create-group > button, .group-actions button, .group-composer button, .invite-row button, .search-row button, .profile-preview > header > button, .message-room > footer button { border: 1px solid var(--line-strong); border-radius: 7px; background: var(--workspace-accent-wash); color: var(--text); padding: 7px 11px; cursor: pointer; font-size: 9px; }
 button:disabled { opacity: .45; cursor: not-allowed; }
 .feed-list { display: grid; gap: 8px; }.feed-list.compact { padding: 0 12px 12px; }
-.post-card { padding: 13px 14px; border: 1px solid var(--line); border-radius: 10px; background: color-mix(in srgb, var(--panel) 84%, transparent); }
+.post-card { padding: 13px 14px; border: 1px solid var(--line); border-radius: 10px; background: color-mix(in srgb, var(--panel) 84%, transparent); transition: transform var(--social-motion-surface) var(--social-ease), border-color var(--social-motion-state) ease, background var(--social-motion-state) ease, box-shadow var(--social-motion-surface) ease; }
+.post-card:hover, .post-card:focus-within { transform: translateY(-1px); border-color: color-mix(in srgb, var(--line-strong) 72%, var(--accent)); background: color-mix(in srgb, var(--panel) 90%, var(--workspace-accent-wash)); box-shadow: 0 12px 34px rgba(0,0,0,.065); }
 .post-card { animation: social-card-in var(--social-motion-surface) var(--social-ease) both; }
 .post-card:nth-child(2) { animation-delay: 20ms; }.post-card:nth-child(3) { animation-delay: 40ms; }.post-card:nth-child(4) { animation-delay: 60ms; }.post-card:nth-child(5) { animation-delay: 80ms; }.post-card:nth-child(6) { animation-delay: 100ms; }
 .post-card > header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .author { display: flex; align-items: center; gap: 9px; border: 0; background: transparent; color: inherit; padding: 0; cursor: pointer; text-align: left; }
-.author > span:last-child { display: grid; gap: 3px; }.author strong { font-size: 10px; }.author small { color: var(--subtle); font-size: 8px; }
+.author > span:last-child { display: grid; gap: 3px; }.author strong { font-size: 10px; }.author small { color: var(--subtle); font-size: 8px; }.author .avatar { transition: transform var(--social-motion-surface) var(--social-ease), border-color var(--social-motion-state) ease; }.post-card:hover .author .avatar, .post-card:focus-within .author .avatar { transform: scale(1.04); border-color: color-mix(in srgb, var(--accent) 28%, var(--line-strong)); }
 .avatar { width: 30px; height: 30px; flex: 0 0 auto; display: grid; place-items: center; overflow: hidden; border: 1px solid var(--line-strong); border-radius: 50%; background: var(--workspace-accent-wash); color: var(--accent-strong); }
 .avatar.large { width: 58px; height: 58px; }.avatar img { width: 100%; height: 100%; object-fit: cover; }.avatar b { font-size: 10px; }
 .group-chip { padding: 4px 7px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 8px; }
 .post-card > p { margin: 12px 0; white-space: pre-wrap; color: var(--text); font-size: 11px; line-height: 1.72; }
-.post-card > footer { display: flex; gap: 7px; }.post-card > footer button { border: 0; background: transparent; color: var(--muted); cursor: pointer; padding: 4px 0; font-size: 8px; }
+.post-card > footer { display: flex; gap: 10px; opacity: .56; transition: opacity var(--social-motion-state) ease; }.post-card:hover > footer, .post-card:focus-within > footer { opacity: 1; }.post-card > footer button { border: 0; background: transparent; color: var(--muted); cursor: pointer; padding: 4px 0; font-size: 8px; }
+.post-card > footer button:hover { color: var(--text); }
 .post-card > footer .danger-link { color: var(--bad); margin-left: auto; }
 .network-rail { padding: 12px; align-self: start; display: grid; gap: 7px; }.network-rail > button { display: flex; align-items: center; justify-content: space-between; gap: 9px; padding: 9px 3px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: inherit; cursor: pointer; text-align: left; }.network-rail span { display: grid; gap: 4px; }.network-rail strong { font-size: 9px; }.network-rail small { color: var(--subtle); font-size: 8px; }
 .groups-layout, .users-layout, .messages-layout { display: grid; grid-template-columns: 290px minmax(0, 1fr); gap: 14px; min-height: 520px; }

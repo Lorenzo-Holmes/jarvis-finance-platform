@@ -142,3 +142,10 @@ test('community composers expose focus-within and length progress feedback', () 
   assert.match(source, /\.composer-panel:focus-within/)
   assert.match(source, /\.message-compose::after/)
 })
+
+test('post cards reveal actions through restrained hover and focus motion', () => {
+  const source = read('pages/CommunityPage.vue')
+  assert.match(source, /\.post-card:hover, \.post-card:focus-within/)
+  assert.match(source, /\.post-card:hover > footer, \.post-card:focus-within > footer/)
+  assert.match(source, /translateY\(-1px\)/)
+})
