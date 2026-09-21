@@ -112,3 +112,12 @@ test('social surfaces inherit workspace motion tokens and respect reduced motion
     assert.match(source, /prefers-reduced-motion: reduce/)
   }
 })
+
+test('social controls expose hover press and keyboard focus feedback', () => {
+  const community = read('pages/CommunityPage.vue')
+  const profile = read('pages/ProfilePage.vue')
+  assert.match(community, /button:active:not\(:disabled\)/)
+  assert.match(community, /button:focus-visible/)
+  assert.match(profile, /button:active:not\(:disabled\)/)
+  assert.match(profile, /input:focus-visible/)
+})

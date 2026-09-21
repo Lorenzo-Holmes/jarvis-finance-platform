@@ -488,6 +488,12 @@ textarea, input, select { width: 100%; box-sizing: border-box; border: 1px solid
 textarea:focus, input:focus, select:focus { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
 .composer-panel footer { display: flex; align-items: center; justify-content: space-between; color: var(--subtle); font-size: 8px; }
 button { font: inherit; }
+button { transition: color var(--social-motion-state) ease, background var(--social-motion-state) ease, border-color var(--social-motion-state) ease, box-shadow var(--social-motion-state) ease, transform var(--social-motion-press) ease; }
+button:active:not(:disabled) { transform: scale(.98); }
+button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-visible { outline: 0; box-shadow: var(--ds-focus-shadow, 0 0 0 3px color-mix(in srgb, var(--accent) 11%, transparent)); }
+textarea, input, select { transition: border-color var(--social-motion-state) ease, background var(--social-motion-state) ease, box-shadow var(--social-motion-state) ease; }
+textarea:hover, input:hover, select:hover { border-color: color-mix(in srgb, var(--line-strong) 72%, var(--accent)); }
+textarea:focus, input:focus, select:focus { background: color-mix(in srgb, var(--workspace-control-bg, var(--panel)) 88%, var(--workspace-accent-wash)); }
 .composer-panel button, .create-group > button, .group-actions button, .group-composer button, .invite-row button, .search-row button, .profile-preview > header > button, .message-room > footer button { border: 1px solid var(--line-strong); border-radius: 7px; background: var(--workspace-accent-wash); color: var(--text); padding: 7px 11px; cursor: pointer; font-size: 9px; }
 button:disabled { opacity: .45; cursor: not-allowed; }
 .feed-list { display: grid; gap: 8px; }.feed-list.compact { padding: 0 12px 12px; }
