@@ -145,3 +145,12 @@ test('news center filters the current result set locally without mutating backen
   assert.match(page, /aria-label="筛选当前资讯"/)
   assert.match(page, /当前结果中没有匹配项/)
 })
+
+test('news center offers comfortable and compact reading density without changing data', () => {
+  const page = read('pages/NewsCenterPage.vue')
+  assert.match(page, /const feedDensity = ref\('comfortable'\)/)
+  assert.match(page, /aria-label="资讯阅读密度"/)
+  assert.match(page, /紧凑/)
+  assert.match(page, /:class="\{ compact: feedDensity === 'compact' \}"/)
+  assert.match(page, /\.article-list\.compact/)
+})

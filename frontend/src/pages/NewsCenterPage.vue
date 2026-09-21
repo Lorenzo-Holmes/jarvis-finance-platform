@@ -25,6 +25,7 @@ const semanticRanking = ref(null)
 const expandedReasons = ref([])
 const expandedAnalysis = ref([])
 const feedQuery = ref('')
+const feedDensity = ref('comfortable')
 const savedSources = ref([])
 const savedTopics = ref([])
 const subscriptionOpen = ref(true)
@@ -315,6 +316,10 @@ onBeforeUnmount(() => {
               <input v-model="feedQuery" type="search" aria-label="筛选当前资讯" placeholder="标题 / 来源 / 标签" />
               <button v-if="feedQuery" type="button" aria-label="清空资讯筛选" @click="feedQuery = ''">×</button>
             </label>
+            <div class="density-switch" role="group" aria-label="资讯阅读密度">
+              <button type="button" :aria-pressed="feedDensity === 'comfortable'" :class="{ active: feedDensity === 'comfortable' }" @click="feedDensity = 'comfortable'">舒适</button>
+              <button type="button" :aria-pressed="feedDensity === 'compact'" :class="{ active: feedDensity === 'compact' }" @click="feedDensity = 'compact'">紧凑</button>
+            </div>
             <button class="text-button" type="button" :disabled="analyzing || !articles.length" @click="analyzeArticles">{{ analyzing ? 'AI分析中…' : 'AI分析当前资讯' }}</button>
             <span class="feed-status" :class="{ muted: !available }">{{ available ? 'RSS READY' : 'RSS UNAVAILABLE' }}</span>
           </div>
@@ -332,7 +337,7 @@ onBeforeUnmount(() => {
         </div>
         <DataState v-if="!articles.length" state="empty" title="暂无匹配资讯" message="可调整订阅范围或手动刷新。" compact />
         <DataState v-else-if="!filteredArticles.length" state="empty" title="当前结果中没有匹配项" message="可清空检索词继续浏览。" compact />
-        <div v-else class="article-list">
+        <div v-else class="article-list" :class="{ compact: feedDensity === 'compact' }">
           <div v-if="feedQuery" class="search-count">显示 {{ filteredArticles.length }} / {{ articles.length }} 条</div>
           <article v-for="article in filteredArticles" :key="`${article.url}-${article.published}`" class="article-row">
             <div class="article-meta"><span>{{ article.source || article.source_id }}</span><time>{{ formatTime(article.published) }}</time></div>
@@ -398,6 +403,7 @@ onBeforeUnmount(() => {
 .disclosure-button { color: var(--muted); }
 .feed-actions { display: flex; align-items: center; gap: 9px; }
 .feed-search { min-width: 190px; height: 30px; display: flex; align-items: center; gap: 6px; padding: 0 7px; border: 1px solid var(--line); border-radius: 7px; background: color-mix(in srgb, var(--surface) 76%, transparent); transition: border-color .16s ease, background .16s ease, box-shadow .16s ease; }.feed-search:focus-within { border-color: color-mix(in srgb, var(--accent) 30%, var(--line-strong)); background: var(--surface); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 7%, transparent); }.feed-search > span { color: var(--subtle); font: 7px ui-monospace, monospace; }.feed-search input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; color: var(--text); font-size: 8px; }.feed-search button { border: 0; background: transparent; color: var(--subtle); cursor: pointer; padding: 0 2px; }
+.density-switch { display: inline-flex; padding: 2px; border: 1px solid var(--line); border-radius: 7px; background: color-mix(in srgb, var(--surface) 72%, transparent); }.density-switch button { min-height: 25px; padding: 0 7px; border: 0; border-radius: 5px; background: transparent; color: var(--subtle); cursor: pointer; font-size: 8px; }.density-switch button.active { color: var(--text); background: var(--workspace-accent-wash); }
 .panel-title b { color: var(--text); font-size: 12px; }
 .panel-title span { color: var(--subtle); font-size: 9px; }
 .action-button, .text-button { border: 1px solid var(--line-strong); background: var(--surface); color: var(--text); border-radius: var(--radius-sm); padding: 7px 11px; cursor: pointer; font-size: 9px; }
@@ -431,6 +437,7 @@ onBeforeUnmount(() => {
 .quality-strip b { color: var(--text); font: 650 11px ui-monospace, monospace; }
 .quality-strip small { white-space: nowrap; }
 .article-list { display: grid; margin-top: 3px; }
+.article-list.compact .article-row { padding-top: 8px; padding-bottom: 8px; gap: 4px 12px; }.article-list.compact .article-detail > p:not(.ai-summary) { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }.article-list.compact .article-meta { gap: 2px; }
 .search-count { padding: 7px 8px 3px; color: var(--subtle); font: 7px ui-monospace, monospace; }
 .article-row { position: relative; display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 7px 14px; align-items: baseline; padding: 12px 8px; border-bottom: 1px solid var(--line); border-radius: 7px; transition: transform .18s cubic-bezier(.22,1,.36,1), background .16s ease, border-color .16s ease, box-shadow .18s ease; }
 .article-row::before { content: ''; position: absolute; left: 0; top: 10px; bottom: 10px; width: 2px; border-radius: 999px; background: var(--accent); opacity: 0; transform: scaleY(.4); transition: opacity .16s ease, transform .18s cubic-bezier(.22,1,.36,1); }
