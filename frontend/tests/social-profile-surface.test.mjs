@@ -149,3 +149,11 @@ test('post cards reveal actions through restrained hover and focus motion', () =
   assert.match(source, /\.post-card:hover > footer, \.post-card:focus-within > footer/)
   assert.match(source, /translateY\(-1px\)/)
 })
+
+test('surface alerts render as animated non-layout-shifting toasts', () => {
+  for (const relative of ['pages/CommunityPage.vue', 'pages/ProfilePage.vue']) {
+    const source = read(relative)
+    assert.match(source, /\.surface-alert \{ position: fixed/)
+    assert.match(source, /@keyframes social-toast-in/)
+  }
+})
