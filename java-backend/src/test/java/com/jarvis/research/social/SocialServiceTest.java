@@ -163,6 +163,24 @@ class SocialServiceTest {
     }
 
     @Test
+    void feedBatchLoadsPostAuthorsAndGroups() {
+        CommunityPost first = CommunityPost.builder().id(1L).authorUserId(7L).content("a").createdAt(LocalDateTime.now()).build();
+        CommunityPost second = CommunityPost.builder().id(2L).authorUserId(8L).groupId(3L).content("b").createdAt(LocalDateTime.now()).build();
+        when(postRepository.findVisibleFeed(eq(9L), any())).thenReturn(new PageImpl<>(java.util.List.of(first, second)));
+        when(userRepository.findAllById(any())).thenReturn(java.util.List.of(user(7L), user(8L)));
+        when(groupRepository.findAllById(any())).thenReturn(java.util.List.of(
+                CommunityGroup.builder().id(3L).ownerUserId(8L).name("Desk").visibility("OPEN").build()));
+
+        Map<String, Object> result = service.feed(9L, 0, 20);
+
+        assertEquals(2, ((java.util.List<?>) result.get("items")).size());
+        verify(userRepository, times(1)).findAllById(any());
+        verify(groupRepository, times(1)).findAllById(any());
+        verify(userRepository, never()).findById(7L);
+        verify(userRepository, never()).findById(8L);
+    }
+
+    @Test
     void onlyOwnerCanEditGroup() {
         CommunityGroup group = CommunityGroup.builder().id(8L).ownerUserId(9L).name("A").visibility("OPEN").build();
         when(groupRepository.findById(8L)).thenReturn(Optional.of(group));

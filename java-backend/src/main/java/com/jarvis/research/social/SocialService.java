@@ -193,8 +193,7 @@ public class SocialService {
 
     @Transactional(readOnly = true)
     public Map<String, Object> feed(Long viewerId, int page, int size) {
-        return pageView(postRepository.findVisibleFeed(viewerId, pageRequest(page, size))
-                .map(post -> postView(viewerId, post)));
+        return postPageView(viewerId, postRepository.findVisibleFeed(viewerId, pageRequest(page, size)));
     }
 
     @Transactional
@@ -217,8 +216,8 @@ public class SocialService {
     public Map<String, Object> groupPosts(Long viewerId, Long groupId, int page, int size) {
         CommunityGroup group = requireGroup(groupId);
         requireGroupRead(viewerId, group);
-        return pageView(postRepository.findByGroupIdOrderByCreatedAtDesc(groupId, pageRequest(page, size))
-                .map(post -> postView(viewerId, post)));
+        return postPageView(viewerId,
+                postRepository.findByGroupIdOrderByCreatedAtDesc(groupId, pageRequest(page, size)));
     }
 
     @Transactional
@@ -335,15 +334,40 @@ public class SocialService {
     }
 
     private Map<String, Object> postView(Long viewerId, CommunityPost post) {
+        User author = requireUser(post.getAuthorUserId());
+        CommunityGroup group = post.getGroupId() == null ? null : groupRepository.findById(post.getGroupId()).orElse(null);
+        return postView(viewerId, post, author, group);
+    }
+
+    private Map<String, Object> postView(Long viewerId, CommunityPost post, User author, CommunityGroup group) {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("id", post.getId()); out.put("content", post.getContent()); out.put("groupId", post.getGroupId());
         out.put("referenceType", post.getReferenceType()); out.put("referenceId", post.getReferenceId());
         out.put("createdAt", post.getCreatedAt());
         out.put("mine", Objects.equals(viewerId, post.getAuthorUserId()));
-        out.put("author", publicUser(viewerId, requireUser(post.getAuthorUserId())));
-        if (post.getGroupId() != null) groupRepository.findById(post.getGroupId())
-                .ifPresent(group -> out.put("group", Map.of("id", group.getId(), "name", group.getName(), "visibility", group.getVisibility())));
+        out.put("author", publicUser(viewerId, author));
+        if (group != null) out.put("group", Map.of(
+                "id", group.getId(), "name", group.getName(), "visibility", group.getVisibility()));
         return out;
+    }
+
+    private Map<String, Object> postPageView(Long viewerId, Page<CommunityPost> page) {
+        List<CommunityPost> posts = page.getContent();
+        Set<Long> authorIds = new LinkedHashSet<>();
+        Set<Long> groupIds = new LinkedHashSet<>();
+        for (CommunityPost post : posts) {
+            authorIds.add(post.getAuthorUserId());
+            if (post.getGroupId() != null) groupIds.add(post.getGroupId());
+        }
+        Map<Long, User> authors = new HashMap<>();
+        userRepository.findAllById(authorIds).forEach(user -> authors.put(user.getId(), user));
+        Map<Long, CommunityGroup> groups = new HashMap<>();
+        groupRepository.findAllById(groupIds).forEach(group -> groups.put(group.getId(), group));
+        List<Map<String, Object>> items = posts.stream()
+                .filter(post -> authors.containsKey(post.getAuthorUserId()))
+                .map(post -> postView(viewerId, post, authors.get(post.getAuthorUserId()), groups.get(post.getGroupId())))
+                .toList();
+        return pageView(page, items);
     }
 
     private Map<String, Object> messageView(Long viewerId, DirectMessage message) {
@@ -414,8 +438,12 @@ public class SocialService {
     }
 
     private static Map<String, Object> pageView(Page<?> page) {
+        return pageView(page, page.getContent());
+    }
+
+    private static Map<String, Object> pageView(Page<?> page, List<?> items) {
         return Map.of(
-                "items", page.getContent(), "page", page.getNumber(), "size", page.getSize(),
+                "items", items, "page", page.getNumber(), "size", page.getSize(),
                 "totalElements", page.getTotalElements(), "totalPages", page.getTotalPages());
     }
 
