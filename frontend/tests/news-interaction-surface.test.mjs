@@ -136,3 +136,12 @@ test('AI analysis keeps summary visible and discloses secondary details on deman
   assert.match(page, /:aria-expanded="analysisOpen\(article\)"/)
   assert.match(page, /class="analysis-details"/)
 })
+
+test('news center filters the current result set locally without mutating backend ranking', () => {
+  const page = read('pages/NewsCenterPage.vue')
+  assert.match(page, /const feedQuery = ref\(''\)/)
+  assert.match(page, /const filteredArticles = computed/)
+  assert.match(page, /v-for="article in filteredArticles"/)
+  assert.match(page, /aria-label="筛选当前资讯"/)
+  assert.match(page, /当前结果中没有匹配项/)
+})
