@@ -66,6 +66,14 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
     },
     {
+      // 系统管理域 · 定时任务的权限置灰契约。全部对 `/api/` 打桩，不需要起 Java / Python。
+      // ⚠️ `reducedMotion` 必须关动效：headless 下 Archive Sea 的 WebGL 过场 settle 不了，
+      // 工作台外壳永不出现，用例会卡到超时（与视觉 project 同因，故一并固定）。
+      name: 'permissions',
+      testMatch: /task-permission\.spec\.ts$/,
+      use: { ...devices['Desktop Chrome'], reducedMotion: 'reduce' as const },
+    },
+    {
       name: 'auth',
       testMatch: /auth\.spec\.ts$/,
       use: { ...devices['Desktop Chrome'] },
