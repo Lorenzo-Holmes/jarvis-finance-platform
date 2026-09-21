@@ -292,3 +292,9 @@ test('market title translation uses shimmer and crossfade without blocking conte
   assert.match(board, /@keyframes title-translate-shimmer/)
   assert.match(board, /\.title-swap-enter-active/)
 })
+
+test('feed refresh uses a subtle scanning veil over existing content', () => {
+  const page = read('pages/NewsCenterPage.vue')
+  assert.match(page, /\.feed-panel\.refreshing \.article-list::before/)
+  assert.match(page, /@keyframes refresh-scan/)
+})

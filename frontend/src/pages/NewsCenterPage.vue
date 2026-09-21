@@ -484,7 +484,9 @@ onBeforeUnmount(() => {
 .quality-strip span, .quality-strip small { color: var(--subtle); font: 7px ui-monospace, monospace; }
 .quality-strip b { color: var(--text); font: 650 11px ui-monospace, monospace; }
 .quality-strip small { white-space: nowrap; }
-.article-list { display: grid; margin-top: 3px; }
+.article-list { position: relative; display: grid; margin-top: 3px; overflow: clip; }
+.feed-panel.refreshing .article-list::before { content: ''; position: absolute; z-index: 8; left: 0; right: 0; top: 0; height: 1px; background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent) 54%, transparent), transparent); box-shadow: 0 6px 18px color-mix(in srgb, var(--accent) 8%, transparent); animation: refresh-scan 1.35s var(--news-ease) infinite; pointer-events: none; }
+@keyframes refresh-scan { from { transform: translateY(0); opacity: 0; } 15% { opacity: .75; } 85% { opacity: .6; } to { transform: translateY(min(62vh, 620px)); opacity: 0; } }
 .article-flow { position: relative; display: grid; }
 .article-flow-enter-active, .article-flow-leave-active { transition: opacity var(--news-motion-surface) ease, transform var(--news-motion-surface) var(--news-ease); }
 .article-flow-enter-from { opacity: 0; transform: translateY(5px) scale(.995); }
