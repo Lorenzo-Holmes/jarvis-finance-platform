@@ -12,6 +12,8 @@ public interface CommunityPostRepository extends JpaRepository<CommunityPost, Lo
 
     @Query("select p from CommunityPost p where p.groupId is null " +
             "or p.groupId in (select g.id from CommunityGroup g where g.visibility = 'OPEN') " +
+            "or p.groupId in (select m.groupId from CommunityGroupMember m where m.userId = :userId) " +
             "order by p.createdAt desc")
-    Page<CommunityPost> findPublicFeed(Pageable pageable);
+    Page<CommunityPost> findVisibleFeed(@org.springframework.data.repository.query.Param("userId") Long userId,
+                                        Pageable pageable);
 }

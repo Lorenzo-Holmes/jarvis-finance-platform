@@ -163,7 +163,8 @@ public class SocialService {
 
     @Transactional(readOnly = true)
     public Map<String, Object> feed(Long viewerId, int page, int size) {
-        return pageView(postRepository.findPublicFeed(pageRequest(page, size)).map(post -> postView(viewerId, post)));
+        return pageView(postRepository.findVisibleFeed(viewerId, pageRequest(page, size))
+                .map(post -> postView(viewerId, post)));
     }
 
     @Transactional

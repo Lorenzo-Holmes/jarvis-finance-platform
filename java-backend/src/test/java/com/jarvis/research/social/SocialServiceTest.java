@@ -13,6 +13,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.Optional;
+import org.springframework.data.domain.PageImpl;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -105,6 +106,15 @@ class SocialServiceTest {
 
         assertEquals(HttpStatus.BAD_REQUEST, error.getStatusCode());
         verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void feedUsesViewerAwareVisibilityQuerySoClosedMembershipCanBeIncluded() {
+        when(postRepository.findVisibleFeed(eq(7L), any())).thenReturn(new PageImpl<>(java.util.List.of()));
+
+        service.feed(7L, 0, 20);
+
+        verify(postRepository).findVisibleFeed(eq(7L), any());
     }
 
     private static User user(Long id) {
