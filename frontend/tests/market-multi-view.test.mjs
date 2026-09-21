@@ -110,9 +110,9 @@ test('market news links are external-safe and guarded by the normalized linkable
 test('api client exposes daily news and non-blocking title translation endpoints', () => {
   const client = read('api/client.js')
 
-  assert.match(client, /newsDaily: \(limit = 12, force = false\) => get\(API_BASE, '\/api\/news\/daily'/)
+  assert.match(client, /newsDaily: \(limit = 12, force = false, ranking = 'smart'\) => get\(API_BASE, '\/api\/news\/daily'/)
   // 必须带 refresh/force，否则后端不会触发抓取，前端"抓取"按钮会假成功
-  assert.match(client, /refresh: true, force/)
+  assert.match(client, /refresh: true, force, ranking/)
   assert.match(client, /newsTranslate: \(titles\) => post\(API_BASE, '\/api\/news\/translate'/)
 })
 
