@@ -176,3 +176,10 @@ test('news surfaces share workspace motion tokens and respect reduced motion', (
   assert.match(board, /--news-motion-surface: var\(--ds-motion-surface/)
   assert.match(board, /prefers-reduced-motion: reduce/)
 })
+
+test('news center ranking control uses a sliding selection lens', () => {
+  const page = read('pages/NewsCenterPage.vue')
+  assert.match(page, /--ranking-index/)
+  assert.match(page, /\.ranking-switch::before/)
+  assert.match(page, /transform: translateX\(calc\(var\(--ranking-index\) \* 100%\)\)/)
+})

@@ -279,7 +279,7 @@ onBeforeUnmount(() => {
       </div>
       <div class="head-actions">
         <span class="source-count">{{ sourceCountLabel }}</span>
-        <div class="ranking-switch" role="group" aria-label="资讯排序方式">
+        <div class="ranking-switch" role="group" aria-label="资讯排序方式" :style="{ '--ranking-index': rankingMode === 'smart' ? 0 : 1 }">
           <button type="button" :aria-pressed="rankingMode === 'smart'" :class="{ active: rankingMode === 'smart' }" :disabled="refreshing" @click="changeRanking('smart')">智能精选</button>
           <button type="button" :aria-pressed="rankingMode === 'latest'" :class="{ active: rankingMode === 'latest' }" :disabled="refreshing" @click="changeRanking('latest')">最新发布</button>
         </div>
@@ -410,9 +410,10 @@ onBeforeUnmount(() => {
 .news-head h2 { margin: 8px 0 4px; color: var(--text); font-size: 22px; letter-spacing: .05em; }
 .news-head p { margin: 0; color: var(--muted); font-size: 10px; }
 .head-actions, .subscription-actions { display: flex; align-items: center; gap: 10px; }
-.ranking-switch { display: inline-flex; padding: 2px; border: 1px solid var(--line); border-radius: 8px; background: color-mix(in srgb, var(--surface) 88%, transparent); }
-.ranking-switch button { min-height: 27px; padding: 0 9px; border: 0; border-radius: 6px; background: transparent; color: var(--subtle); cursor: pointer; font: 8px ui-monospace, monospace; transition: background var(--news-motion-state) ease, color var(--news-motion-state) ease, box-shadow var(--news-motion-state) ease; }
-.ranking-switch button.active { color: var(--text); background: var(--workspace-accent-wash); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent); }
+.ranking-switch { position: relative; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 2px; border: 1px solid var(--line); border-radius: 8px; background: color-mix(in srgb, var(--surface) 88%, transparent); overflow: hidden; }
+.ranking-switch::before { content: ''; position: absolute; z-index: 0; inset: 2px auto 2px 2px; width: calc((100% - 4px) / 2); border: 1px solid color-mix(in srgb, var(--accent) 16%, var(--line-strong)); border-radius: 6px; background: linear-gradient(180deg, color-mix(in srgb, var(--workspace-accent-wash) 80%, transparent), color-mix(in srgb, var(--workspace-accent-wash) 46%, transparent)); transform: translateX(calc(var(--ranking-index) * 100%)); transition: transform var(--news-motion-layout) var(--news-ease); pointer-events: none; }
+.ranking-switch button { position: relative; z-index: 1; min-height: 27px; padding: 0 9px; border: 0; border-radius: 6px; background: transparent; color: var(--subtle); cursor: pointer; font: 8px ui-monospace, monospace; transition: color var(--news-motion-state) ease; }
+.ranking-switch button.active { color: var(--text); background: transparent; }
 .ranking-switch button:disabled { cursor: wait; opacity: .6; }
 .source-count, .feed-status, .topic-hint { color: var(--subtle); font: 9px ui-monospace, monospace; }
 .panel { padding: 13px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
