@@ -127,3 +127,12 @@ test('refreshing keeps existing news visible with an in-place progress signal', 
   assert.match(page, /正在重新整理精选/)
   assert.match(page, /\.feed-panel\.refreshing \.article-list/)
 })
+
+test('AI analysis keeps summary visible and discloses secondary details on demand', () => {
+  const page = read('pages/NewsCenterPage.vue')
+  assert.match(page, /const expandedAnalysis = ref\(\[\]\)/)
+  assert.match(page, /function toggleAnalysis/)
+  assert.match(page, /分析详情/)
+  assert.match(page, /:aria-expanded="analysisOpen\(article\)"/)
+  assert.match(page, /class="analysis-details"/)
+})
