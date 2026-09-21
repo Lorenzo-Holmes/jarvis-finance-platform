@@ -264,12 +264,12 @@ onMounted(load)
     <header class="scheduled-head">
       <div>
         <span>SCHEDULED AUTOMATION</span>
-        <h1>定时任务</h1>
+        <h1 data-testid="system-task-heading">定时任务</h1>
         <p>把行情扫描、风险检测和回测按固定节奏自动执行，结果进入执行历史和站内通知。</p>
       </div>
       <div class="head-actions">
-        <button type="button" @click="load">刷新</button>
-        <button type="button" class="primary" :disabled="!canManage" @click="openCreate">新建任务</button>
+        <button type="button" data-testid="system-task-refresh-btn" @click="load">刷新</button>
+        <button type="button" class="primary" data-testid="task-list-create-btn" :disabled="!canManage" @click="openCreate">新建任务</button>
       </div>
     </header>
 
@@ -277,24 +277,24 @@ onMounted(load)
       当前账号未开通「定时任务管理」权限：可以查看任务与执行历史、暂停或删除自己的任务，但新建、编辑、立即执行、恢复会被服务端拒绝，所以这里直接置灰。
     </p>
 
-    <p v-if="error" class="task-error">{{ error }}</p>
+    <p v-if="error" class="task-error" data-testid="system-task-error">{{ error }}</p>
 
-    <section class="task-summary">
-      <div><span>任务总数</span><strong>{{ tasks.length }}</strong></div>
-      <div><span>运行中</span><strong>{{ tasks.filter(item => item.status === 'ACTIVE').length }}</strong></div>
-      <div><span>已暂停</span><strong>{{ tasks.filter(item => item.status === 'PAUSED').length }}</strong></div>
-      <div><span>可用类型</span><strong>{{ types.filter(item => item.supported).length }}</strong></div>
+    <section class="task-summary" data-testid="system-task-summary">
+      <div><span>任务总数</span><strong data-testid="system-task-summary-total">{{ tasks.length }}</strong></div>
+      <div><span>运行中</span><strong data-testid="system-task-summary-active">{{ tasks.filter(item => item.status === 'ACTIVE').length }}</strong></div>
+      <div><span>已暂停</span><strong data-testid="system-task-summary-paused">{{ tasks.filter(item => item.status === 'PAUSED').length }}</strong></div>
+      <div><span>可用类型</span><strong data-testid="system-task-summary-types">{{ types.filter(item => item.supported).length }}</strong></div>
     </section>
 
     <section class="task-list-panel">
       <header><strong>自动化任务</strong><span>Spring 6 段 Cron · Asia/Shanghai</span></header>
-      <p v-if="loading && !tasks.length" class="empty-state">正在加载定时任务…</p>
-      <p v-else-if="!tasks.length" class="empty-state">暂无任务。创建第一条自动化任务后，执行结果会在这里持续留痕。</p>
-      <div v-else class="task-table-wrap">
-        <table class="task-table">
+      <p v-if="loading && !tasks.length" class="empty-state" data-testid="system-task-loading">正在加载定时任务…</p>
+      <p v-else-if="!tasks.length" class="empty-state" data-testid="system-task-empty">暂无任务。创建第一条自动化任务后，执行结果会在这里持续留痕。</p>
+      <div v-else class="task-table-wrap" data-testid="system-task-table-wrap">
+        <table class="task-table" data-testid="system-task-table">
           <thead><tr><th>任务</th><th>类型</th><th>状态</th><th>Cron</th><th>下次运行</th><th>最近结果</th><th>操作</th></tr></thead>
           <tbody>
-            <tr v-for="task in tasks" :key="task.id">
+            <tr v-for="task in tasks" :key="task.id" data-testid="system-task-row">
               <td><div class="task-name"><strong>{{ task.name }}</strong><small>#{{ task.id }}</small></div></td>
               <td>{{ taskTypeLabel(task.task_type) }}</td>
               <td><span class="status-pill" :class="String(task.status || '').toLowerCase()">{{ statusLabel(task.status) }}</span></td>
@@ -322,15 +322,15 @@ onMounted(load)
       </div>
     </section>
 
-    <section v-if="historyTask" class="history-panel">
+    <section v-if="historyTask" class="history-panel" data-testid="system-task-history-panel">
       <header>
         <div><strong>执行历史 · {{ historyTask.name }}</strong><span>最近 50 次</span></div>
-        <button type="button" @click="historyTask = null; runs = []">关闭</button>
+        <button type="button" data-testid="system-task-history-close" @click="historyTask = null; runs = []">关闭</button>
       </header>
-      <p v-if="runsLoading" class="empty-state">正在读取执行历史…</p>
-      <p v-else-if="!runs.length" class="empty-state">暂无执行记录。</p>
-      <div v-else class="run-list">
-        <article v-for="run in runs" :key="run.id">
+      <p v-if="runsLoading" class="empty-state" data-testid="system-task-history-loading">正在读取执行历史…</p>
+      <p v-else-if="!runs.length" class="empty-state" data-testid="system-task-history-empty">暂无执行记录。</p>
+      <div v-else class="run-list" data-testid="system-task-history-list">
+        <article v-for="run in runs" :key="run.id" data-testid="system-task-history-item">
           <div class="run-top">
             <span class="status-pill" :class="String(run.status || '').toLowerCase()">{{ runStatusLabel(run.status) }}</span>
             <time>{{ formatTime(run.started_at || run.scheduled_at) }}</time>
@@ -341,34 +341,34 @@ onMounted(load)
       </div>
     </section>
 
-    <div v-if="editorOpen" class="editor-backdrop" @click.self="editorOpen = false">
-      <section class="task-editor" role="dialog" aria-modal="true" aria-label="定时任务编辑器">
+    <div v-if="editorOpen" class="editor-backdrop" data-testid="system-task-editor-backdrop" @click.self="editorOpen = false">
+      <section class="task-editor" role="dialog" aria-modal="true" aria-label="定时任务编辑器" data-testid="system-task-editor">
         <header>
           <div><span>{{ editingId ? 'EDIT AUTOMATION' : 'NEW AUTOMATION' }}</span><strong>{{ editingId ? '编辑定时任务' : '新建定时任务' }}</strong></div>
-          <button type="button" aria-label="关闭" @click="editorOpen = false">×</button>
+          <button type="button" aria-label="关闭" data-testid="system-task-editor-close" @click="editorOpen = false">×</button>
         </header>
 
         <div class="editor-grid">
-          <label class="field wide"><span>任务名称</span><input v-model="form.name" maxlength="80" placeholder="例如：工作日风险检查" /></label>
+          <label class="field wide"><span>任务名称</span><input v-model="form.name" maxlength="80" placeholder="例如：工作日风险检查" data-testid="system-task-form-name" /></label>
           <label class="field"><span>任务类型</span>
-            <select v-model="form.taskType">
+            <select v-model="form.taskType" data-testid="system-task-form-type">
               <option v-for="item in typeOptions" :key="item.type" :value="item.type" :disabled="!item.supported">
                 {{ item.label }}{{ item.supported ? '' : '（执行器未就绪）' }}
               </option>
             </select>
           </label>
           <label class="field"><span>时区</span><input v-model="form.timezone" readonly /></label>
-          <label class="field wide"><span>Cron（秒 分 时 日 月 周）</span><input v-model="form.cronExpr" placeholder="0 */30 * * * *" /></label>
+          <label class="field wide"><span>Cron（秒 分 时 日 月 周）</span><input v-model="form.cronExpr" placeholder="0 */30 * * * *" data-testid="system-task-form-cron" /></label>
         </div>
 
-        <div class="cron-presets">
+        <div class="cron-presets" data-testid="system-task-cron-presets">
           <button type="button" @click="form.cronExpr = '0 */30 * * * *'">每30分钟</button>
           <button type="button" @click="form.cronExpr = '0 0 * * * *'">每小时</button>
           <button type="button" @click="form.cronExpr = '0 0 9 * * MON-FRI'">工作日09:00</button>
           <button type="button" @click="form.cronExpr = '0 0 15 * * MON-FRI'">工作日15:00</button>
         </div>
 
-        <section class="type-params">
+        <section class="type-params" data-testid="system-task-form-params">
           <template v-if="form.taskType === 'MARKET_SCAN'">
             <h3>行情扫描参数</h3>
             <div class="market-checks">
@@ -398,10 +398,10 @@ onMounted(load)
           <template v-else-if="form.taskType === 'DAILY_DIGEST'">
             <h3>资讯日报参数</h3>
             <div class="editor-grid">
-              <label class="field"><span>保留资讯条数</span><input v-model.number="form.digestLimit" type="number" min="1" max="20" /></label>
-              <label class="field"><span>摘要标题数</span><input v-model.number="form.headlineCount" type="number" min="1" max="5" /></label>
+              <label class="field"><span>保留资讯条数</span><input v-model.number="form.digestLimit" type="number" min="1" max="20" data-testid="system-task-form-digest-limit" /></label>
+              <label class="field"><span>摘要标题数</span><input v-model.number="form.headlineCount" type="number" min="1" max="5" data-testid="system-task-form-digest-headlines" /></label>
             </div>
-            <label class="check-field"><input v-model="form.analyzeNews" type="checkbox" /> <span>运行可审计的 AI 摘要、关键词、情绪和风险分析</span></label>
+            <label class="check-field"><input v-model="form.analyzeNews" type="checkbox" data-testid="system-task-form-digest-analyze" /> <span>运行可审计的 AI 摘要、关键词、情绪和风险分析</span></label>
             <p class="field-hint">AI 分析失败时仍保留 RSS 原文和规则分析，不会阻断日报任务。</p>
           </template>
 
@@ -411,8 +411,8 @@ onMounted(load)
         </section>
 
         <footer class="editor-actions">
-          <button type="button" @click="editorOpen = false">取消</button>
-          <button type="button" class="primary" :disabled="saving || !form.name.trim()" @click="save">{{ saving ? '保存中…' : '保存任务' }}</button>
+          <button type="button" data-testid="system-task-form-cancel" @click="editorOpen = false">取消</button>
+          <button type="button" class="primary" data-testid="system-task-form-save" :disabled="saving || !form.name.trim()" @click="save">{{ saving ? '保存中…' : '保存任务' }}</button>
         </footer>
       </section>
     </div>
