@@ -103,3 +103,10 @@ test('topic filters retain checkbox semantics with chip interactions', () => {
   assert.match(page, /\.topic-choice\.active/)
   assert.match(page, /\.topic-choice:focus-within/)
 })
+
+test('news feedback uses non-layout-shifting floating toasts', () => {
+  const page = read('pages/NewsCenterPage.vue')
+  assert.match(page, /\.notice \{ position: fixed/)
+  assert.match(page, /@keyframes news-toast-in/)
+  assert.match(page, /backdrop-filter: blur\(16px\)/)
+})
