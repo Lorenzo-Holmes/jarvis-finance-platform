@@ -81,7 +81,7 @@ test('market news is a dedicated section below the watchlist', () => {
 
   assert.match(board, /NEWS_FETCH_LIMIT = 40/)
   assert.match(board, /PAGE_SIZE = 8/)
-  assert.match(board, /api\.newsDaily\(NEWS_FETCH_LIMIT, force\)/)
+  assert.match(board, /api\.newsDaily\(NEWS_FETCH_LIMIT, force, rankingMode\.value\)/)
   assert.match(board, /api\.newsTranslate\(titles\)/)
   assert.match(board, /translationSequence/)
   assert.match(board, /正在中文化标题/)

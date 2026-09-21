@@ -14,6 +14,7 @@ const reason = ref('')
 const generatedAt = ref('')
 const page = ref(1)
 const showOriginal = ref(false)
+const rankingMode = ref('smart')
 const pageCount = computed(() => Math.max(1, Math.ceil(items.value.length / PAGE_SIZE)))
 const translating = ref(false)
 const visibleItems = computed(() => {
@@ -59,7 +60,7 @@ async function load(force = false) {
   if (!items.value.length) state.value = 'loading'
   reason.value = ''
   try {
-    const response = await api.newsDaily(NEWS_FETCH_LIMIT, force)
+    const response = await api.newsDaily(NEWS_FETCH_LIMIT, force, rankingMode.value)
     if (requestSequence !== loadSequence) return
     const payload = response?.data
     if (!payload || payload.available === false) {
@@ -84,6 +85,13 @@ async function load(force = false) {
     state.value = 'unavailable'
     reason.value = e?.message || '市场要闻暂时不可用'
   }
+}
+
+async function changeRanking(mode) {
+  if (!['smart', 'latest'].includes(mode) || rankingMode.value === mode) return
+  rankingMode.value = mode
+  page.value = 1
+  await load(false)
 }
 
 function displayTitle(item) {
@@ -143,6 +151,10 @@ onBeforeUnmount(() => {
       <div class="news-actions">
         <small v-if="translating">正在中文化标题…</small>
         <small v-else-if="generatedAt">更新 {{ formatNewsTime(generatedAt) }}</small>
+        <div class="ranking-switch" role="group" aria-label="市场要闻排序方式">
+          <button type="button" :aria-pressed="rankingMode === 'smart'" :class="{ active: rankingMode === 'smart' }" @click="changeRanking('smart')">精选</button>
+          <button type="button" :aria-pressed="rankingMode === 'latest'" :class="{ active: rankingMode === 'latest' }" @click="changeRanking('latest')">最新</button>
+        </div>
         <button type="button" :disabled="state === 'loading'" @click="load(true)">刷新要闻</button>
         <button type="button" @click="showOriginal = !showOriginal">{{ showOriginal ? '显示中文' : '显示原文' }}</button>
       </div>
@@ -184,6 +196,9 @@ onBeforeUnmount(() => {
 .news-head h2 { margin: 4px 0 0; color: var(--text); font-size: 15px; font-weight: 680; }
 .news-head p { margin: 4px 0 0; color: var(--muted); font-size: 9px; }
 .news-actions { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; }
+.ranking-switch { display: inline-flex; padding: 2px; border: 1px solid var(--line); border-radius: 7px; background: color-mix(in srgb, var(--surface) 84%, transparent); }
+.ranking-switch button { height: 25px; padding: 0 8px; border: 0; border-radius: 5px; background: transparent; color: var(--subtle); }
+.ranking-switch button.active { color: var(--text); background: var(--workspace-accent-wash); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 16%, transparent); }
 .news-actions small { color: var(--subtle); font-size: 8px; }
 .news-actions button { height: 30px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; background: transparent; color: var(--muted); cursor: pointer; font-size: 9px; }
 .news-actions button:hover:not(:disabled) { color: var(--text); border-color: var(--line-strong); background: var(--workspace-hover-bg); }
