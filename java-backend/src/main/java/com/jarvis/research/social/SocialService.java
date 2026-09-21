@@ -168,7 +168,7 @@ public class SocialService {
     public Map<String, Object> addMember(Long ownerId, Long groupId, Long userId, String clientIp) {
         CommunityGroup group = requireGroup(groupId);
         requireOwner(ownerId, group);
-        requireUser(userId);
+        requireActiveUser(userId);
         if (memberRepository.existsByGroupIdAndUserId(groupId, userId)) {
             return groupView(ownerId, group, true);
         }
@@ -246,7 +246,7 @@ public class SocialService {
         if (Objects.equals(senderId, recipientId)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "不能给自己发送私信");
         }
-        requireUser(recipientId);
+        requireActiveUser(recipientId);
         DirectMessage message = messageRepository.save(DirectMessage.builder()
                 .senderUserId(senderId).recipientUserId(recipientId).content(request.getContent().trim())
                 .createdAt(LocalDateTime.now()).build());
@@ -478,6 +478,14 @@ public class SocialService {
     private User requireUser(Long userId) {
         return userRepository.findById(userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "用户不存在"));
+    }
+
+    private User requireActiveUser(Long userId) {
+        User user = requireUser(userId);
+        if (!user.isEnabled()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "目标用户当前不可用");
+        }
+        return user;
     }
 
     private CommunityGroup requireGroup(Long groupId) {
