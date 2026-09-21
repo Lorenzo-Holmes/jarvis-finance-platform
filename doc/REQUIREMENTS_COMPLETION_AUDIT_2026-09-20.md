@@ -19,7 +19,7 @@
 - RSS 信息中心已补齐：Java/PostgreSQL 持久化 10 个预置来源、管理员新增/编辑/启停/可信度维护、用户来源/主题订阅和服务端订阅过滤；Python 抓取结果补充正文片段、来源分类、标签和可解释的规则影响方向，前端新增 RSS 资讯工作区与管理后台来源面板。
 - RSS AI 分析闭环已补齐：Java 统一鉴权/配额/usage，Python 返回有界且不含思维链的摘要、关键词、情绪、风险等级、影响方向和关联市场；日报任务支持 `analyze` 参数并把分析写入 PostgreSQL 执行产物，模型失败时保留原 RSS/规则结果；中高风险资讯通过站内通知提醒，前端可跳转多市场。已在生产发布并通过每日资讯接口验收。
 - RSS 抓取链路已补齐外部网络超时与并行抓取：单源连接/读取超时不会阻塞整条资讯接口，生产刷新新闻已从烟测超时恢复为通过。
-- 测试 Agent 首版已补齐：`tools/test-agent/test-agent.mjs` 可读取 PRD 生成结构化验收用例，调用现有 Playwright 项目并输出脱敏缺陷报告；本地 managed Vite 环境的 smoke 运行通过。
+- 测试 Agent 已补齐：`tools/test-agent/test-agent.mjs` 可读取 PRD 生成结构化验收用例，支持调用配置中的任意 Playwright project；使用真实生产账号执行 `--run --project agent` 通过，3 条 Agent 浏览器用例无失败并输出脱敏报告。
 - Grafana 服务健康面板和 Java 5xx/Hikari/目标存活告警模板已补齐；仍需要在生产 Prometheus/Grafana 实例导入后验证数据与 firing 状态。
 
 ## 自动化验证结果
@@ -45,6 +45,7 @@
 - 2026-09-21 05:35 运行升级后的 `CHECK_AGENT_STREAM=1 CHECK_AGENT_RECOVERY=1` 专项烟测：除 Agent 真实工作流、`tool_call`、PostgreSQL 事件回放、断线取消/重订阅和回测登出外，烟测脚本还强制验证每个运行中工具步骤的 `step_started → tool_call → tool_result → step_completed` 顺序、共享 `stepId` 与终态事件；全部通过，此前可复现的断线取消 409 已不再出现。
 - 使用真实生产会话对 `/api/news/analyze` 提交一条资讯联调通过，返回 `code=200`、1 条结构化分析并带有模型标识；未输出模型正文或任何凭据。
 - 使用真实生产账号执行 Agent 浏览器验收 3/3 通过：真实 SSE/工具生命周期/Markdown 结论/历史运行通过；受控长连接验证 `run_cancelled → STOPPED` 和 `run_failed → FAILED`，生产实际取消接口与失败事件由后端专项烟测覆盖。
+- 远端监控检查显示 Prometheus、Grafana 与 node-exporter 服务均未启用，仅 Java Actuator 监听 `127.0.0.1:8201`；因此仓库模板已验证可解析，但生产告警 firing 仍不能宣称完成。
 
 ## 仍未完成或需要真实环境验收
 
@@ -58,7 +59,7 @@
 
 - 流式 AI 响应的精确月度 Token usage 仍依赖上游稳定返回 usage 事件；当前非流式统计已完成。
 - PRD V1.2 的 RSS 信息源管理、10 源配置、用户订阅、AI 分析、重要事件提醒和多市场入口已发布；生产每日自动更新、通知实际触发和上游模型返回 usage 仍需真实业务数据验收。
-- 测试 Agent 已实现首版；真实账号下的 Agent 专项浏览器用例已执行通过，但测试 Agent 自身生成 PRD 用例的 auth/Agent 自动编排仍需独立接入真实账号后再作为最终门禁。
+- 测试 Agent 已支持真实账号下的 Agent 自动编排并执行通过；PRD 条目与具体浏览器 project 的映射仍是启发式的，新增需求应继续补充映射规则。
 - Grafana/Prometheus 的仓库模板已补齐服务健康、5xx、Hikari、JVM、Agent/API 请求面板和目标存活/5xx/连接池告警；仍需在生产监控实例导入并验证 5xx、429/502、Hikari、行情源熔断等告警链路。
 - 视觉规范文档中关于档案海景深、玻璃层次、长时间循环、移动端逐页像素审阅的 checklist 仍属于人工设计验收，不能用单元测试代替。
 - 品牌 PNG 多尺寸资产与真实用户 Edge 的 GPU/无障碍最终人工验收仍需产品确认。

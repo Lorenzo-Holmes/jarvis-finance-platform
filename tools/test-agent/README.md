@@ -8,6 +8,9 @@ node tools/test-agent/test-agent.mjs --prd doc/DeepSeek大模型金融投研系�
 
 # 在已启动前端的环境执行 smoke，并将结果合并到报告
 node tools/test-agent/test-agent.mjs --run --project smoke --base-url https://f.shengxia.me
+
+# 在已配置 E2E_USER_EMAIL / E2E_USER_PASSWORD 的真实环境执行 Agent 专项
+node tools/test-agent/test-agent.mjs --run --project agent --base-url https://f.shengxia.me
 ```
 
 输出目录默认是 `.test-agent/latest/`，其中 `test-cases.json` 是结构化用例，

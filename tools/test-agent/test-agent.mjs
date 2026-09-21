@@ -20,7 +20,8 @@ function usage() {
   node tools/test-agent/test-agent.mjs --prd <PRD.md> [--output <目录>]
       [--run] [--project smoke] [--base-url <URL>] [--max-cases 80]
 
-默认只生成需求用例与报告；加 --run 才会执行已有 Playwright smoke/auth/visual/financial-import 用例。
+默认只生成需求用例与报告；加 --run 才会执行已有 Playwright 用例。--project 支持
+smoke、auth、visual、financial-import 以及 e2e/playwright.config.ts 中定义的其他项目。
 `)
 }
 
@@ -110,7 +111,10 @@ function runPlaywright(project, baseUrl) {
   const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm'
   const env = { ...process.env }
   if (baseUrl) env.E2E_BASE_URL = baseUrl
-  const result = spawnSync(npm, ['--prefix', 'e2e', 'run', `test:${project}`, '--', '--reporter=json'], {
+  const scriptedProjects = new Set(['smoke', 'auth', 'visual', 'financial-import'])
+  const script = scriptedProjects.has(project) ? `test:${project}` : 'test'
+  const projectArgs = scriptedProjects.has(project) ? [] : [`--project=${project}`]
+  const result = spawnSync(npm, ['--prefix', 'e2e', 'run', script, '--', ...projectArgs, '--reporter=json'], {
     cwd: ROOT,
     env,
     encoding: 'utf8',
