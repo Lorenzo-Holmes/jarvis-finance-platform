@@ -41,7 +41,7 @@
 
 ## 生产发布验收（2026-09-21 更新）
 
-- GitHub Pages 已发布前端；本轮 `Deploy Frontend to GitHub Pages` 成功，发布后的 `https://f.shengxia.me/version.json` 已复核与 GitHub `main` 对齐，四种 favicon PNG 与 `manifest.webmanifest` 均可正常返回；本次功能资源构建输入为 `84a6fea`。
+- GitHub Pages 已发布前端；本轮 `Deploy Frontend to GitHub Pages` 成功，发布后的 `https://f.shengxia.me/version.json` 已复核为功能资源构建输入 `84a6fea`；随后仅追加审计文档提交 `2bbb8a9`，不改变前端资源，四种 favicon PNG 与 `manifest.webmanifest` 均可正常返回。
 - 后端已通过原子发布切换到 `20260921-230800-84a6feaec689`；旧版本 `20260921-dabe37f` 保留用于回滚。本轮没有 Java/Python 业务代码变更，但按发布流程重新构建并验证了后端包、依赖和 readiness；监控栈在 release 外独立运行。
 - 远端 `jarvis-ai.service`、`jarvis-java.service`、`postgresql` 均为 active；Java readiness、Python 内部 token readiness、Flyway v14 和公网 Java readiness 均返回成功。
 - 公网数据库健康接口返回 401（该接口受认证保护），属于预期安全行为。
