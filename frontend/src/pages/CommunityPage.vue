@@ -379,7 +379,7 @@ onMounted(async () => {
           <article v-for="post in feed" :key="post.id" class="post-card">
             <header>
               <button type="button" class="author" @click="openUser(post.author?.id); activeTab = 'users'">
-                <span class="avatar"><img v-if="post.author?.avatarUrl" :src="post.author.avatarUrl" alt="" /><b v-else>{{ (post.author?.displayName || '?').slice(0, 1) }}</b></span>
+                <span class="avatar"><img v-if="post.author?.avatarUrl" :src="post.author.avatarUrl" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" /><b v-else>{{ (post.author?.displayName || '?').slice(0, 1) }}</b></span>
                 <span><strong>{{ post.author?.displayName || '匿名用户' }}</strong><small>{{ formatTime(post.createdAt) }}</small></span>
               </button>
               <span v-if="post.group" class="group-chip">{{ post.group.name }}</span>
@@ -422,7 +422,7 @@ onMounted(async () => {
           <div class="invite-row"><input v-model="inviteQuery" placeholder="按昵称搜索成员" @keyup.enter="searchInviteUsers" /><button type="button" @click="searchInviteUsers">搜索</button></div>
           <div v-if="inviteCandidates.length" class="invite-candidates">
             <button v-for="candidate in inviteCandidates" :key="candidate.id" type="button" @click="addGroupMember(candidate.id)">
-              <span class="avatar"><img v-if="candidate.avatarUrl" :src="candidate.avatarUrl" alt="" /><b v-else>{{ (candidate.displayName || '?').slice(0,1) }}</b></span>
+              <span class="avatar"><img v-if="candidate.avatarUrl" :src="candidate.avatarUrl" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" /><b v-else>{{ (candidate.displayName || '?').slice(0,1) }}</b></span>
               <span><strong>{{ candidate.displayName }}</strong><small>{{ candidate.signature || '添加为小组成员' }}</small></span><i>添加</i>
             </button>
           </div>
@@ -431,7 +431,7 @@ onMounted(async () => {
           <div class="section-label">MEMBERS</div>
           <div class="group-members-list">
             <article v-for="member in selectedGroup.members || []" :key="member.user?.id">
-              <span class="avatar"><img v-if="member.user?.avatarUrl" :src="member.user.avatarUrl" alt="" /><b v-else>{{ (member.user?.displayName || '?').slice(0,1) }}</b></span>
+              <span class="avatar"><img v-if="member.user?.avatarUrl" :src="member.user.avatarUrl" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" /><b v-else>{{ (member.user?.displayName || '?').slice(0,1) }}</b></span>
               <span><strong>{{ member.user?.displayName }}</strong><small>{{ member.role }}</small></span>
               <button v-if="selectedGroupRole === 'OWNER' && member.role !== 'OWNER'" type="button" @click="removeGroupMember(member.user?.id)">移除</button>
             </article>
@@ -446,11 +446,11 @@ onMounted(async () => {
     <div v-else-if="activeTab === 'users'" class="users-layout">
       <aside class="user-directory">
         <div class="search-row"><input v-model="userQuery" placeholder="搜索昵称" @keyup.enter="searchUsers" /><button type="button" @click="searchUsers">搜索</button></div>
-        <button v-for="item in users" :key="item.id" type="button" :class="{ active: selectedUser?.id === item.id }" @click="openUser(item.id)"><span class="avatar"><img v-if="item.avatarUrl" :src="item.avatarUrl" alt="" /><b v-else>{{ (item.displayName || '?').slice(0,1) }}</b></span><span><strong>{{ item.displayName }}</strong><small>{{ item.signature || (item.profilePublic ? '暂无签名' : '资料未公开') }}</small></span></button>
+        <button v-for="item in users" :key="item.id" type="button" :class="{ active: selectedUser?.id === item.id }" @click="openUser(item.id)"><span class="avatar"><img v-if="item.avatarUrl" :src="item.avatarUrl" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" /><b v-else>{{ (item.displayName || '?').slice(0,1) }}</b></span><span><strong>{{ item.displayName }}</strong><small>{{ item.signature || (item.profilePublic ? '暂无签名' : '资料未公开') }}</small></span></button>
         <button v-if="usersHasMore" class="directory-load-more" type="button" :disabled="loading" @click="searchUsers(false)">加载更多用户</button>
       </aside>
       <main v-if="selectedUser" class="profile-preview">
-        <header><span class="avatar large"><img v-if="selectedUser.avatarUrl" :src="selectedUser.avatarUrl" alt="" /><b v-else>{{ (selectedUser.displayName || '?').slice(0,1) }}</b></span><div><span>USER / {{ selectedUser.id }}</span><h3>{{ selectedUser.displayName }}</h3><p>{{ selectedUser.signature || '该用户未公开个人签名。' }}</p></div><button v-if="!selectedUser.self" type="button" @click="openConversation(selectedUser)">发私信</button></header>
+        <header><span class="avatar large"><img v-if="selectedUser.avatarUrl" :src="selectedUser.avatarUrl" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" /><b v-else>{{ (selectedUser.displayName || '?').slice(0,1) }}</b></span><div><span>USER / {{ selectedUser.id }}</span><h3>{{ selectedUser.displayName }}</h3><p>{{ selectedUser.signature || '该用户未公开个人签名。' }}</p></div><button v-if="!selectedUser.self" type="button" @click="openConversation(selectedUser)">发私信</button></header>
         <section v-if="selectedUser.contactInfo" class="contact-card"><span>公开联系方式</span><strong>{{ selectedUser.contactInfo }}</strong></section>
         <section class="achievement-strip"><article v-for="badge in selectedUser.achievements || []" :key="badge.key"><span>ACHIEVEMENT</span><b>{{ badge.title }}</b><small>{{ badge.description }}</small></article><div v-if="!(selectedUser.achievements || []).length" class="empty-state">该用户没有公开成就。</div></section>
         <section class="activity-list"><div class="section-label">PUBLIC ACTIVITY</div><article v-for="item in selectedUserActivity" :key="item.id"><span>{{ item.type }}</span><p>{{ item.summary }}</p><small>{{ formatTime(item.createdAt) }}</small></article><div v-if="!selectedUserActivity.length" class="empty-state">没有可见动态。</div></section>
@@ -459,7 +459,7 @@ onMounted(async () => {
     </div>
 
     <div v-else class="messages-layout">
-      <aside class="conversation-list"><button v-for="item in conversations" :key="item.partner.id" type="button" :class="{ active: selectedPartner?.id === item.partner.id }" @click="openConversation(item.partner)"><span class="avatar"><img v-if="item.partner.avatarUrl" :src="item.partner.avatarUrl" alt="" /><b v-else>{{ (item.partner.displayName || '?').slice(0,1) }}</b></span><span><strong>{{ item.partner.displayName }}</strong><small>{{ item.lastMessage?.content }}</small></span><i v-if="item.unreadCount">{{ item.unreadCount }}</i></button><div v-if="!conversations.length" class="empty-state">暂无私信会话。</div></aside>
+      <aside class="conversation-list"><button v-for="item in conversations" :key="item.partner.id" type="button" :class="{ active: selectedPartner?.id === item.partner.id }" @click="openConversation(item.partner)"><span class="avatar"><img v-if="item.partner.avatarUrl" :src="item.partner.avatarUrl" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" /><b v-else>{{ (item.partner.displayName || '?').slice(0,1) }}</b></span><span><strong>{{ item.partner.displayName }}</strong><small>{{ item.lastMessage?.content }}</small></span><i v-if="item.unreadCount">{{ item.unreadCount }}</i></button><div v-if="!conversations.length" class="empty-state">暂无私信会话。</div></aside>
       <main v-if="selectedPartner" class="message-room"><header><span>PRIVATE CHANNEL</span><h3>{{ selectedPartner.displayName }}</h3></header><div class="message-thread" role="log" aria-live="polite" aria-relevant="additions text"><button v-if="threadHasMore" class="load-older-messages" type="button" :disabled="loading" @click="loadOlderMessages">加载更早消息</button><article v-for="message in thread" :key="message.id" :class="{ mine: message.mine }"><p>{{ message.content }}</p><small>{{ formatTime(message.createdAt) }}<template v-if="message.mine"> · {{ message.readAt ? '已读' : '已发送' }}</template></small></article></div><footer><div class="message-compose"><textarea v-model="messageText" maxlength="2000" rows="3" :aria-label="`给 ${selectedPartner.displayName} 发送私信`" placeholder="发送站内私信…" @keydown.ctrl.enter.prevent="sendMessage" @keydown.meta.enter.prevent="sendMessage"></textarea><small>{{ messageText.length }}/2000 · Ctrl/⌘ + Enter 发送</small></div><button type="button" :disabled="!messageText.trim()" @click="sendMessage">发送</button></footer></main>
       <main v-else class="empty-panel">选择一个会话，或从“用户发现”中发起私信。</main>
     </div>

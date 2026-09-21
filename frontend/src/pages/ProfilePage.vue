@@ -130,7 +130,7 @@ onMounted(load)
     <div v-if="profile" class="profile-grid">
       <main>
         <section class="identity-card">
-          <div class="avatar large"><img v-if="previewAvatarUrl" :src="previewAvatarUrl" alt="个人头像" /><b v-else>{{ (profile.displayName || '?').slice(0, 1) }}</b></div>
+          <div class="avatar large"><img v-if="previewAvatarUrl" :src="previewAvatarUrl" alt="个人头像" loading="lazy" decoding="async" referrerpolicy="no-referrer" /><b v-else>{{ (profile.displayName || '?').slice(0, 1) }}</b></div>
           <div class="identity-copy"><span>USER / {{ profile.id }}</span><h3>{{ profile.displayName }}</h3><p>{{ profile.signature || '还没有个人签名。' }}</p><small>{{ profile.email }}</small></div>
           <div class="completion"><span>资料完整度</span><b>{{ profileProgress }}%</b><i><em :style="{ width: `${profileProgress}%` }"></em></i></div>
         </section>

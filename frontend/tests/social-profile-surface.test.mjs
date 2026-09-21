@@ -92,3 +92,15 @@ test('share payload removes control characters, rejects unsafe links and bounds 
   assert.equal(normalized.text.length, 1200)
   assert.ok(normalized.text.endsWith('…'))
 })
+
+test('all social avatar images suppress referrers and decode lazily', () => {
+  for (const relative of ['pages/CommunityPage.vue', 'pages/ProfilePage.vue']) {
+    const tags = read(relative).match(/<img\b[^>]*>/g) || []
+    assert.ok(tags.length > 0)
+    for (const tag of tags) {
+      assert.match(tag, /referrerpolicy="no-referrer"/)
+      assert.match(tag, /decoding="async"/)
+      assert.match(tag, /loading="lazy"/)
+    }
+  }
+})
