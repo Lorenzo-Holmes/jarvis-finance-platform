@@ -345,7 +345,10 @@ onMounted(load)
 .quality-strip b { color: var(--text); font: 650 11px ui-monospace, monospace; }
 .quality-strip small { white-space: nowrap; }
 .article-list { display: grid; margin-top: 3px; }
-.article-row { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 7px 14px; align-items: baseline; padding: 12px 3px; border-bottom: 1px solid var(--line); }
+.article-row { position: relative; display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 7px 14px; align-items: baseline; padding: 12px 8px; border-bottom: 1px solid var(--line); border-radius: 7px; transition: transform .18s cubic-bezier(.22,1,.36,1), background .16s ease, border-color .16s ease, box-shadow .18s ease; }
+.article-row::before { content: ''; position: absolute; left: 0; top: 10px; bottom: 10px; width: 2px; border-radius: 999px; background: var(--accent); opacity: 0; transform: scaleY(.4); transition: opacity .16s ease, transform .18s cubic-bezier(.22,1,.36,1); }
+.article-row:hover, .article-row:focus-within { transform: translateY(-1px); background: color-mix(in srgb, var(--workspace-accent-wash) 18%, transparent); border-color: color-mix(in srgb, var(--line-strong) 78%, var(--accent)); box-shadow: 0 8px 24px rgba(0,0,0,.035); }
+.article-row:hover::before, .article-row:focus-within::before { opacity: .75; transform: scaleY(1); }
 .article-meta { display: flex; flex-direction: column; gap: 4px; }
 .article-meta span { color: var(--accent-strong); font-size: 9px; }
 .article-meta time { color: var(--subtle); font: 8px ui-monospace, monospace; }

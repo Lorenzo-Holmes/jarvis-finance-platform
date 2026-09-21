@@ -62,3 +62,12 @@ test('news center exposes selection reasons as an on-demand disclosure', () => {
   assert.match(page, /article\.selection_reason/)
   assert.match(page, /class="reason-panel"/)
 })
+
+test('news rows use restrained hover and focus-within interaction rails', () => {
+  const page = read('pages/NewsCenterPage.vue')
+  const board = read('components/market/MarketNewsBoard.vue')
+  assert.match(page, /\.article-row::before/)
+  assert.match(page, /\.article-row:hover, \.article-row:focus-within/)
+  assert.match(board, /\.news-item::before/)
+  assert.match(board, /\.news-item:hover, \.news-item:focus-within/)
+})
