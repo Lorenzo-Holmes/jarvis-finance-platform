@@ -66,6 +66,22 @@ class AiRateLimitServiceTest {
     }
 
     @Test
+    void outputReviewerTokensAreIncludedInTheMonthlyTokenQuota() {
+        Map<String, Object> envelope = Map.of(
+                "code", 200,
+                "data", Map.of(
+                        "content", "回答",
+                        "usage", Map.of("total_tokens", 1000),
+                        "safety", Map.of(
+                                "status", "approved",
+                                "reviewer_usage", Map.of("total_tokens", 180))));
+
+        new AiRateLimitService(quotaService).recordTokens(42L, envelope);
+
+        verify(quotaService).consumeTokens(42L, 1180L);
+    }
+
+    @Test
     void tokensAreAlsoRecordedFromAFlatUsageMap() {
         new AiRateLimitService(quotaService)
                 .recordTokens(42L, Map.of("usage", Map.of("total_tokens", 500)));
