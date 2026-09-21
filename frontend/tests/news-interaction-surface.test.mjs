@@ -262,3 +262,11 @@ test('source credibility meters sweep in without changing their numeric width', 
   assert.match(page, /@keyframes credibility-sweep/)
   assert.match(page, /transform-origin: left center/)
 })
+
+test('quality telemetry acknowledges each successful digest refresh', () => {
+  const page = read('pages/NewsCenterPage.vue')
+  assert.match(page, /const qualityVersion = ref\(0\)/)
+  assert.match(page, /qualityVersion\.value \+= 1/)
+  assert.match(page, /:key="qualityVersion"/)
+  assert.match(page, /@keyframes quality-number-pop/)
+})

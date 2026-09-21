@@ -19,6 +19,7 @@ const generatedAt = ref('')
 const available = ref(true)
 const rankingMode = ref('smart')
 const qualityMetrics = ref(null)
+const qualityVersion = ref(0)
 const filterStats = ref(null)
 const returnedCount = ref(0)
 const semanticRanking = ref(null)
@@ -92,6 +93,7 @@ async function loadDigest(force = false) {
   articles.value = data.items || []
   generatedAt.value = data.generated_at || ''
   qualityMetrics.value = data.quality_metrics || null
+  qualityVersion.value += 1
   filterStats.value = data.filter_stats || null
   returnedCount.value = Number(data.returned_count || articles.value.length || 0)
   semanticRanking.value = data.semantic_ranking || null
@@ -349,7 +351,7 @@ onBeforeUnmount(() => {
         <div v-if="refreshing && articles.length" class="refresh-indicator" role="status">
           <i></i><span>{{ rankingMode === 'smart' ? '正在重新整理精选…' : '正在更新最新资讯…' }}</span>
         </div>
-        <div v-if="qualityMetrics" class="quality-strip" aria-label="资讯质量摘要">
+        <div v-if="qualityMetrics" :key="qualityVersion" class="quality-strip" aria-label="资讯质量摘要">
           <div><span>当前结果</span><b>{{ returnedCount }}</b></div>
           <div><span>跨源确认</span><b>{{ qualityMetrics.confirmed_event_count ?? 0 }}</b></div>
           <div><span>重复折叠</span><b>{{ qualityMetrics.duplicate_merge_count ?? 0 }}</b></div>
@@ -470,6 +472,10 @@ onBeforeUnmount(() => {
 .refresh-indicator { position: absolute; z-index: 4; top: 53px; right: 13px; display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--line)); border-radius: 999px; background: color-mix(in srgb, var(--surface) 90%, transparent); color: var(--muted); font: 7px ui-monospace, monospace; backdrop-filter: blur(10px); pointer-events: none; }.refresh-indicator i { width: 6px; height: 6px; border: 1px solid var(--accent); border-top-color: transparent; border-radius: 50%; animation: news-spin .8s linear infinite; }.feed-panel .article-list { transition: opacity .16s ease, filter .16s ease; }.feed-panel.refreshing .article-list { opacity: .72; filter: saturate(.86); }
 @keyframes news-spin { to { transform: rotate(360deg); } }
 .quality-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) auto auto; gap: 7px; align-items: center; margin: 10px 0 4px; }
+.quality-strip { animation: quality-strip-in var(--news-motion-surface) var(--news-ease) both; }
+.quality-strip b { animation: quality-number-pop var(--news-motion-surface) var(--news-ease) both; }
+@keyframes quality-strip-in { from { opacity: .65; transform: translateY(-3px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes quality-number-pop { 0% { opacity: .5; transform: scale(.92); } 70% { transform: scale(1.035); } 100% { opacity: 1; transform: scale(1); } }
 .quality-strip > div { min-width: 0; display: grid; gap: 3px; padding: 8px 9px; border: 1px solid color-mix(in srgb, var(--line) 82%, transparent); border-radius: 7px; background: color-mix(in srgb, var(--surface) 72%, transparent); }
 .quality-strip span, .quality-strip small { color: var(--subtle); font: 7px ui-monospace, monospace; }
 .quality-strip b { color: var(--text); font: 650 11px ui-monospace, monospace; }
