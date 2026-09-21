@@ -88,3 +88,10 @@ test('subscription configuration can collapse without discarding draft state', (
   assert.match(page, /收起配置/)
   assert.match(page, /展开配置/)
 })
+
+test('source choices visualize existing credibility without recomputing it', () => {
+  const page = read('pages/NewsCenterPage.vue')
+  assert.match(page, /class="credibility-meter"/)
+  assert.match(page, /Number\(source\.credibility\)/)
+  assert.match(page, /\.credibility-meter em/)
+})

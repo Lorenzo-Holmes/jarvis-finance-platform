@@ -242,7 +242,7 @@ onMounted(load)
           </label>
           <label v-for="source in sources" :key="source.sourceKey" class="choice" :class="{ active: selectedSources.includes(source.sourceKey) }">
             <input v-model="selectedSources" type="checkbox" :value="source.sourceKey" />
-            <span><b>{{ source.name }}</b><small>{{ source.category }} · 可信度 {{ source.credibility }}</small></span>
+            <span><b>{{ source.name }}</b><small>{{ source.category }} · 可信度 {{ source.credibility }}</small><i class="credibility-meter"><em :style="{ width: `${Math.max(0, Math.min(100, Number(source.credibility) || 0))}%` }"></em></i></span>
           </label>
         </div>
         <div class="topic-row">
@@ -355,6 +355,7 @@ onMounted(load)
 .choice span { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .choice b { overflow: hidden; color: var(--text); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .choice small { color: var(--subtle); font-size: 8px; }
+.credibility-meter { display: block; width: 100%; height: 3px; margin-top: 2px; border-radius: 999px; overflow: hidden; background: color-mix(in srgb, var(--line) 76%, transparent); }.credibility-meter em { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 45%, var(--muted)), var(--accent)); opacity: .65; transition: width .22s cubic-bezier(.22,1,.36,1), opacity .16s ease; }.choice:hover .credibility-meter em, .choice.active .credibility-meter em { opacity: .95; }
 .topic-row { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; margin-top: 12px; color: var(--muted); font-size: 9px; }
 .topic-choice { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); cursor: pointer; }
 .subscription-actions { justify-content: space-between; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); color: var(--subtle); font-size: 9px; }
