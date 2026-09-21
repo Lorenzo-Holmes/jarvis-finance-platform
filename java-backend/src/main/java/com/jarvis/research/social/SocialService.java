@@ -254,9 +254,11 @@ public class SocialService {
                 unread.merge(partner, 1, Integer::sum);
             }
         }
+        Map<Long, User> partners = new HashMap<>();
+        userRepository.findAllById(latest.keySet()).forEach(user -> partners.put(user.getId(), user));
         List<Map<String, Object>> out = new ArrayList<>();
         for (Map.Entry<Long, DirectMessage> entry : latest.entrySet()) {
-            User partner = userRepository.findById(entry.getKey()).orElse(null);
+            User partner = partners.get(entry.getKey());
             if (partner == null) continue;
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("partner", publicUser(userId, partner));

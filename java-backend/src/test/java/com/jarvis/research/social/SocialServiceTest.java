@@ -170,6 +170,25 @@ class SocialServiceTest {
         verify(postRepository, never()).delete(any());
     }
 
+    @Test
+    void conversationsBatchLoadPartnerProfilesInsteadOfNPlusOneLookups() {
+        DirectMessage first = DirectMessage.builder()
+                .id(1L).senderUserId(7L).recipientUserId(8L).content("a")
+                .createdAt(LocalDateTime.now()).build();
+        DirectMessage second = DirectMessage.builder()
+                .id(2L).senderUserId(9L).recipientUserId(7L).content("b")
+                .createdAt(LocalDateTime.now().minusMinutes(1)).build();
+        when(messageRepository.findRecentForUser(eq(7L), any())).thenReturn(java.util.List.of(first, second));
+        when(userRepository.findAllById(any())).thenReturn(java.util.List.of(user(8L), user(9L)));
+
+        java.util.List<Map<String, Object>> rows = service.conversations(7L);
+
+        assertEquals(2, rows.size());
+        verify(userRepository, times(1)).findAllById(any());
+        verify(userRepository, never()).findById(8L);
+        verify(userRepository, never()).findById(9L);
+    }
+
     private static User user(Long id) {
         return User.builder()
                 .id(id)
