@@ -127,3 +127,11 @@ test('social workspaces use restrained surface entry motion', () => {
   assert.match(read('pages/CommunityPage.vue'), /post-card:nth-child\(6\)/)
   assert.match(read('pages/ProfilePage.vue'), /@keyframes social-profile-in/)
 })
+
+test('community tabs use a moving selection lens with mobile fallback', () => {
+  const source = read('pages/CommunityPage.vue')
+  assert.match(source, /activeTabIndex/)
+  assert.match(source, /--tab-index/)
+  assert.match(source, /\.community-tabs::before/)
+  assert.match(source, /transform: translateX\(calc\(var\(--tab-index\) \* 100%\)\)/)
+})

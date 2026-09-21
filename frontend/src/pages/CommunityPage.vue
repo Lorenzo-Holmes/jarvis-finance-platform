@@ -55,6 +55,7 @@ let conversationSeq = 0
 
 const selectedGroupRole = computed(() => selectedGroup.value?.role || '')
 const selectedGroupJoined = computed(() => Boolean(selectedGroup.value?.joined))
+const activeTabIndex = computed(() => Math.max(0, tabs.findIndex(tab => tab.key === activeTab.value)))
 
 function responseData(response) { return response?.data ?? response }
 function pageItems(response) { return responseData(response)?.items || [] }
@@ -359,7 +360,7 @@ onMounted(async () => {
       <div class="head-status"><i></i><span>社交层与交易权限隔离</span></div>
     </header>
 
-    <nav class="community-tabs" role="tablist" aria-label="社区功能">
+    <nav class="community-tabs" role="tablist" aria-label="社区功能" :style="{ '--tab-index': activeTabIndex }">
       <button v-for="tab in tabs" :key="tab.key" type="button" role="tab" :aria-selected="activeTab === tab.key" :class="{ active: activeTab === tab.key }" @click="switchTab(tab.key)">
         {{ tab.label }}<span v-if="tab.key === 'messages' && messageUnreadCount" class="tab-badge">{{ messageUnreadCount > 99 ? '99+' : messageUnreadCount }}</span>
       </button>
@@ -474,9 +475,10 @@ onMounted(async () => {
 .page-head p { margin: 0; color: var(--muted); font-size: 11px; }
 .head-status { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 9px; }
 .head-status i { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); }
-.community-tabs { display: inline-flex; justify-self: start; padding: 3px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
-.community-tabs button { min-height: 31px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); padding: 0 13px; cursor: pointer; font-size: 10px; }
-.community-tabs button.active { color: var(--text); background: var(--workspace-accent-wash); }
+.community-tabs { position: relative; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); justify-self: start; min-width: 360px; padding: 3px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); overflow: hidden; }
+.community-tabs::before { content: ''; position: absolute; z-index: 0; inset: 3px auto 3px 3px; width: calc((100% - 6px) / 4); border: 1px solid color-mix(in srgb, var(--line-strong) 72%, transparent); border-radius: 6px; background: linear-gradient(180deg, color-mix(in srgb, var(--workspace-accent-wash) 82%, transparent), color-mix(in srgb, var(--workspace-accent-wash) 54%, transparent)); box-shadow: inset 0 1px 0 rgba(255,255,255,.035); transform: translateX(calc(var(--tab-index) * 100%)); transition: transform var(--social-motion-layout) var(--social-ease), background var(--social-motion-surface) ease; pointer-events: none; }
+.community-tabs button { position: relative; z-index: 1; min-height: 31px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); padding: 0 13px; cursor: pointer; font-size: 10px; }
+.community-tabs button.active { color: var(--text); background: transparent; }
 .tab-badge { display: inline-grid; place-items: center; min-width: 15px; height: 15px; margin-left: 6px; padding: 0 3px; border-radius: 999px; background: var(--accent); color: var(--bg); font-size: 7px; }
 .surface-alert { padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px; font-size: 10px; }
 .surface-alert.error { color: var(--bad); }.surface-alert.notice { color: var(--accent-strong); }
@@ -542,6 +544,9 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   .community-tabs { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
   .community-tabs::-webkit-scrollbar { display: none; }
   .community-tabs button { min-height: 40px; flex: 0 0 auto; padding: 0 12px; }
+  .community-tabs { display: inline-flex; min-width: 0; }
+  .community-tabs::before { display: none; }
+  .community-tabs button.active { background: var(--workspace-accent-wash); }
   .group-directory, .user-directory, .conversation-list { max-height: 250px; }
   .group-room > header, .profile-preview > header { flex-wrap: wrap; }
   .group-actions { display: flex; flex-wrap: wrap; gap: 6px; }
