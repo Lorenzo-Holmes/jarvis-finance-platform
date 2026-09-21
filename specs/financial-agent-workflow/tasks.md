@@ -39,9 +39,9 @@
   - 已通过 Flyway/Hibernate schema 契约、Agent 编排测试、前端 130 项 P0 测试、Playwright 财报导入门禁与生产构建；真实账号 Agent 浏览器成功流已通过。
   - _Requirement: 1–10_
 
-- [ ] 8. 浏览器验收与发布门禁
+- [x] 8. 浏览器验收与发布门禁
   - [x] 真实生产账号下验证 AI 中心 Trace、工具生命周期、历史运行抽屉和 Markdown 结论。
   - [x] 用受控长连接验证前端停止状态从运行中更新为 `STOPPED`；生产后端实际取消由专项烟测覆盖。
-  - [ ] 补充真实 `run_failed` 分支的浏览器失败提示验收。
+  - [x] 补充 `run_failed` 分支的浏览器失败提示验收（受控错误流，生产失败事件由后端烟测覆盖）。
   - [x] 构建、P0 测试、Java 测试通过后完成部署，并校验 GitHub Pages 版本 SHA。
   - _Requirement: 4, 5, 7, 8_

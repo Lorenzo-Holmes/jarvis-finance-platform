@@ -125,4 +125,38 @@ test.describe('金融 Agent · 真实浏览器验收', () => {
     await page.getByRole('button', { name: '停止生成' }).click({ force: true })
     await expect(trace.getByText('STOPPED', { exact: true }), '停止后 Trace 应显示已停止').toBeVisible({ timeout: 30_000 })
   })
+
+  test('工具失败时，Trace 应显示可理解的失败提示', async ({ loginPage, page, request }) => {
+    test.setTimeout(90_000)
+    test.skip(!(await backendReady(request)), `后端未就绪（${API_URL}），跳过真实 Agent 失败验收`)
+    test.skip(!hasCredentials('user'), '未配置 E2E_USER_EMAIL / E2E_USER_PASSWORD，跳过真实 Agent 失败验收')
+
+    await page.addInitScript(() => {
+      const nativeFetch = window.fetch.bind(window)
+      window.fetch = async (input, init) => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+        const method = String(init?.method || (input instanceof Request ? input.method : 'GET') || 'GET').toUpperCase()
+        if (method === 'POST' && url.includes('/api/agent/research/stream')) {
+          const events = [
+            { runId: 'e2e-failed-run', stepId: 'e2e-failed-run', sequence: 1, type: 'run_started', status: 'running', title: '研究工作流已开始' },
+            { runId: 'e2e-failed-run', stepId: 'terminal:e2e-failed-run', sequence: 2, type: 'run_failed', status: 'failed', title: '研究工作流失败', outputSummary: '行情工具暂时不可用，请稍后重试', errorCode: 'TOOL_UNAVAILABLE' },
+          ]
+          const body = events.map(event => `event: agent_step\ndata: ${JSON.stringify(event)}\n\n`).join('')
+          return new Response(body, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })
+        }
+        return nativeFetch(input, init)
+      }
+    })
+
+    await loginPage.openLogin()
+    await loginPage.login(CREDENTIALS.user.email, CREDENTIALS.user.password)
+    await expect(page.locator('.container')).toBeVisible({ timeout: 30_000 })
+    await openAgentWorkspace(page)
+    await page.getByRole('textbox', { name: '研究问题' }).fill('请验证行情工具失败时的研究提示。')
+    await page.getByRole('button', { name: '提交研究问题' }).click()
+
+    const trace = page.getByTestId('agent-trace')
+    await expect(trace.getByText('FAILED', { exact: true }), '失败运行应显示 FAILED').toBeVisible({ timeout: 30_000 })
+    await expect(trace, '失败运行应给出可理解的错误原因').toContainText('行情工具暂时不可用，请稍后重试')
+  })
 })

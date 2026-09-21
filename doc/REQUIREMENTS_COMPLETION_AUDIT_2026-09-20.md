@@ -27,7 +27,7 @@
 - Java：全量 Maven 测试通过，555 tests / 0 failures / 0 errors / 5 skipped；包含 RSS AI 分析/日报产物/重要资讯提醒测试，以及既有 V15 Flyway/Hibernate schema contract、用户组配额/权限继承、回测、交易回滚故障注入、PostgreSQL 锁策略、Agent 工具步骤生命周期、运行恢复、SSE 断线取消竞态等测试。PostgreSQL 未配置时仅保留既有跳过项。
 - Python：`PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q`，259 passed。普通 `pytest` 仍受本机 `pytest-asyncio` 与当前 pytest 版本兼容问题影响，代码测试本身不受影响。
 - 前端：`npm run test:p0`，130 passed；`npm run build` 通过。
-- 浏览器：Playwright `financial-import` 项目通过，验证财报 Markdown 文件导入替换/追加、失败导入保留原文，以及选择文件不会提前请求分析接口；预览模式下夜间多市场图表和财报输入面板也已实际检查。2026-09-21 使用真实生产账号执行 Agent 专项浏览器用例 2 条全部通过：真实 SSE 的工具生命周期、Markdown 结论、历史运行抽屉，以及停止状态 UI 回归（受控长连接，避免真实工作流瞬时完成造成竞态）。
+- 浏览器：Playwright `financial-import` 项目通过，验证财报 Markdown 文件导入替换/追加、失败导入保留原文，以及选择文件不会提前请求分析接口；预览模式下夜间多市场图表和财报输入面板也已实际检查。2026-09-21 使用真实生产账号执行 Agent 专项浏览器用例 3 条全部通过：真实 SSE 的工具生命周期、Markdown 结论、历史运行抽屉，以及停止状态和失败提示回归。
 - 测试 Agent：`node tools/test-agent/test-agent.mjs --run --project smoke` 在本地 managed Vite 环境通过，6 条 smoke 浏览器用例无失败；未把 smoke 结果冒充真实登录、真实 AI 或生产验收。
 
 ## Gitee PR 审核（2026-09-20）
@@ -44,15 +44,15 @@
 - 使用真实生产烟测账号完成：登录、数据库详情、行情、1Hz 行情 SSE、日 K、模拟盘、AI capabilities、Agent SSE、Agent PostgreSQL 事件回放、可复现回测和退出登录均通过；Agent SSE 的代理连接关闭码已按事件终态校验处理，不影响业务事件完整性。
 - 2026-09-21 05:35 运行升级后的 `CHECK_AGENT_STREAM=1 CHECK_AGENT_RECOVERY=1` 专项烟测：除 Agent 真实工作流、`tool_call`、PostgreSQL 事件回放、断线取消/重订阅和回测登出外，烟测脚本还强制验证每个运行中工具步骤的 `step_started → tool_call → tool_result → step_completed` 顺序、共享 `stepId` 与终态事件；全部通过，此前可复现的断线取消 409 已不再出现。
 - 使用真实生产会话对 `/api/news/analyze` 提交一条资讯联调通过，返回 `code=200`、1 条结构化分析并带有模型标识；未输出模型正文或任何凭据。
-- 使用真实生产账号执行 Agent 浏览器验收：真实 SSE/工具生命周期/Markdown 结论/历史运行通过；停止按钮状态回归用受控长连接验证 `run_cancelled → STOPPED`，生产实际取消接口仍由后端专项烟测覆盖。
+- 使用真实生产账号执行 Agent 浏览器验收 3/3 通过：真实 SSE/工具生命周期/Markdown 结论/历史运行通过；受控长连接验证 `run_cancelled → STOPPED` 和 `run_failed → FAILED`，生产实际取消接口与失败事件由后端专项烟测覆盖。
 
 ## 仍未完成或需要真实环境验收
 
 ### P0 发布门禁
 
-1. Agent Run 的真实 SSE、JWT、工具调用、步骤生命周期、主动取消、客户端断线后的重新订阅以及 PostgreSQL 事件回放已通过生产专项烟测；真实生产浏览器的 Trace、Markdown、历史运行已通过，取消状态 UI 回归也已通过。后端实际取消与前端状态分别有烟测和受控浏览器证据。
+1. Agent Run 的真实 SSE、JWT、工具调用、步骤生命周期、主动取消、客户端断线后的重新订阅以及 PostgreSQL 事件回放已通过生产专项烟测；真实生产浏览器的 Trace、Markdown、历史运行、停止状态和失败提示均已通过。后端实际取消/失败与前端状态分别有烟测和浏览器证据。
 2. 首页技术指标、回测高级指标和财报结构化返回已用真实登录会话完成 API 级生产联调；管理员 OAuth/审计查询仍缺真实管理员凭据下的端到端验收。
-3. Agent 中心的真实 Trace、停止状态和 Markdown 结论已有真实登录浏览器验收；仍缺专门覆盖 `run_failed` 失败提示的真实浏览器用例，当前失败分支主要由 Java 单测和生产烟测覆盖。
+3. Agent 中心的真实 Trace、停止状态、失败提示和 Markdown 结论已有真实登录浏览器验收；不再列为未完成项。
 
 ### P1/P2
 
@@ -65,4 +65,4 @@
 
 ## 结论
 
-核心业务功能已持续补齐，RSS AI/资讯链路和 Agent 的真实工具调用、取消、断线重订阅成功流已发布并完成生产烟测，Agent 的真实登录浏览器成功流也已验收；当前仍不能宣称“全部需求已生产验收完成”。剩余工作集中在 Agent 失败分支浏览器验收、管理员 OAuth/审计完整验收、RSS 通知与 usage 的真实业务触发、测试 Agent 的真实账号自动编排、监控告警导入以及视觉人工确认，不应通过伪造数据或跳过认证来标记完成。
+核心业务功能已持续补齐，RSS AI/资讯链路和 Agent 的真实工具调用、取消、断线重订阅成功流已发布并完成生产烟测，Agent 的真实登录浏览器成功/失败/停止流也已验收；当前仍不能宣称“全部需求已生产验收完成”。剩余工作集中在管理员 OAuth/审计完整验收、RSS 通知与 usage 的真实业务触发、测试 Agent 的真实账号自动编排、监控告警导入以及视觉人工确认，不应通过伪造数据或跳过认证来标记完成。
