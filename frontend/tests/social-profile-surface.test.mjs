@@ -36,6 +36,8 @@ test('community surface contains groups, user discovery, direct messages and exp
   assert.match(page, /用户发现/)
   assert.match(page, /私信/)
   assert.match(page, /messageUnreadCount/)
+  assert.match(page, /searchInviteUsers/)
+  assert.match(page, /按昵称搜索成员/)
   assert.match(page, /shareToWeibo/)
   assert.match(page, /shareToXiaohongshu/)
 })

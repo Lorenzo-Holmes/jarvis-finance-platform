@@ -22,7 +22,8 @@ const selectedGroup = ref(null)
 const groupPosts = ref([])
 const groupPostText = ref('')
 const newGroup = ref({ name: '', description: '', visibility: 'OPEN' })
-const inviteUserId = ref('')
+const inviteQuery = ref('')
+const inviteCandidates = ref([])
 
 const userQuery = ref('')
 const users = ref([])
@@ -128,12 +129,20 @@ async function publishGroupPost() {
   })
 }
 
-async function addGroupMember() {
-  const userId = Number(inviteUserId.value)
+async function searchInviteUsers() {
+  const query = inviteQuery.value.trim()
+  if (!query) { inviteCandidates.value = []; return }
+  const response = await api.socialUsers(query, 0, 8)
+  inviteCandidates.value = pageItems(response).filter(item =>
+    !(selectedGroup.value?.members || []).some(member => member.user?.id === item.id))
+}
+
+async function addGroupMember(userId) {
   if (!userId || !selectedGroup.value?.id) return
   await run(async () => {
     await api.communityAddMember(selectedGroup.value.id, userId)
-    inviteUserId.value = ''
+    inviteQuery.value = ''
+    inviteCandidates.value = []
     await openGroup(selectedGroup.value.id)
     setNotice('成员已加入')
   })
@@ -286,7 +295,15 @@ onMounted(async () => {
       <main v-if="selectedGroup" class="group-room">
         <header><div><span>{{ selectedGroup.visibility }}</span><h3>{{ selectedGroup.name }}</h3><p>{{ selectedGroup.description || '暂无小组简介。' }}</p></div><div class="group-actions"><button v-if="!selectedGroupJoined && selectedGroup.visibility === 'OPEN'" type="button" @click="joinGroup(selectedGroup.id)">加入</button><button v-else-if="selectedGroupJoined && selectedGroupRole !== 'OWNER'" type="button" @click="leaveGroup(selectedGroup.id)">退出</button></div></header>
         <div class="group-metrics"><div><span>成员</span><b>{{ selectedGroup.memberCount }}</b></div><div><span>动态</span><b>{{ selectedGroup.postCount }}</b></div><div><span>我的角色</span><b>{{ selectedGroup.role || '访客' }}</b></div></div>
-        <section v-if="selectedGroupRole === 'OWNER'" class="invite-row"><input v-model="inviteUserId" inputmode="numeric" placeholder="用户 ID" /><button type="button" @click="addGroupMember">添加成员</button></section>
+        <section v-if="selectedGroupRole === 'OWNER'" class="invite-panel">
+          <div class="invite-row"><input v-model="inviteQuery" placeholder="按昵称搜索成员" @keyup.enter="searchInviteUsers" /><button type="button" @click="searchInviteUsers">搜索</button></div>
+          <div v-if="inviteCandidates.length" class="invite-candidates">
+            <button v-for="candidate in inviteCandidates" :key="candidate.id" type="button" @click="addGroupMember(candidate.id)">
+              <span class="avatar"><img v-if="candidate.avatarUrl" :src="candidate.avatarUrl" alt="" /><b v-else>{{ (candidate.displayName || '?').slice(0,1) }}</b></span>
+              <span><strong>{{ candidate.displayName }}</strong><small>{{ candidate.signature || '添加为小组成员' }}</small></span><i>添加</i>
+            </button>
+          </div>
+        </section>
         <section v-if="selectedGroupJoined" class="group-composer"><textarea v-model="groupPostText" maxlength="4000" rows="3" placeholder="在小组内发布研究记录…"></textarea><button type="button" @click="publishGroupPost">发布到小组</button></section>
         <div class="feed-list compact"><article v-for="post in groupPosts" :key="post.id" class="post-card"><header><button class="author" type="button" @click="openUser(post.author?.id); activeTab='users'"><span><strong>{{ post.author?.displayName }}</strong><small>{{ formatTime(post.createdAt) }}</small></span></button></header><p>{{ post.content }}</p></article><div v-if="!groupPosts.length" class="empty-state">当前没有可展示的小组动态。</div></div>
       </main>
@@ -360,6 +377,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .group-room > header, .profile-preview > header, .message-room > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 16px; border-bottom: 1px solid var(--line); }.group-room h3, .profile-preview h3, .message-room h3 { margin: 5px 0; font-size: 18px; }.group-room p, .profile-preview p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.6; }
 .group-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 0 12px; }.group-metrics div { padding: 10px; border: 1px solid var(--line); border-radius: 8px; display: grid; gap: 5px; }.group-metrics span { color: var(--subtle); font-size: 8px; }.group-metrics b { font-size: 13px; }
 .invite-row, .search-row { display: flex; gap: 7px; padding: 0 12px; }.invite-row input, .search-row input { flex: 1; }.group-composer { display: grid; gap: 7px; padding: 0 12px; }.group-composer button { justify-self: end; }
+.invite-panel { display: grid; gap: 6px; }.invite-candidates { display: grid; margin: 0 12px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }.invite-candidates > button { display: flex; align-items: center; gap: 8px; padding: 8px 9px; border: 0; border-bottom: 1px solid var(--line); background: var(--panel); color: inherit; cursor: pointer; text-align: left; }.invite-candidates > button:last-child { border-bottom: 0; }.invite-candidates > button > span:nth-child(2) { min-width: 0; flex: 1; display: grid; gap: 3px; }.invite-candidates strong { font-size: 9px; }.invite-candidates small { color: var(--subtle); font-size: 8px; }.invite-candidates i { color: var(--accent-strong); font-size: 8px; font-style: normal; }
 .user-directory .search-row { padding: 10px; border-bottom: 1px solid var(--line); }
 .profile-preview > header { justify-content: flex-start; }.profile-preview > header > div { flex: 1; }.contact-card { margin: 0 14px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; display: grid; gap: 5px; }.contact-card span { color: var(--subtle); font-size: 8px; }.contact-card strong { font-size: 10px; }
 .achievement-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; padding: 0 14px; }.achievement-strip article { padding: 11px; border: 1px solid var(--line); border-radius: 9px; display: grid; gap: 5px; }.achievement-strip span, .achievement-strip small { color: var(--subtle); font-size: 7px; }.achievement-strip b { font-size: 9px; }
