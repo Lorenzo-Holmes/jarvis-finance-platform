@@ -101,8 +101,8 @@ public class SocialService {
     public Map<String, Object> groups(Long viewerId, String query, int page, int size) {
         PageRequest request = pageRequest(page, size);
         Page<CommunityGroup> groups = query == null || query.isBlank()
-                ? groupRepository.findAllByOrderByUpdatedAtDesc(request)
-                : groupRepository.findByNameContainingIgnoreCaseOrderByUpdatedAtDesc(query.trim(), request);
+                ? groupRepository.findVisibleToUser(viewerId, request)
+                : groupRepository.findVisibleToUserByName(viewerId, query.trim(), request);
         return pageView(groups.map(group -> groupView(viewerId, group, false)));
     }
 

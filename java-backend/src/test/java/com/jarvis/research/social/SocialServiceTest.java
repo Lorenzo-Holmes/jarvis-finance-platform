@@ -127,12 +127,22 @@ class SocialServiceTest {
 
     @Test
     void groupSearchUsesCaseInsensitiveNameQueryWhenProvided() {
-        when(groupRepository.findByNameContainingIgnoreCaseOrderByUpdatedAtDesc(eq("gold"), any(PageRequest.class)))
+        when(groupRepository.findVisibleToUserByName(eq(7L), eq("gold"), any(PageRequest.class)))
                 .thenReturn(new PageImpl<>(java.util.List.of()));
 
         service.groups(7L, " gold ", 0, 20);
 
-        verify(groupRepository).findByNameContainingIgnoreCaseOrderByUpdatedAtDesc(eq("gold"), any(PageRequest.class));
+        verify(groupRepository).findVisibleToUserByName(eq(7L), eq("gold"), any(PageRequest.class));
+    }
+
+    @Test
+    void groupDirectoryUsesViewerAwareVisibilityQuery() {
+        when(groupRepository.findVisibleToUser(eq(7L), any(PageRequest.class)))
+                .thenReturn(new PageImpl<>(java.util.List.of()));
+
+        service.groups(7L, "", 0, 20);
+
+        verify(groupRepository).findVisibleToUser(eq(7L), any(PageRequest.class));
     }
 
     @Test
