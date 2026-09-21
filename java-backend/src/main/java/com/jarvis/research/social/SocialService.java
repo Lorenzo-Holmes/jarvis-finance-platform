@@ -35,9 +35,10 @@ public class SocialService {
     @Transactional(readOnly = true)
     public Map<String, Object> searchUsers(Long viewerId, String query, int page, int size) {
         PageRequest request = pageRequest(page, size);
-        Page<User> users = query == null || query.isBlank()
+        String safeQuery = normalizeSearchQuery(query);
+        Page<User> users = safeQuery.isEmpty()
                 ? userRepository.findByEnabledTrue(request)
-                : userRepository.findByEnabledTrueAndDisplayNameContainingIgnoreCase(query.trim(), request);
+                : userRepository.findByEnabledTrueAndDisplayNameContainingIgnoreCase(safeQuery, request);
         return pageView(users.map(user -> publicUser(viewerId, user)));
     }
 
@@ -114,9 +115,10 @@ public class SocialService {
     @Transactional(readOnly = true)
     public Map<String, Object> groups(Long viewerId, String query, int page, int size) {
         PageRequest request = pageRequest(page, size);
-        Page<CommunityGroup> groups = query == null || query.isBlank()
+        String safeQuery = normalizeSearchQuery(query);
+        Page<CommunityGroup> groups = safeQuery.isEmpty()
                 ? groupRepository.findVisibleToUser(viewerId, request)
-                : groupRepository.findVisibleToUserByName(viewerId, query.trim(), request);
+                : groupRepository.findVisibleToUserByName(viewerId, safeQuery, request);
         return groupPageView(viewerId, groups);
     }
 
@@ -537,6 +539,15 @@ public class SocialService {
         if (value == null) return "";
         String text = value.trim().replaceAll("\\s+", " ");
         return text.length() <= max ? text : text.substring(0, max) + "…";
+    }
+
+    private static String normalizeSearchQuery(String query) {
+        String normalized = query == null ? "" : query.trim();
+        if (normalized.length() > 80) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "搜索词不能超过 80 个字符");
+        }
+        validateUserText("query", normalized);
+        return normalized;
     }
 
     private static void validateUserText(String field, String value) {

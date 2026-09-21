@@ -399,6 +399,16 @@ class SocialServiceTest {
         verify(userRepository, never()).findAll(any(PageRequest.class));
     }
 
+    @Test
+    void oversizedSearchQueryIsRejectedBeforeDatabaseAccess() {
+        ResponseStatusException error = assertThrows(ResponseStatusException.class,
+                () -> service.searchUsers(7L, "x".repeat(81), 0, 20));
+
+        assertEquals(HttpStatus.BAD_REQUEST, error.getStatusCode());
+        verify(userRepository, never()).findByEnabledTrue(any(PageRequest.class));
+        verify(userRepository, never()).findByEnabledTrueAndDisplayNameContainingIgnoreCase(anyString(), any(PageRequest.class));
+    }
+
     private static User user(Long id) {
         return User.builder()
                 .id(id)
