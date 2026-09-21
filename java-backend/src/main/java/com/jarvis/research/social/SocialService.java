@@ -107,7 +107,7 @@ public class SocialService {
         if (!Objects.equals(viewerId, targetUserId) && !user.isActivityPublic()) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "该用户未公开动态");
         }
-        return pageView(activityRepository.findByUserIdOrderByCreatedAtDesc(targetUserId, pageRequest(page, size))
+        return pageView(activityRepository.findByUserIdOrderByCreatedAtDescIdDesc(targetUserId, pageRequest(page, size))
                 .map(this::activityView));
     }
 
@@ -247,7 +247,7 @@ public class SocialService {
         CommunityGroup group = requireGroup(groupId);
         requireGroupRead(viewerId, group);
         return postPageView(viewerId,
-                postRepository.findByGroupIdOrderByCreatedAtDesc(groupId, pageRequest(page, size)));
+                postRepository.findByGroupIdOrderByCreatedAtDescIdDesc(groupId, pageRequest(page, size)));
     }
 
     @Transactional

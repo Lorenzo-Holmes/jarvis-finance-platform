@@ -12,12 +12,12 @@ public interface CommunityGroupRepository extends JpaRepository<CommunityGroup, 
 
     @Query("select g from CommunityGroup g where g.visibility = 'OPEN' " +
             "or g.id in (select m.groupId from CommunityGroupMember m where m.userId = :userId) " +
-            "order by g.updatedAt desc")
+            "order by g.updatedAt desc, g.id desc")
     Page<CommunityGroup> findVisibleToUser(@Param("userId") Long userId, Pageable pageable);
 
     @Query("select g from CommunityGroup g where (g.visibility = 'OPEN' " +
             "or g.id in (select m.groupId from CommunityGroupMember m where m.userId = :userId)) " +
-            "and lower(g.name) like lower(concat('%', :name, '%')) order by g.updatedAt desc")
+            "and lower(g.name) like lower(concat('%', :name, '%')) order by g.updatedAt desc, g.id desc")
     Page<CommunityGroup> findVisibleToUserByName(@Param("userId") Long userId,
                                                  @Param("name") String name,
                                                  Pageable pageable);

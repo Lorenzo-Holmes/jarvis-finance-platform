@@ -47,6 +47,17 @@ class DirectMessageRepositoryTest {
         assertEquals(List.of("new-a", "only-b"), rows.stream().map(DirectMessage::getContent).toList());
     }
 
+    @Test
+    void threadUsesIdAsTieBreakerWhenTimestampsMatch() {
+        LocalDateTime same = LocalDateTime.now();
+        DirectMessage first = repository.save(message(a, me, "first", same));
+        DirectMessage second = repository.save(message(me, a, "second", same));
+
+        var page = repository.findThread(me, a, PageRequest.of(0, 20));
+
+        assertEquals(List.of(second.getId(), first.getId()), page.getContent().stream().map(DirectMessage::getId).toList());
+    }
+
     private long id(String email) {
         return jdbc.queryForObject("SELECT id FROM users WHERE email = ?", Long.class, email);
     }

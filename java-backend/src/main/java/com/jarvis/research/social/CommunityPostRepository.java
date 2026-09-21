@@ -9,7 +9,7 @@ import java.util.Collection;
 import java.util.List;
 
 public interface CommunityPostRepository extends JpaRepository<CommunityPost, Long> {
-    Page<CommunityPost> findByGroupIdOrderByCreatedAtDesc(Long groupId, Pageable pageable);
+    Page<CommunityPost> findByGroupIdOrderByCreatedAtDescIdDesc(Long groupId, Pageable pageable);
     long countByGroupId(Long groupId);
     long countByAuthorUserId(Long authorUserId);
 
@@ -22,7 +22,7 @@ public interface CommunityPostRepository extends JpaRepository<CommunityPost, Lo
     @Query("select p from CommunityPost p where p.groupId is null " +
             "or p.groupId in (select g.id from CommunityGroup g where g.visibility = 'OPEN') " +
             "or p.groupId in (select m.groupId from CommunityGroupMember m where m.userId = :userId) " +
-            "order by p.createdAt desc")
+            "order by p.createdAt desc, p.id desc")
     Page<CommunityPost> findVisibleFeed(@org.springframework.data.repository.query.Param("userId") Long userId,
                                         Pageable pageable);
 }

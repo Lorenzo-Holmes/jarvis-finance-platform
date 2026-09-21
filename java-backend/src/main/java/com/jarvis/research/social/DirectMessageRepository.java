@@ -42,7 +42,7 @@ public interface DirectMessageRepository extends JpaRepository<DirectMessage, Lo
 
     @Query("select m from DirectMessage m where " +
             "(m.senderUserId = :a and m.recipientUserId = :b) or " +
-            "(m.senderUserId = :b and m.recipientUserId = :a) order by m.createdAt desc")
+            "(m.senderUserId = :b and m.recipientUserId = :a) order by m.createdAt desc, m.id desc")
     Page<DirectMessage> findThread(@Param("a") Long a, @Param("b") Long b, Pageable pageable);
 
     @Modifying
