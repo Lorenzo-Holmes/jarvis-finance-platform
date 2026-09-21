@@ -138,7 +138,10 @@ public class NewsSourceService {
                 if (!(value instanceof Map<?, ?> raw)) continue;
                 String sourceKey = text(raw.get("source_id"));
                 String category = text(raw.get("category"));
-                if (sourceKeys.contains(sourceKey) || topics.contains(category)) {
+                boolean sourceMatch = sourceKeys.isEmpty() || sourceKeys.contains(sourceKey)
+                        || sourceIds(raw.get("source_ids")).stream().anyMatch(sourceKeys::contains);
+                boolean topicMatch = topics.isEmpty() || topics.contains(category);
+                if (sourceMatch && topicMatch) {
                     Map<String, Object> item = new LinkedHashMap<>();
                     raw.forEach((key, itemValue) -> item.put(String.valueOf(key), itemValue));
                     items.add(item);
@@ -148,6 +151,11 @@ public class NewsSourceService {
         Map<String, Object> filtered = new LinkedHashMap<>(shaped);
         filtered.put("items", items);
         return filtered;
+    }
+
+    private Set<String> sourceIds(Object value) {
+        if (!(value instanceof List<?> list)) return Set.of();
+        return list.stream().map(this::text).filter(item -> !item.isBlank()).collect(Collectors.toSet());
     }
 
     private void apply(NewsSource source, SourceRequest request, String sourceKey) {

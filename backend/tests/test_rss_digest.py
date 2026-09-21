@@ -81,7 +81,7 @@ def test_seed_defaults_can_be_disabled():
 
 # ---- digest 合并与排序 ----
 
-def test_digest_merges_sources_and_sorts_by_published(monkeypatch):
+def test_digest_merges_sources_and_intelligence_ranking_keeps_freshness_signal(monkeypatch):
     store = RSSStore()
     # 只留两个源，避免用例与预置源数量耦合
     store.sources = {
@@ -109,6 +109,9 @@ def test_digest_merges_sources_and_sorts_by_published(monkeypatch):
     assert digest["refreshed"] == 2
     assert digest["ok_sources"] == 2
     assert [item["title"] for item in digest["articles"]] == ["A 晚", "B 中", "A 早"]
+    assert digest["rank_mode"] == "intelligence_v1"
+    assert all("rank_score" in item for item in digest["articles"])
+    assert all("selection_reason" in item for item in digest["articles"])
     # 文章带链接，前端据此判断是否可跳转
     assert all(item["url"].startswith("https://") for item in digest["articles"])
     assert all(status["crawled"] is True for status in digest["sources"])
@@ -183,6 +186,25 @@ def test_digest_deduplicates_across_sources(monkeypatch):
     digest = store.digest(force=True)
 
     assert [item["title"] for item in digest["articles"]] == ["同一篇"]
+    article = digest["articles"][0]
+    assert article["source_ids"] == ["a", "b"]
+    assert article["source_count"] == 2
+    assert article["confirmation_score"] > 0
+    assert any("来源确认" in reason for reason in article["selection_reason"])
+
+
+def test_source_health_uses_smoothed_score_and_exposes_it(monkeypatch):
+    store = RSSStore(seed_defaults=False)
+    store.add_source({"id": "a", "url": "https://a.example.com/rss"})
+    _patch_feed(monkeypatch, _fake_feed([
+        _entry("健康源", "https://a.example.com/1", "2026-09-21T08:00:00"),
+    ]))
+
+    digest = store.digest(force=True)
+
+    status = digest["sources"][0]
+    assert 80 < status["health_score"] < 100
+    assert digest["articles"][0]["source_health_score"] == status["health_score"]
 
 
 # ---- 时间解析与排序 ----

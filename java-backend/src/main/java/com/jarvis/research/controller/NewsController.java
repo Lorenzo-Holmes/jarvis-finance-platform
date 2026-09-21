@@ -76,10 +76,11 @@ public class NewsController {
         String path = "/internal/rss/digest?refresh=" + refresh + "&force=" + force;
         try {
             Map<String, Object> digest = aiProxyService.post(path, Map.of());
-            Map<String, Object> shaped = NewsDigest.fromDigest(digest, limit);
+            Map<String, Object> shaped = NewsDigest.fromDigest(digest, 0);
             if (newsSourceService != null && CurrentUser.isAuthenticated()) {
                 shaped = newsSourceService.filterDigest(CurrentUser.id(), shaped);
             }
+            shaped = NewsDigest.limitItems(shaped, limit);
             return ApiResponse.ok(localizeCachedTitles(shaped));
         } catch (Exception e) {
             return ApiResponse.ok(NewsDigest.unavailable(NewsDigest.REASON_UNAVAILABLE));
