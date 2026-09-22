@@ -47,5 +47,23 @@ class AgentResearchContextTest {
 
         assertEquals("sge_gold:Au99.99", context.key());
         assertFalse(context.isExtendedMarket());
+        assertTrue(context.isSgeGoldMarket());
+    }
+
+    @Test
+    void jdGoldAndGlobalIndexContextsAreRestrictedToSupportedInstruments() {
+        AgentResearchContext jd = AgentResearchContext.from(Map.of(
+                "market", "jd_gold", "symbol", "JD-ZS-GOLD", "name", "浙商积存金"));
+        assertTrue(jd.isJdGoldMarket());
+        assertEquals("jd_zheshang", jd.jdGoldSourceSymbol());
+
+        AgentResearchContext index = AgentResearchContext.from(Map.of(
+                "market", "global_index", "symbol", "^GSPC", "name", "标普500"));
+        assertTrue(index.supportsExtendedKline());
+
+        assertThrows(ResponseStatusException.class, () -> AgentResearchContext.from(Map.of(
+                "market", "jd_gold", "symbol", "jd_arbitrary", "name", "invalid")));
+        assertThrows(ResponseStatusException.class, () -> AgentResearchContext.from(Map.of(
+                "market", "global_index", "symbol", "AAPL", "name", "not an index")));
     }
 }

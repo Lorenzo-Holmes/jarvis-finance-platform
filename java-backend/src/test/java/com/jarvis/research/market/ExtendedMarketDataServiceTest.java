@@ -100,6 +100,11 @@ class ExtendedMarketDataServiceTest {
         assertEquals("上海黄金交易所（日行情）", gold.get("source"));
         assertEquals(false, overview.get(0).get("available"), "A股源故障只能降级单卡，不能让 overview 失败");
         assertEquals(false, overview.get(6).get("available"), "全球指数源故障同样只降级单卡");
+
+        Map<String, Object> agentQuote = isolated.sgeGoldQuote();
+        assertEquals("sge_gold", agentQuote.get("market"));
+        assertEquals("Au99.99", agentQuote.get("symbol"));
+        assertEquals(true, agentQuote.get("available"));
     }
 
     @Test
@@ -144,6 +149,13 @@ class ExtendedMarketDataServiceTest {
     void rejectsInvalidKlineLimit() {
         ResponseStatusException ex = assertThrows(ResponseStatusException.class,
                 () -> service.kline("crypto", "BTCUSDT", "1d", 501));
+        assertEquals(400, ex.getStatusCode().value());
+    }
+
+    @Test
+    void globalIndexOnlyAllowsDailyKlines() {
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> service.kline("global_index", "^GSPC", "5m", 60));
         assertEquals(400, ex.getStatusCode().value());
     }
 

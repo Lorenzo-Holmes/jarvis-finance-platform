@@ -97,7 +97,9 @@ class MarketDataProvidersTest {
         // 黄金不做K线（core 伦敦金的K线走新浪）；美股与加密货币的K线现在都已迁移。
         assertTrue(yahoo.supportsKline("us_stock"));
         assertTrue(yahoo.supportsKline("crypto"));
-        assertFalse(yahoo.supportsKline("global_index"));
+        assertTrue(yahoo.supportsKline("global_index"));
+        assertTrue(yahoo.supportsKline("global_index", "1d"));
+        assertFalse(yahoo.supportsKline("global_index", "5m"));
 
         // Yahoo 的 chart 接口对分钟级一次最多 500 条，服务层聚合 10m 时要按它取原始K线。
         assertEquals(500, yahoo.maxKlineLimit());
@@ -178,6 +180,9 @@ class MarketDataProvidersTest {
                 "core 黄金ETF日K链不受影响");
         assertEquals(List.of("Binance", "Yahoo"), names(registry.klineChain("crypto", "1d")));
         assertEquals(List.of("Yahoo"), names(registry.klineChain("us_stock", "1d")));
+        assertEquals(List.of("Yahoo"), names(registry.klineChain("global_index", "1d")));
+        assertTrue(registry.klineChain("global_index", "5m").isEmpty(),
+                "全球指数不应被错误路由到分钟K线源");
     }
 
     private static List<String> names(List<com.jarvis.research.market.provider.MarketDataProvider> chain) {

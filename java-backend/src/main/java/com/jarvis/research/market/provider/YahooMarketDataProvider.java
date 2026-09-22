@@ -116,12 +116,20 @@ public class YahooMarketDataProvider implements MarketDataProvider {
     }
 
     /**
-     * 美股日K与加密货币K线现在都已迁移，所以可以声明。
+     * 美股、加密货币K线以及全球指数日K现在都已迁移，所以可以声明。
      * 黄金仍不做K线（core 伦敦金的K线走新浪）。
      */
     @Override
     public boolean supportsKline(String market) {
-        return "us_stock".equalsIgnoreCase(market) || "crypto".equalsIgnoreCase(market);
+        return "us_stock".equalsIgnoreCase(market) || "crypto".equalsIgnoreCase(market)
+                || "global_index".equalsIgnoreCase(market);
+    }
+
+    @Override
+    public boolean supportsKline(String market, String interval) {
+        if ("global_index".equalsIgnoreCase(market)) return "1d".equalsIgnoreCase(interval);
+        String normalized = interval == null ? "" : interval.trim().toLowerCase(Locale.ROOT);
+        return supportsKline(market) && KLINE_INTERVALS.contains(normalized);
     }
 
     /**
@@ -354,17 +362,19 @@ public class YahooMarketDataProvider implements MarketDataProvider {
      */
     @Override
     public List<Map<String, Object>> kline(String market, String symbol, String interval, int limit) {
-        if (!"us_stock".equalsIgnoreCase(market) && !"crypto".equalsIgnoreCase(market)) {
+        String normalized = interval == null ? "" : interval.trim().toLowerCase(Locale.ROOT);
+        boolean globalIndexDaily = "global_index".equalsIgnoreCase(market) && "1d".equals(normalized);
+        if (!"us_stock".equalsIgnoreCase(market) && !"crypto".equalsIgnoreCase(market) && !globalIndexDaily) {
             return List.of();
         }
         String providerSymbol;
         try {
-            providerSymbol = "crypto".equalsIgnoreCase(market) ? cryptoSymbol(symbol) : stockSymbol(symbol);
+            providerSymbol = "crypto".equalsIgnoreCase(market) ? cryptoSymbol(symbol)
+                    : globalIndexDaily ? indexSymbol(symbol) : stockSymbol(symbol);
         } catch (IllegalArgumentException e) {
             log.warn("Yahoo K线标的不合法: market={}, symbol={}, message={}", market, symbol, e.getMessage());
             return List.of();
         }
-        String normalized = interval == null ? "" : interval.trim().toLowerCase(Locale.ROOT);
         if (!KLINE_INTERVALS.contains(normalized)) {
             log.debug("Yahoo 不支持该周期: market={}, interval={}", market, interval);
             return List.of();

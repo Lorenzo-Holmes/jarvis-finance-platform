@@ -91,7 +91,8 @@ public class ExtendedMarketDataService {
      */
     private static final Map<String, Set<String>> KLINE_INTERVALS_BY_MARKET = Map.of(
             "a_share", Set.of("1d", "5m", "10m", "15m", "30m", "1h"),
-            "us_stock", Set.of("1d", "5m", "10m", "15m", "30m", "1h"));
+            "us_stock", Set.of("1d", "5m", "10m", "15m", "30m", "1h"),
+            "global_index", Set.of("1d"));
 
     /** 400 文案里的市场名，与切换前逐字一致。 */
     private static String klineMarketLabel(String market) {
@@ -252,6 +253,16 @@ public class ExtendedMarketDataService {
             log.info("黄金9999新浪源不可用，尝试上金所: {}", e.getMessage());
         }
         return sgeAu9999Quote();
+    }
+
+    /** Au99.99 实时报价专用入口；不为该标的伪造历史K线。 */
+    public Map<String, Object> sgeGoldQuote() {
+        Map<String, Object> result = new LinkedHashMap<>(au9999Quote());
+        result.put("market", "sge_gold");
+        result.put("symbol", "Au99.99");
+        result.put("name", "黄金9999");
+        result.put("available", result.get("price") instanceof Number price && price.doubleValue() > 0);
+        return result;
     }
 
     private Map<String, Object> eastMoneyAu9999Quote() throws Exception {
@@ -522,7 +533,7 @@ public class ExtendedMarketDataService {
         try {
             List<Map<String, Object>> data = switch (instrument.market()) {
                 // 三个市场现在同一条路：周期白名单、来源能力、降级都在 registryKline 里。
-                case "a_share", "us_stock", "crypto" -> registryKline(instrument, normalized, limit);
+                case "a_share", "us_stock", "crypto", "global_index" -> registryKline(instrument, normalized, limit);
                 default -> throw invalid("不支持的市场: " + instrument.market());
             };
             writeCache(klineCacheKey(instrument, normalized), "kline", data,
