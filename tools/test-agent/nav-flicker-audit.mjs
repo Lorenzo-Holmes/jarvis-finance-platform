@@ -3,14 +3,31 @@ import path from 'node:path'
 
 const port = Number(process.env.CDP_PORT || 9333)
 const base = `http://127.0.0.1:${port}`
+const appUrl = new URL(process.env.APP_URL || 'http://localhost:5173/')
+const localHosts = new Set(['localhost', '127.0.0.1', '[::1]'])
 const outDir = path.resolve('artifacts/nav-flicker')
 fs.mkdirSync(outDir, { recursive: true })
 
 const targets = await fetch(`${base}/json/list`).then(r => r.json())
-const target = targets.find(item => item.type === 'page' && item.url.includes('127.0.0.1:5173'))
+const target = targets.find(item => {
+  if (item.type !== 'page' || !item.url) return false
+  let pageUrl
+  try {
+    pageUrl = new URL(item.url)
+  } catch {
+    return false
+  }
+  const sameHost = pageUrl.hostname === appUrl.hostname
+    || (localHosts.has(pageUrl.hostname) && localHosts.has(appUrl.hostname))
+  return sameHost && pageUrl.port === appUrl.port
+})
 if (!target) throw new Error('No Vite page target found')
 
-const ws = new WebSocket(target.webSocketDebuggerUrl)
+const WebSocketCtor = globalThis.WebSocket
+if (typeof WebSocketCtor !== 'function') {
+  throw new Error('WebSocket is unavailable. Use Node.js 22+ or run Node.js 20 with: node --experimental-websocket tools/test-agent/nav-flicker-audit.mjs')
+}
+const ws = new WebSocketCtor(target.webSocketDebuggerUrl)
 let seq = 0
 const pending = new Map()
 ws.addEventListener('message', event => {
