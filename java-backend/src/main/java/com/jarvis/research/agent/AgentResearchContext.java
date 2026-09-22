@@ -28,7 +28,9 @@ public record AgentResearchContext(String market, String symbol, String name) {
         if (!SUPPORTED_MARKETS.contains(market)) throw invalid("不支持的研究市场: " + market);
         if (!SYMBOL.matcher(symbol).matches()) throw invalid("研究对象代码格式不正确");
         if (name.isBlank()) name = symbol;
-        return new AgentResearchContext(market, symbol, name);
+        AgentResearchContext context = new AgentResearchContext(market, symbol, name);
+        if (!context.hasCanonicalSymbol()) throw invalid("该研究市场不支持此标的代码");
+        return context;
     }
 
     public static AgentResearchContext persisted(String market, String symbol, String name) {
@@ -58,7 +60,35 @@ public record AgentResearchContext(String market, String symbol, String name) {
     }
 
     public boolean supportsExtendedKline() {
-        return Set.of("a_share", "us_stock", "crypto").contains(market);
+        return Set.of("a_share", "us_stock", "crypto", "global_index").contains(market);
+    }
+
+    public boolean isSgeGoldMarket() {
+        return "sge_gold".equals(market);
+    }
+
+    public boolean isJdGoldMarket() {
+        return "jd_gold".equals(market);
+    }
+
+    /** Canonical source symbol for the two supported JD gold products. */
+    public String jdGoldSourceSymbol() {
+        if (!isJdGoldMarket()) return null;
+        return "JD-ZS-GOLD".equalsIgnoreCase(symbol) ? "jd_zheshang" : "jd_minsheng";
+    }
+
+    /** Restrict markets whose context is not validated by a downstream symbol parser. */
+    private boolean hasCanonicalSymbol() {
+        String normalized = symbol.toUpperCase(Locale.ROOT);
+        return switch (market) {
+            case "gold_etf" -> Set.of("518850", "SH518850").contains(normalized);
+            case "london_gold" -> Set.of("XAUUSD", "HF_XAU", "XAU").contains(normalized);
+            case "sge_gold" -> Set.of("AU99.99", "AU9999").contains(normalized);
+            case "jd_gold" -> Set.of("JD-ZS-GOLD", "JD-MS-GOLD").contains(normalized);
+            case "global_index" -> Set.of("^DJI", "^IXIC", "^GSPC", "^NDX", "^HSI", "^HSCE", "HSTECH.HK")
+                    .contains(normalized);
+            default -> true;
+        };
     }
 
     /** 最终结论至少要出现服务端绑定的名称或证券代码，避免跨标的答案被误展示。 */

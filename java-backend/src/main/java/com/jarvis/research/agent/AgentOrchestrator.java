@@ -7,9 +7,11 @@ import com.jarvis.research.market.ExtendedMarketDataService;
 import com.jarvis.research.market.MarketDataService;
 import com.jarvis.research.market.dto.DailyKlineDTO;
 import com.jarvis.research.market.dto.KlineBarDTO;
+import com.jarvis.research.market.dto.MinuteKlineDTO;
 import com.jarvis.research.news.NewsDigest;
 import com.jarvis.research.service.AiProxyService;
 import com.jarvis.research.service.AiRateLimitService;
+import com.jarvis.research.service.JdGoldService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -32,6 +34,7 @@ public class AgentOrchestrator {
 
     private final MarketDataService marketDataService;
     private final ExtendedMarketDataService extendedMarketDataService;
+    private final JdGoldService jdGoldService;
     private final AiProxyService aiProxyService;
     private final AiRateLimitService aiRateLimitService;
     private final AgentToolRegistry toolRegistry;
@@ -54,8 +57,8 @@ public class AgentOrchestrator {
 
             emit(sink, AgentEvent.create(
                     "plan_created", "completed", "研究计划已生成", null, question,
-                    "新闻、财报、行情、指标、风险检查与模型汇总", Map.of(
-                            "steps", List.of("新闻摘要", "财报解析", "行情快照", "日 K 与技术指标", "风险检查", "AI 研究结论"),
+                    "新闻、财报、行情、K 线与指标、风险检查与模型汇总", Map.of(
+                            "steps", List.of("新闻摘要", "财报解析", "行情快照", "K 线与技术指标", "风险检查", "AI 研究结论"),
                             "readOnlyTools", toolRegistry.readOnlyTools(), "instrument", instrument.toMap()),
                     Instant.now(), Instant.now(), 0L, null));
 
@@ -170,18 +173,30 @@ public class AgentOrchestrator {
                 Object value = marketDataService.getLatestPrices().get(instrument.market());
                 quote = value instanceof Map<?, ?> map ? stringKeyMap(map)
                         : unavailable("quote_unavailable", instrument);
+            } else if (instrument.isJdGoldMarket()) {
+                quote = jdGoldService.latestQuote(instrument.jdGoldSourceSymbol());
+            } else if (instrument.isSgeGoldMarket()) {
+                quote = extendedMarketDataService.sgeGoldQuote();
             } else if (instrument.isExtendedMarket()) {
                 quote = extendedMarketDataService.quote(instrument.market(), instrument.symbol());
             } else {
                 quote = unavailable("unsupported_quote_market", instrument);
             }
+            quote = new LinkedHashMap<>(quote);
+            quote.putIfAbsent("market", instrument.market());
+            quote.putIfAbsent("symbol", instrument.symbol());
+            quote.putIfAbsent("name", instrument.name());
+            boolean available = hasUsablePrice(quote) && !Boolean.FALSE.equals(quote.get("available"));
+            quote.put("available", available);
             Map<String, Object> summary = new LinkedHashMap<>();
             summary.put("instrument", instrument.toMap());
-            summary.put("available", !quote.isEmpty() && !Boolean.FALSE.equals(quote.get("available")));
+            summary.put("available", available);
             emitStepEvent(sink, AgentEvent.create("tool_result", "completed", "行情读取完成", "MarketQuoteTool",
-                    instrument.key(), "已取得所选研究对象的服务端行情快照", summary,
+                    instrument.key(), available ? "已取得所选研究对象的服务端行情快照" : "所选研究对象暂无可用报价",
+                    summary,
                     started, Instant.now(), elapsed(started), null), stepId);
-            completeStep(sink, stepId, "行情步骤完成", "MarketQuoteTool", "已取得服务端行情快照",
+            completeStep(sink, stepId, "行情步骤完成", "MarketQuoteTool",
+                    available ? "已取得服务端行情快照" : "报价不可用，后续分析必须披露此数据缺口",
                     started, "completed", null);
             return quote;
         } catch (AgentCancelledException cancelledException) {
@@ -198,9 +213,13 @@ public class AgentOrchestrator {
                                                   AgentResearchContext instrument,
                                                   BooleanSupplier cancelled) {
         Instant started = Instant.now();
-        String stepId = beginStep(sink, "读取日 K 线", "MarketKlineTool", instrument.key() + ":60", started);
-        emitStepEvent(sink, AgentEvent.create("tool_call", "running", "读取日 K 线", "MarketKlineTool",
-                instrument.key() + ":60", "正在读取最近 60 根日 K", Map.of("instrument", instrument.toMap()),
+        boolean minuteKline = instrument.isJdGoldMarket();
+        String interval = minuteKline ? "60m" : "1d";
+        String stepTitle = minuteKline ? "读取 60 分钟 K 线" : "读取日 K 线";
+        String stepId = beginStep(sink, stepTitle, "MarketKlineTool", instrument.key() + ":60", started);
+        emitStepEvent(sink, AgentEvent.create("tool_call", "running", stepTitle, "MarketKlineTool",
+                instrument.key() + ":60", "正在读取最近 60 根" + (minuteKline ? "60 分钟" : "日") + "K",
+                Map.of("instrument", instrument.toMap(), "interval", interval),
                 started, null, null, null), stepId);
         try {
             checkCancelled(cancelled);
@@ -209,16 +228,30 @@ public class AgentOrchestrator {
                 DailyKlineDTO dto = marketDataService.getDailyKline(instrument.market(), 60);
                 kline = klineToMap(dto);
                 kline.put("symbol", instrument.symbol());
+            } else if (minuteKline) {
+                MinuteKlineDTO dto = marketDataService.getMinuteKline(instrument.jdGoldSourceSymbol(), 60, 60);
+                kline = minuteKlineToMap(dto);
             } else if (instrument.supportsExtendedKline()) {
-                kline = extendedMarketDataService.kline(instrument.market(), instrument.symbol(), "1d", 60);
+                kline = extendedMarketDataService.kline(instrument.market(), instrument.symbol(), interval, 60);
+            } else if (instrument.isSgeGoldMarket()) {
+                kline = unavailable("historical_kline_unavailable", instrument);
             } else {
                 kline = unavailable("unsupported_kline_market", instrument);
             }
-            emitStepEvent(sink, AgentEvent.create("tool_result", "completed", "日 K 线读取完成", "MarketKlineTool",
-                    instrument.key() + ":60", "已取得 " + kline.getOrDefault("count", 0) + " 根日 K",
-                    Map.of("instrument", instrument.toMap(), "count", kline.getOrDefault("count", 0)),
+            kline.putIfAbsent("market", instrument.market());
+            kline.putIfAbsent("symbol", instrument.symbol());
+            kline.putIfAbsent("name", instrument.name());
+            kline.putIfAbsent("available", positiveCount(kline.get("count")));
+            int count = kline.get("count") instanceof Number number ? number.intValue() : 0;
+            boolean available = Boolean.TRUE.equals(kline.get("available"));
+            emitStepEvent(sink, AgentEvent.create("tool_result", "completed", stepTitle + "读取完成", "MarketKlineTool",
+                    instrument.key() + ":60", available ? "已取得 " + count + " 根" + (minuteKline ? "60 分钟" : "日") + "K"
+                            : "该标的暂无可用" + (minuteKline ? "分钟" : "日") + "K历史数据",
+                    Map.of("instrument", instrument.toMap(), "interval", interval,
+                            "count", count, "available", available),
                     started, Instant.now(), elapsed(started), null), stepId);
-            completeStep(sink, stepId, "日 K 线步骤完成", "MarketKlineTool", "已取得日 K 数据",
+            completeStep(sink, stepId, stepTitle + "步骤完成", "MarketKlineTool",
+                    available ? "已取得服务端K线数据" : "K线数据不可用，后续分析必须披露此数据缺口",
                     started, "completed", null);
             return kline;
         } catch (AgentCancelledException cancelledException) {
@@ -266,7 +299,7 @@ public class AgentOrchestrator {
         Instant started = Instant.now();
         String stepId = beginStep(sink, "检查历史风险", "RiskCheckTool", instrument.key(), started);
         emitStepEvent(sink, AgentEvent.create("tool_call", "running", "检查历史风险", "RiskCheckTool",
-                instrument.key(), "根据服务端日 K 计算 VaR、ES、波动率与最大回撤",
+                instrument.key(), "根据服务端K线计算 VaR、ES、波动率与最大回撤",
                 Map.of("instrument", instrument.toMap()), started, null, null, null), stepId);
         try {
             checkCancelled(cancelled);
@@ -322,7 +355,9 @@ public class AgentOrchestrator {
                     + "，市场 " + instrument.market() + "）。回答必须明确写出该名称或代码；"
                     + "不得改答黄金、指数或其他标的。\n\n用户问题：\n" + question;
             body.put("messages", List.of(
-                    Map.of("role", "system", "content", "只分析 research_context.instrument 指定的单一研究对象。"),
+                    Map.of("role", "system", "content", "只分析 research_context.instrument 指定的单一研究对象。"
+                            + "必须严格区分工具返回的 available 与数据缺口；报价、K线、指标或风险字段缺失/不可用时，"
+                            + "不得编造当前价格、历史走势或指标数值，须明确说明缺失项并仅给出有来源依据的定性分析。"),
                     Map.of("role", "user", "content", groundedQuestion)));
             body.put("research_context", context);
             body.put("metrics", metrics);
@@ -409,6 +444,41 @@ public class AgentOrchestrator {
         }
         result.put("data", rows);
         return result;
+    }
+
+    private static Map<String, Object> minuteKlineToMap(MinuteKlineDTO dto) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        if (dto == null) return result;
+        result.put("market", dto.market());
+        result.put("interval", dto.interval());
+        result.put("count", dto.count());
+        result.put("period_type", "intraday");
+        List<Map<String, Object>> rows = new ArrayList<>();
+        if (dto.data() != null) {
+            for (KlineBarDTO bar : dto.data()) {
+                if (bar == null) continue;
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("date", bar.date());
+                row.put("open", bar.open());
+                row.put("close", bar.close());
+                row.put("high", bar.high());
+                row.put("low", bar.low());
+                row.put("volume", bar.volume());
+                rows.add(row);
+            }
+        }
+        result.put("data", rows);
+        result.put("available", !rows.isEmpty());
+        return result;
+    }
+
+    private static boolean hasUsablePrice(Map<String, Object> quote) {
+        Object value = quote.get("price");
+        return value instanceof Number number && Double.isFinite(number.doubleValue()) && number.doubleValue() > 0;
+    }
+
+    private static boolean positiveCount(Object value) {
+        return value instanceof Number number && number.intValue() > 0;
     }
 
     private static String extractContent(Map<String, Object> response) {
