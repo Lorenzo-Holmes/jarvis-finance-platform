@@ -124,7 +124,6 @@
     linear-gradient(130deg, color-mix(in srgb, var(--context-accent) 4%, transparent), transparent 44%),
     color-mix(in srgb, var(--material-glass, transparent) 42%, transparent);
   box-shadow: inset 0 1px 0 rgba(255,255,255,.022);
-  view-transition-name: jarvis-context-capsule;
   transition: border-color var(--ds-motion-surface) ease, background var(--ds-motion-surface) ease, box-shadow var(--ds-motion-surface) ease, transform var(--ds-motion-surface) var(--ds-ease), opacity var(--ds-motion-state) ease;
 }
 .entity-context-display::after { display: none; }
@@ -157,7 +156,6 @@
   background: var(--context-accent);
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--context-accent) 7%, transparent);
 }
-.workspace-shell.switching .entity-context-display { opacity: .74; transform: translateY(-1px) scale(.985); }
 .entity-views {
   position: relative;
   /* 不创建独立层叠上下文：fixed 菜单需要真正盖过 workspace body。 */
@@ -259,14 +257,15 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* Module atmosphere */
-.workspace-shell.ambient-market { --module-aura: rgba(82, 126, 158, .045); --context-accent: #7894a7; }
-.workspace-shell.ambient-financial { --module-aura: rgba(118, 132, 119, .040); --context-accent: #819083; }
-.workspace-shell.ambient-ai-research { --module-aura: rgba(162, 126, 81, .045); --context-accent: #a18462; }
-.workspace-shell.ambient-industry-chain { --module-aura: rgba(148, 118, 78, .052); --context-accent: #a17f57; }
-.workspace-shell.ambient-risk { --module-aura: rgba(151, 90, 82, .045); --context-accent: #9d716a; }
-.workspace-shell.ambient-strategy { --module-aura: rgba(103, 122, 108, .042); --context-accent: #768778; }
-.workspace-shell.ambient-sim-trade { --module-aura: rgba(79, 113, 137, .046); --context-accent: #6d8799; }
+/* Module atmosphere: only the workspace body changes with the module.
+   Fixed chrome/context must stay visually stable during navigation. */
+.workspace-shell.ambient-market { --module-aura: rgba(82, 126, 158, .045); }
+.workspace-shell.ambient-financial { --module-aura: rgba(118, 132, 119, .040); }
+.workspace-shell.ambient-ai-research { --module-aura: rgba(162, 126, 81, .045); }
+.workspace-shell.ambient-industry-chain { --module-aura: rgba(148, 118, 78, .052); }
+.workspace-shell.ambient-risk { --module-aura: rgba(151, 90, 82, .045); }
+.workspace-shell.ambient-strategy { --module-aura: rgba(103, 122, 108, .042); }
+.workspace-shell.ambient-sim-trade { --module-aura: rgba(79, 113, 137, .046); }
 
 /* Command Palette 2.0 */
 .command-palette {
@@ -358,18 +357,6 @@
 .command-empty { padding: 28px 12px; display: grid; gap: 7px; }
 .command-empty strong { color: var(--muted); font-size: 11px; }
 .command-empty small { color: var(--subtle); font-size: 9.5px; }
-
-/* Context continuity */
-:global(::view-transition-old(root)),
-:global(::view-transition-new(root)) { animation: none; mix-blend-mode: normal; }
-:global(::view-transition-group(jarvis-context-capsule)) {
-  animation-duration: 320ms;
-  animation-timing-function: var(--ds-ease);
-}
-:global(::view-transition-old(jarvis-context-capsule)) { animation: context-capsule-out 180ms ease both; }
-:global(::view-transition-new(jarvis-context-capsule)) { animation: context-capsule-in 300ms var(--ds-ease) both; }
-@keyframes context-capsule-out { to { opacity: .35; transform: scale(.985); } }
-@keyframes context-capsule-in { from { opacity: .42; transform: scale(.985); } to { opacity: 1; transform: scale(1); } }
 
 @media (max-width: 1180px) {
   .workspace-body { padding: 16px 16px 22px; }
