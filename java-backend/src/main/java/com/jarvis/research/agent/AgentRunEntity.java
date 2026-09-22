@@ -30,6 +30,15 @@ public class AgentRunEntity {
     @Column(nullable = false, length = 2000)
     private String question;
 
+    @Column(nullable = false, length = 32)
+    private String market;
+
+    @Column(nullable = false, length = 64)
+    private String symbol;
+
+    @Column(name = "instrument_name", nullable = false, length = 120)
+    private String instrumentName;
+
     @Column(nullable = false, length = 16)
     private String status;
 

@@ -98,6 +98,15 @@ test('global research context is shared by market and execution workspaces', () 
   assert.match(financial, /不自动生成财务数字/)
 })
 
+test('research assistant binds every agent run to the selected instrument', () => {
+  const assistant = read('components/AiCenter.vue')
+  const client = read('api/client.js')
+  assert.match(assistant, /const boundContext = props\.researchContext/)
+  assert.match(assistant, /api\.agentResearchStream\(question, boundContext/)
+  assert.match(client, /agentResearchStream: \(question, context, onEvent, signal\)/)
+  assert.match(client, /\{ question, context \}/)
+})
+
 test('strategy handoff carries real questionnaire intent into backtest without inventing MA parameters', () => {
   const app = read('App.vue')
   const store = read('analysis-os/state/workflowHandoff.js')

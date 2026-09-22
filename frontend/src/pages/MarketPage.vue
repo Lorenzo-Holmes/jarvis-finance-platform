@@ -52,7 +52,7 @@ const marketChart = useMarketChart()
 const marketChartRef = marketChart.elementRef
 const latestMarketKline = useLatestRequest()
 const latestJdKline = useLatestRequest()
-const freshness = useFreshness(90000)
+const { label: freshnessLabel, touch: touchFreshness } = useFreshness(90000)
 // SSE 是主实时链路；30s HTTP 轮询保留为兜底，避免代理层暂时不支持 SSE 时页面完全失去报价。
 const poll = usePolling(async () => {
   await Promise.all([loadJdLive(), loadRealtime()])
@@ -64,7 +64,7 @@ function startPriceStream() {
     if (payload?.market && Object.keys(payload.market).length) realtimePrices.value = payload.market
     if (payload?.jd && Object.keys(payload.jd).length) jdPrices.value = payload.jd
     streamServerTime.value = payload?.server_time || ''
-    freshness.touch()
+    touchFreshness()
     setConnected(true)
   }, () => {
     // EventSource 会自动重连；期间继续由 30s fallback poll 保留最后有效报价。
@@ -86,7 +86,7 @@ async function loadRealtime() {
   try {
     const response = await api.marketPrices()
     realtimePrices.value = response.data || null
-    if (realtimePrices.value) freshness.touch()
+    if (realtimePrices.value) touchFreshness()
   } catch (_) { /* 保留最后一次有效报价 */ }
 }
 
@@ -95,7 +95,7 @@ async function loadJdLive() {
     const response = await api.jdPrices()
     if (response.code === 200 && response.data && Object.keys(response.data).length) {
       jdPrices.value = response.data
-      freshness.touch()
+      touchFreshness()
     }
   } catch (_) { /* 保留最后一次有效报价 */ }
 }
@@ -391,7 +391,7 @@ watch([marketFocus, () => jdKlineCfg.market], () => {
       </div>
       <span class="section-status">
         <i :class="{ ok: connected }"></i>
-        {{ !connected ? '正在连接行情' : `最近更新 · ${freshness.label}` }}
+        {{ !connected ? '正在连接行情' : `最近更新 · ${freshnessLabel}` }}
       </span>
     </div>
 
@@ -486,7 +486,7 @@ watch([marketFocus, () => jdKlineCfg.market], () => {
           <div class="health-row"><span>数据源</span><b>{{ focusedQuote?.source || (marketFocus === 'jd' ? '京东积存金' : '行情接口') }}</b></div>
           <div class="health-row"><span>行情时间</span><b>{{ focusedQuote?.quote_time || focusedQuote?.time || '实时刷新' }}</b></div>
           <div class="health-row"><span>更新频率</span><b>1 秒</b></div>
-          <div class="health-row"><span>最近同步</span><b>{{ freshness.label }}</b></div>
+          <div class="health-row"><span>最近同步</span><b>{{ freshnessLabel }}</b></div>
         </section>
         <section v-if="focusedTechnical?.available" class="technical-summary inspector-detail" aria-label="技术指标摘要">
           <div class="rail-section-head"><b>技术指标</b><small>日K · {{ focusedTechnical.bars }} 根</small></div>

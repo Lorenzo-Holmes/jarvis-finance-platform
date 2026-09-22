@@ -1663,13 +1663,22 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 620px) {
-  .workspace-header { grid-template-columns: auto minmax(0, 1fr) auto; }
-  .global-search-field strong { font-size: 0; }
-  .global-search-field strong::after { content: '搜索'; font-size: 9px; }
+  .workspace-header { grid-template-columns: minmax(0, 1fr) auto; }
+  .global-search-field { display: none; }
   .entity-bar { grid-template-columns: auto minmax(116px, 150px) minmax(0, 1fr); }
   .entity-views > button, .entity-more > summary, .split-control > summary { padding: 0 7px; }
   .workspace-footer { display: none; }
   .workspace-frame { grid-template-rows: 54px 54px minmax(0, 1fr); }
+}
+
+@media (max-width: 430px) {
+  .global-rail { width: 40px; }
+  .workspace-frame { margin-left: 40px; }
+  .workspace-header { padding-left: 8px; padding-right: 8px; }
+  .entity-history { padding-left: 2px; padding-right: 0; }
+  .entity-history button { width: 22px; }
+  .entity-bar { grid-template-columns: auto minmax(96px, 124px) minmax(0, 1fr); }
+  .entity-context-display { padding-left: 6px; padding-right: 6px; }
 }
 
 /* Rhine terminal parity: transparent records, hairline structure, amber ticks. */

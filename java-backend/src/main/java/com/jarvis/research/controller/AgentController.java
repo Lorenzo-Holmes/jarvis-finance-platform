@@ -1,6 +1,7 @@
 package com.jarvis.research.controller;
 
 import com.jarvis.research.agent.AgentEvent;
+import com.jarvis.research.agent.AgentResearchContext;
 import com.jarvis.research.agent.AgentRunService;
 import com.jarvis.research.audit.AuditService;
 import com.jarvis.research.common.ApiResponse;
@@ -37,10 +38,11 @@ public class AgentController {
         Long userId = CurrentUser.id();
         requireAccess(userId);
         String question = body == null ? "" : String.valueOf(body.getOrDefault("question", ""));
+        AgentResearchContext context = AgentResearchContext.from(body == null ? null : body.get("context"));
         aiRateLimitService.consume(userId);
-        AgentRunService.RunRef run = runService.start(userId, question);
+        AgentRunService.RunRef run = runService.start(userId, question, context);
         auditService.record(userId, "AGENT_RUN_START", run.runId(), request.getRemoteAddr(),
-                "financial-research-v1");
+                "financial-research-v1:" + context.key());
         response.setHeader("Cache-Control", "no-cache, no-transform");
         response.setHeader("X-Accel-Buffering", "no");
         return runService.openStream(userId, run.runId());

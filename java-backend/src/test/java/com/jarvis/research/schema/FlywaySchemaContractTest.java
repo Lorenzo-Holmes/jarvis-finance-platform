@@ -249,7 +249,8 @@ class FlywaySchemaContractTest {
         Set<String> runColumns = columnNames("agent_run");
         assertTrue(runColumns.containsAll(List.of(
                         "run_id", "user_id", "question", "status", "created_at", "started_at",
-                        "finished_at", "event_count", "last_sequence", "error_message")),
+                        "finished_at", "event_count", "last_sequence", "error_message",
+                        "market", "symbol", "instrument_name")),
                 "agent_run 的列与实体不符，现有: " + runColumns);
 
         Set<String> eventColumns = columnNames("agent_event");

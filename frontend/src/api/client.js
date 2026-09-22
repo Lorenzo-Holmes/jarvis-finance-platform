@@ -119,8 +119,14 @@ async function request(base, path, options = {}, params = {}) {
   }
 }
 
-function get(base, path, params) { return request(base, path, { method: 'GET' }, params) }
+function get(base, path, params, options = {}) { return request(base, path, { ...options, method: 'GET' }, params) }
 function post(base, path, body) { return request(base, path, { method: 'POST', body: JSON.stringify(body) }) }
+
+async function postAuth(base, path, body, resetRegardless = false) {
+  const response = await post(base, path, body)
+  if (resetRegardless || (response?.httpStatus >= 200 && response.httpStatus < 300)) resetCsrfToken()
+  return response
+}
 
 function openSse(base, path, eventName, onEvent, onError) {
   const source = new EventSource(`${base}${path}`, { withCredentials: true })
@@ -204,8 +210,8 @@ async function postSse(base, path, body, onEvent, signal) {
 export const api = {
   // ===== Java 后端 (数据存储) =====
   // 认证
-  register: (email, password, displayName) => post(API_BASE, '/api/auth/register', { email, password, displayName }),
-  login: (email, password) => post(API_BASE, '/api/auth/login', { email, password }),
+  register: (email, password, displayName) => postAuth(API_BASE, '/api/auth/register', { email, password, displayName }),
+  login: (email, password) => postAuth(API_BASE, '/api/auth/login', { email, password }),
   sendEmailVerification: (email) => post(API_BASE, '/api/auth/verification/email', { email }),
   confirmEmailVerification: (email, code) => post(API_BASE, '/api/auth/verification/email/confirm', { email, code }),
   requestPasswordReset: (email) => post(API_BASE, '/api/auth/password/reset/request', { email }),
@@ -242,7 +248,7 @@ export const api = {
   socialThread: (userId, page = 0, size = 40) => get(API_BASE, `/api/social/messages/${userId}`, { page, size }),
   socialSendMessage: (userId, content) => post(API_BASE, `/api/social/messages/${userId}`, { content }),
   me: () => get(API_BASE, '/api/auth/me'),
-  logout: () => post(API_BASE, '/api/auth/logout', {}),
+  logout: () => postAuth(API_BASE, '/api/auth/logout', {}, true),
   githubBindAuthorize: () => { window.location.href = `${API_BASE}/api/auth/github/bind/authorize` },
   health: () => get(API_BASE, '/api/health'),
   healthReady: () => get(API_BASE, '/api/health/ready'),
@@ -296,8 +302,8 @@ export const api = {
     API_BASE, '/api/ai/chat/stream', { messages }, onEvent, signal,
   ),
   // Agent Research Runtime：Codex-style 可观察工具调用流
-  agentResearchStream: (question, onEvent, signal) => postSse(
-    API_BASE, '/api/agent/research/stream', { question }, onEvent, signal,
+  agentResearchStream: (question, context, onEvent, signal) => postSse(
+    API_BASE, '/api/agent/research/stream', { question, context }, onEvent, signal,
   ),
   agentRuns: () => get(API_BASE, '/api/agent/runs'),
   agentRun: (runId) => get(API_BASE, `/api/agent/runs/${encodeURIComponent(runId)}`),
@@ -400,8 +406,8 @@ export const api = {
     method: 'PUT', body: JSON.stringify(body),
   }),
   // RSS 信息中心：来源目录与用户订阅由 Java + PostgreSQL 持久化。
-  newsSources: () => get(API_BASE, '/api/news/sources'),
-  newsSubscriptions: () => get(API_BASE, '/api/news/subscriptions'),
+  newsSources: (signal) => get(API_BASE, '/api/news/sources', undefined, { signal }),
+  newsSubscriptions: (signal) => get(API_BASE, '/api/news/subscriptions', undefined, { signal }),
   saveNewsSubscriptions: (body) => request(API_BASE, '/api/news/subscriptions', {
     method: 'PUT', body: JSON.stringify(body),
   }),
@@ -418,6 +424,9 @@ export const api = {
 
   // 每日要闻：Java 代理 Python 的 RSS digest，抓取间隔由 Python 侧限制（默认 300s）。
   newsDaily: (limit = 12, force = false, ranking = 'smart') => get(API_BASE, '/api/news/daily', { limit, refresh: true, force, ranking }),
+  newsDailyWithSignal: (limit = 12, force = false, ranking = 'smart', signal) => get(
+    API_BASE, '/api/news/daily', { limit, refresh: true, force, ranking }, { signal },
+  ),
   newsTranslate: (titles) => post(API_BASE, '/api/news/translate', { titles }),
   newsAnalyze: (items) => post(API_BASE, '/api/news/analyze', { items }),
 }

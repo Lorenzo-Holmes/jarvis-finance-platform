@@ -3,6 +3,7 @@ package com.jarvis.research.common;
 import io.netty.channel.ChannelOption;
 import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.ExchangeStrategies;
 import reactor.netty.http.client.HttpClient;
 
 import java.time.Duration;
@@ -14,6 +15,8 @@ import java.time.Duration;
 public final class ExternalWebClients {
 
     private static final int CONNECT_TIMEOUT_MS = 5_000;
+    /** RSS 与行情响应允许到 2 MiB，同时保留明确上限，避免无界缓冲。 */
+    private static final int MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 
     private ExternalWebClients() {}
 
@@ -30,6 +33,9 @@ public final class ExternalWebClients {
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, CONNECT_TIMEOUT_MS)
                 .responseTimeout(responseTimeout);
         return WebClient.builder()
+                .exchangeStrategies(ExchangeStrategies.builder()
+                        .codecs(codecs -> codecs.defaultCodecs().maxInMemorySize(MAX_RESPONSE_BYTES))
+                        .build())
                 .clientConnector(new ReactorClientHttpConnector(httpClient));
     }
 }
