@@ -171,15 +171,10 @@ function requestModule(next) {
   const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
   if (switchTimer) window.clearTimeout(switchTimer)
   switchTimer = window.setTimeout(() => {
-    const navigate = () => emit('navigate-module', next.routeKey)
-    if (!reduced && typeof document.startViewTransition === 'function') {
-      document.startViewTransition(async () => {
-        navigate()
-        await nextTick()
-      })
-      return
-    }
-    navigate()
+    // 固定导航壳体必须保持连续。浏览器 View Transition 会为命名元素创建
+    // 独立快照，在 Edge/Chrome 中会让左上 entity/context 区出现一帧重影/闪屏。
+    // 内容区已有 switching fade，因此这里只切换业务 route，不做整页快照。
+    emit('navigate-module', next.routeKey)
   }, reduced ? 20 : 180)
 }
 
