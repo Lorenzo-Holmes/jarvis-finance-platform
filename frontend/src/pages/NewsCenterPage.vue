@@ -17,6 +17,7 @@ const error = ref('')
 const message = ref('')
 const generatedAt = ref('')
 const available = ref(true)
+const availabilityReason = ref('')
 const rankingMode = ref('smart')
 const qualityMetrics = ref(null)
 const qualityVersion = ref(0)
@@ -35,6 +36,8 @@ const savedTopics = ref([])
 const subscriptionOpen = ref(true)
 let preferenceRequestSeq = 0
 let digestRequestSeq = 0
+const activeRequestControllers = new Set()
+const REQUEST_TIMEOUT_MS = 12000
 
 const topicOptions = [
   { key: 'markets', label: '市场行情' },
@@ -69,11 +72,30 @@ function responseError(response, fallback) {
   if (response?.code !== 200) throw new Error(response?.message || fallback)
 }
 
-async function loadPreferences() {
+async function withRequestTimeout(task) {
+  const controller = new AbortController()
+  activeRequestControllers.add(controller)
+  let timedOut = false
+  const timer = window.setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, REQUEST_TIMEOUT_MS)
+  try {
+    return await task(controller.signal)
+  } catch (e) {
+    if (e?.name === 'AbortError' && timedOut) throw new Error('资讯服务响应超时，请稍后重试')
+    throw e
+  } finally {
+    window.clearTimeout(timer)
+    activeRequestControllers.delete(controller)
+  }
+}
+
+async function loadPreferences(signal) {
   const requestSeq = ++preferenceRequestSeq
   const [sourceResponse, subscriptionResponse] = await Promise.all([
-    api.newsSources(),
-    api.newsSubscriptions(),
+    api.newsSources(signal),
+    api.newsSubscriptions(signal),
   ])
   if (requestSeq !== preferenceRequestSeq) return
   responseError(sourceResponse, 'RSS 来源加载失败')
@@ -85,13 +107,16 @@ async function loadPreferences() {
   savedTopics.value = [...selectedTopics.value]
 }
 
-async function loadDigest(force = false) {
+async function loadDigest(force = false, signal) {
   const requestSeq = ++digestRequestSeq
-  const response = await api.newsDaily(24, force, rankingMode.value)
+  const response = signal
+    ? await api.newsDailyWithSignal(24, force, rankingMode.value, signal)
+    : await api.newsDaily(24, force, rankingMode.value)
   if (requestSeq !== digestRequestSeq) return
   responseError(response, '资讯摘要加载失败')
   const data = response.data || {}
   available.value = data.available !== false
+  availabilityReason.value = data.reason || data.message || ''
   articles.value = data.items || []
   generatedAt.value = data.generated_at || ''
   qualityMetrics.value = data.quality_metrics || null
@@ -107,7 +132,7 @@ async function changeRanking(mode) {
   refreshing.value = true
   error.value = ''
   try {
-    await loadDigest(false)
+    await withRequestTimeout(signal => loadDigest(false, signal))
   } catch (e) {
     error.value = e?.message || String(e)
   } finally {
@@ -119,8 +144,12 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    await loadPreferences()
-    await loadDigest(false)
+    const results = await withRequestTimeout(signal => Promise.allSettled([
+      loadPreferences(signal),
+      loadDigest(false, signal),
+    ]))
+    const failures = results.filter(result => result.status === 'rejected')
+    if (failures.length) throw new Error(failures.map(result => result.reason?.message || String(result.reason)).join('；'))
   } catch (e) {
     error.value = e?.message || String(e)
   } finally {
@@ -133,7 +162,7 @@ async function refresh() {
   refreshing.value = true
   error.value = ''
   try {
-    await loadDigest(true)
+    await withRequestTimeout(signal => loadDigest(true, signal))
     message.value = '资讯已刷新'
   } catch (e) {
     error.value = e?.message || String(e)
@@ -159,7 +188,7 @@ async function saveSubscriptions() {
     savedSources.value = [...selectedSources.value]
     savedTopics.value = [...selectedTopics.value]
     message.value = '资讯订阅已保存'
-    await loadDigest(false)
+    await withRequestTimeout(signal => loadDigest(false, signal))
   } catch (e) {
     error.value = e?.message || String(e)
   } finally {
@@ -289,6 +318,8 @@ onMounted(() => {
 onBeforeUnmount(() => {
   preferenceRequestSeq += 1
   digestRequestSeq += 1
+  activeRequestControllers.forEach(controller => controller.abort())
+  activeRequestControllers.clear()
   window.removeEventListener('keydown', handleNewsShortcut)
   window.removeEventListener('scroll', updateFeedProgress, true)
   window.removeEventListener('resize', updateFeedProgress)
@@ -383,7 +414,7 @@ onBeforeUnmount(() => {
           <small v-if="filterStats">筛选 {{ filterStats.filter_before_count ?? 0 }} → {{ filterStats.filter_after_count ?? 0 }}</small>
           <small v-if="semanticRanking?.stage">{{ semanticRanking.stage }}</small>
         </div>
-        <DataState v-if="!articles.length" state="empty" title="暂无匹配资讯" message="可调整订阅范围或手动刷新。" compact />
+        <DataState v-if="!articles.length" state="empty" :title="available ? '暂无匹配资讯' : 'RSS 服务暂不可用'" :message="availabilityReason || '可调整订阅范围或稍后手动刷新。'" compact />
         <DataState v-else-if="!filteredArticles.length" state="empty" title="当前结果中没有匹配项" message="可清空检索词继续浏览。" compact />
         <div v-else class="article-list" :class="{ compact: feedDensity === 'compact' }">
           <div v-if="feedQuery" class="search-count">显示 {{ filteredArticles.length }} / {{ articles.length }} 条</div>

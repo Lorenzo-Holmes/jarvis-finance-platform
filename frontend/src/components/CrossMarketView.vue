@@ -51,7 +51,7 @@ const editName = ref('')
 const editLoading = ref(false)
 const editError = ref('')
 const latestDataRequest = useLatestRequest()
-const freshness = useFreshness(90000)
+const { label: freshnessLabel, touch: touchFreshness } = useFreshness(90000)
 const marketChart = useMarketChart()
 const chartRef = marketChart.elementRef
 let lastDailyRefreshAt = 0
@@ -363,7 +363,7 @@ async function loadQuoteOnly() {
     if (market.value !== requestMarket || selectedSymbol.value !== requestSymbol) return
     if (response.code !== 200) return
     quote.value = response.data
-    freshness.touch()
+    touchFreshness()
   } catch (_) {
     // 秒级报价失败时保留最后有效值；15s maintenance 仍会继续尝试完整刷新。
   }
@@ -389,7 +389,7 @@ async function loadData() {
     if (klineResponse.code !== 200) throw new Error(klineResponse.message || 'K线加载失败')
     quote.value = quoteResponse.data
     kline.value = klineResponse.data?.data || []
-    freshness.touch()
+    touchFreshness()
     if (requestInterval === '1d') lastDailyRefreshAt = Date.now()
     range.value = klineResponse.data?.range || null
     technicalAnalysis.value = klineResponse.data?.analysis || null
@@ -547,7 +547,7 @@ onBeforeUnmount(() => {
           <i></i>{{ session?.label || '交易状态加载中' }}
         </span>
         <span class="refresh-note">
-          {{ interval === '1d' ? `30s 自动刷新 · ${freshness.label}` : session?.is_open || market === 'crypto' ? `盯盘中 · 15s刷新 · ${freshness.label}` : `非交易时段 · 最近更新 ${freshness.label}` }}
+          {{ interval === '1d' ? `30s 自动刷新 · ${freshnessLabel}` : session?.is_open || market === 'crypto' ? `盯盘中 · 15s刷新 · ${freshnessLabel}` : `非交易时段 · 最近更新 ${freshnessLabel}` }}
         </span>
         <button type="button" class="btn" @click="refresh" :disabled="loading">{{ loading ? '加载中…' : '刷新' }}</button>
       </div>

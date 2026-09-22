@@ -111,6 +111,42 @@ test('authenticated writes refresh CSRF after a 419 and retry once', async () =>
   assert.equal(calls[4].token, 'csrf-4')
 })
 
+test('successful login rotates the cached CSRF token before the next write', async () => {
+  const calls = []
+  const previousFetch = globalThis.fetch
+  globalThis.fetch = async (url, options = {}) => {
+    const entry = {
+      url: String(url),
+      method: options.method || 'GET',
+      token: options.headers?.['X-XSRF-TOKEN'] || '',
+    }
+    calls.push(entry)
+    if (entry.url.endsWith('/api/auth/csrf')) {
+      return { ok: true, status: 200, json: async () => ({ code: 200, data: { token: `rotated-${calls.length}` } }) }
+    }
+    if (entry.url.endsWith('/api/auth/login')) {
+      return { ok: true, status: 200, json: async () => ({ code: 200, data: { id: 7 } }) }
+    }
+    if (entry.url.endsWith('/api/market/preferences')) {
+      return { ok: true, status: 200, json: async () => ({ code: 200, data: { persisted: true } }) }
+    }
+    throw new Error(`unexpected request: ${url}`)
+  }
+
+  try {
+    await api.login('test@example.invalid', 'test-password')
+    await api.saveMarketPreferences({ watchlist: [], hiddenDefaultKeys: [] })
+  } finally {
+    globalThis.fetch = previousFetch
+  }
+
+  const loginIndex = calls.findIndex(call => call.url.endsWith('/api/auth/login'))
+  const tokenIndex = calls.findIndex((call, index) => index > loginIndex && call.url.endsWith('/api/auth/csrf'))
+  const writeIndex = calls.findIndex(call => call.url.endsWith('/api/market/preferences'))
+  assert.ok(loginIndex >= 0 && tokenIndex > loginIndex && writeIndex > tokenIndex)
+  assert.equal(calls[writeIndex].token, calls[tokenIndex].url.endsWith('/api/auth/csrf') ? `rotated-${tokenIndex + 1}` : '')
+})
+
 test('non-idempotent writes are not replayed after an auth failure', async () => {
   const calls = []
   const previousFetch = globalThis.fetch

@@ -61,13 +61,21 @@ public class AgentRunService {
     }
 
     public RunRef start(Long userId, String question) {
+        return start(userId, question, AgentResearchContext.DEFAULT);
+    }
+
+    public RunRef start(Long userId, String question, AgentResearchContext context) {
         String normalized = normalizeQuestion(question);
+        AgentResearchContext boundContext = context == null ? AgentResearchContext.DEFAULT : context;
         String runId = UUID.randomUUID().toString();
         LocalDateTime now = LocalDateTime.now();
         AgentRunEntity entity = AgentRunEntity.builder()
                 .runId(runId)
                 .userId(userId)
                 .question(normalized)
+                .market(boundContext.market())
+                .symbol(boundContext.symbol())
+                .instrumentName(boundContext.name())
                 .status("pending")
                 .createdAt(now)
                 .startedAt(now)
@@ -76,11 +84,11 @@ public class AgentRunService {
                 .build();
         runRepository.save(entity);
 
-        RunState state = new RunState(runId, userId, normalized, now.toInstant(ZoneOffset.UTC));
+        RunState state = new RunState(runId, userId, normalized, boundContext, now.toInstant(ZoneOffset.UTC));
         activeRuns.put(runId, state);
         try {
             state.future = agentTaskExecutor.submit(() -> orchestrator.run(
-                    state.userId, state.runId, state.question, event -> publish(state, event),
+                    state.userId, state.runId, state.question, state.context, event -> publish(state, event),
                     state.cancelled::get));
         } catch (RuntimeException error) {
             activeRuns.remove(runId, state);
@@ -142,7 +150,7 @@ public class AgentRunService {
         RunState state = activeRuns.get(runId);
         if (state == null) {
             if (isTerminal(entity.getStatus())) return;
-            state = new RunState(runId, userId, entity.getQuestion(), toInstant(entity.getCreatedAt()));
+            state = new RunState(runId, userId, entity.getQuestion(), contextOf(entity), toInstant(entity.getCreatedAt()));
             state.sequence = entity.getLastSequence() == null ? 0L : entity.getLastSequence();
         }
         synchronized (state) {
@@ -246,6 +254,7 @@ public class AgentRunService {
         out.put("runId", run.getRunId());
         out.put("status", run.getStatus());
         out.put("question", run.getQuestion());
+        out.put("context", contextOf(run).toMap());
         out.put("createdAt", toInstant(run.getCreatedAt()));
         out.put("eventCount", run.getEventCount() == null ? 0 : run.getEventCount());
         if (!history.isEmpty()) out.put("lastEvent", history.get(history.size() - 1));
@@ -290,6 +299,10 @@ public class AgentRunService {
         String value = question == null ? "" : question.trim();
         if (value.isBlank()) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "研究问题不能为空");
         return value.length() <= 2000 ? value : value.substring(0, 2000);
+    }
+
+    private static AgentResearchContext contextOf(AgentRunEntity run) {
+        return AgentResearchContext.persisted(run.getMarket(), run.getSymbol(), run.getInstrumentName());
     }
 
     private String writePayload(Map<String, Object> payload) {
@@ -341,6 +354,7 @@ public class AgentRunService {
         private final String runId;
         private final Long userId;
         private final String question;
+        private final AgentResearchContext context;
         private final Instant createdAt;
         private final CopyOnWriteArrayList<SseEmitter> subscribers = new CopyOnWriteArrayList<>();
         private final AtomicBoolean cancelled = new AtomicBoolean(false);
@@ -348,9 +362,15 @@ public class AgentRunService {
         private volatile Future<?> future;
 
         private RunState(String runId, Long userId, String question, Instant createdAt) {
+            this(runId, userId, question, AgentResearchContext.DEFAULT, createdAt);
+        }
+
+        private RunState(String runId, Long userId, String question,
+                         AgentResearchContext context, Instant createdAt) {
             this.runId = runId;
             this.userId = userId;
             this.question = question;
+            this.context = context;
             this.createdAt = createdAt;
         }
 

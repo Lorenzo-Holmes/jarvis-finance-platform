@@ -160,6 +160,10 @@ function clearOAuthQuery() {
 function handleLoggedIn(value) {
   session.acceptLogin(value)
   workspace.reset()
+  replacePublicQuery((params) => {
+    params.delete('view')
+    params.delete('oauth')
+  })
 }
 
 async function logout() {

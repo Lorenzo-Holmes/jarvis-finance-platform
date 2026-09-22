@@ -144,6 +144,7 @@ const SAFETY_RISK_LABELS = {
   secret_exposure: '检测到敏感凭据泄露风险',
   policy_bypass: '检测到安全边界绕过风险',
   other_security_risk: '检测到其他输出安全风险',
+  entity_mismatch: '候选结论与当前研究对象不一致',
   unknown: '输出安全状态未知',
 }
 
@@ -465,7 +466,12 @@ async function sendChat() {
     const question = priorContext
       ? `以下是此前研究对话上下文：\n${priorContext}\n\n当前研究问题：\n${apiContent}`
       : apiContent
-    await api.agentResearchStream(question, ({ event, data }) => {
+    const boundContext = props.researchContext ? {
+      market: props.researchContext.market,
+      symbol: props.researchContext.symbol,
+      name: props.researchContext.name,
+    } : null
+    await api.agentResearchStream(question, boundContext, ({ event, data }) => {
       if (event === 'agent_step') {
         const content = applyAgentEvent(data)
         applySafetyEventToMessage(messages.value[assistantIndex], data)
@@ -547,11 +553,15 @@ async function runQuote() {
   quoteResult.value = ''
   quoteError.value = ''
   try {
-    const q = await api.marketPrices()
-    const rt = q.data?.gold_etf
-    if (!rt) throw new Error('未获取到黄金ETF行情')
+    const market = props.researchContext?.market || 'gold_etf'
+    const symbol = props.researchContext?.symbol || 'sh518850'
+    const q = ['gold_etf', 'london_gold'].includes(market)
+      ? await api.marketPrices()
+      : await api.marketAssetQuote(market, symbol)
+    const rt = ['gold_etf', 'london_gold'].includes(market) ? q.data?.[market] : q.data
+    if (!rt) throw new Error(`未获取到 ${contextTarget.value || symbol} 行情`)
     quoteData.value = rt
-    const d = await api.aiQuote(rt)
+    const d = await api.aiQuote(rt, { market })
     quoteResult.value = d.data?.content || '（暂无研究结论）'
   } catch (e) {
     quoteError.value = e?.message || String(e)
@@ -897,7 +907,7 @@ onBeforeUnmount(() => {
           <button type="button" class="history-card" @click="replayAgentRun(run)">
             <span class="history-card-top"><b>{{ historyStatusLabel(run.status) }}</b><time>{{ formatHistoryTime(run.createdAt) }}</time></span>
             <strong>{{ run.question || '未命名研究运行' }}</strong>
-            <small>{{ run.eventCount || 0 }} 个事件 · {{ run.runId }}</small>
+            <small>{{ run.context?.name || run.context?.symbol || '默认研究对象' }} · {{ run.eventCount || 0 }} 个事件 · {{ run.runId }}</small>
           </button>
         </li>
       </ol>

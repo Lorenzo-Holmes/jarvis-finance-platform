@@ -3,6 +3,7 @@ package com.jarvis.research.agent;
 import com.jarvis.research.ai.DeterministicContext;
 import com.jarvis.research.ai.KlineMetrics;
 import com.jarvis.research.ai.RiskMetrics;
+import com.jarvis.research.market.ExtendedMarketDataService;
 import com.jarvis.research.market.MarketDataService;
 import com.jarvis.research.market.dto.DailyKlineDTO;
 import com.jarvis.research.market.dto.KlineBarDTO;
@@ -29,45 +30,52 @@ import java.util.function.Consumer;
 @RequiredArgsConstructor
 public class AgentOrchestrator {
 
-    private static final String MARKET = "gold_etf";
-
     private final MarketDataService marketDataService;
+    private final ExtendedMarketDataService extendedMarketDataService;
     private final AiProxyService aiProxyService;
     private final AiRateLimitService aiRateLimitService;
     private final AgentToolRegistry toolRegistry;
 
     public void run(Long userId, String runId, String question, Consumer<AgentEvent> sink,
                     BooleanSupplier cancelled) {
+        run(userId, runId, question, AgentResearchContext.DEFAULT, sink, cancelled);
+    }
+
+    public void run(Long userId, String runId, String question, AgentResearchContext researchContext,
+                    Consumer<AgentEvent> sink, BooleanSupplier cancelled) {
+        AgentResearchContext instrument = researchContext == null ? AgentResearchContext.DEFAULT : researchContext;
         try {
             checkCancelled(cancelled);
             emit(sink, AgentEvent.create(
                     "run_started", "running", "Agent 已开始执行研究工作流", null,
-                    question, "已建立本次研究运行上下文", Map.of("workflow", "financial-research-v1"),
+                    question, "已建立本次研究运行上下文", Map.of(
+                            "workflow", "financial-research-v1", "instrument", instrument.toMap()),
                     Instant.now(), null, null, null));
 
             emit(sink, AgentEvent.create(
                     "plan_created", "completed", "研究计划已生成", null, question,
                     "新闻、财报、行情、指标、风险检查与模型汇总", Map.of(
                             "steps", List.of("新闻摘要", "财报解析", "行情快照", "日 K 与技术指标", "风险检查", "AI 研究结论"),
-                            "readOnlyTools", toolRegistry.readOnlyTools()),
+                            "readOnlyTools", toolRegistry.readOnlyTools(), "instrument", instrument.toMap()),
                     Instant.now(), Instant.now(), 0L, null));
 
             checkCancelled(cancelled);
             Map<String, Object> news = executeNewsTool(sink, cancelled);
             Map<String, Object> filing = executeFinancialReportTool(sink, question, userId, cancelled);
-            Map<String, Object> prices = executeQuoteTool(sink, cancelled);
+            Map<String, Object> prices = executeQuoteTool(sink, instrument, cancelled);
 
             checkCancelled(cancelled);
-            Map<String, Object> kline = executeKlineTool(sink, cancelled);
-            Map<String, Object> metrics = executeIndicatorTool(sink, kline, cancelled);
-            Map<String, Object> risk = executeRiskTool(sink, kline, cancelled);
+            Map<String, Object> kline = executeKlineTool(sink, instrument, cancelled);
+            Map<String, Object> metrics = executeIndicatorTool(sink, instrument, kline, cancelled);
+            Map<String, Object> risk = executeRiskTool(sink, instrument, kline, cancelled);
 
             checkCancelled(cancelled);
-            executeSynthesis(userId, sink, question, news, filing, prices, kline, metrics, risk, cancelled);
+            executeSynthesis(userId, sink, question, instrument, news, filing, prices, kline, metrics, risk, cancelled);
 
             emit(sink, AgentEvent.create(
                     "run_completed", "completed", "研究工作流完成", null, null,
-                    "已生成可继续追问的 Markdown 研究结论", Map.of(), Instant.now(), Instant.now(), 0L, null));
+                    "已生成可继续追问的 Markdown 研究结论", Map.of("instrument", instrument.toMap()),
+                    Instant.now(), Instant.now(), 0L, null));
         } catch (AgentCancelledException ignored) {
             // 取消事件由 AgentRunService 统一发布，避免重复发送 terminal event。
         } catch (Exception error) {
@@ -147,44 +155,68 @@ public class AgentOrchestrator {
         }
     }
 
-    private Map<String, Object> executeQuoteTool(Consumer<AgentEvent> sink, BooleanSupplier cancelled) {
+    private Map<String, Object> executeQuoteTool(Consumer<AgentEvent> sink,
+                                                  AgentResearchContext instrument,
+                                                  BooleanSupplier cancelled) {
         Instant started = Instant.now();
-        String stepId = beginStep(sink, "读取实时行情", "MarketQuoteTool", MARKET, started);
+        String stepId = beginStep(sink, "读取实时行情", "MarketQuoteTool", instrument.key(), started);
         emitStepEvent(sink, AgentEvent.create("tool_call", "running", "读取实时行情", "MarketQuoteTool",
-                MARKET, "正在读取服务端行情快照", Map.of(), started, null, null, null), stepId);
+                instrument.key(), "正在读取服务端行情快照", Map.of("instrument", instrument.toMap()),
+                started, null, null, null), stepId);
         try {
             checkCancelled(cancelled);
-            Map<String, Object> prices = marketDataService.getLatestPrices();
+            Map<String, Object> quote;
+            if (instrument.isCoreGoldMarket()) {
+                Object value = marketDataService.getLatestPrices().get(instrument.market());
+                quote = value instanceof Map<?, ?> map ? stringKeyMap(map)
+                        : unavailable("quote_unavailable", instrument);
+            } else if (instrument.isExtendedMarket()) {
+                quote = extendedMarketDataService.quote(instrument.market(), instrument.symbol());
+            } else {
+                quote = unavailable("unsupported_quote_market", instrument);
+            }
             Map<String, Object> summary = new LinkedHashMap<>();
-            summary.put("markets", prices.keySet());
-            summary.put("available", !prices.isEmpty());
+            summary.put("instrument", instrument.toMap());
+            summary.put("available", !quote.isEmpty() && !Boolean.FALSE.equals(quote.get("available")));
             emitStepEvent(sink, AgentEvent.create("tool_result", "completed", "行情读取完成", "MarketQuoteTool",
-                    MARKET, "已取得服务端行情快照", summary, started, Instant.now(), elapsed(started), null), stepId);
+                    instrument.key(), "已取得所选研究对象的服务端行情快照", summary,
+                    started, Instant.now(), elapsed(started), null), stepId);
             completeStep(sink, stepId, "行情步骤完成", "MarketQuoteTool", "已取得服务端行情快照",
                     started, "completed", null);
-            return prices;
+            return quote;
         } catch (AgentCancelledException cancelledException) {
             throw cancelledException;
         } catch (Exception error) {
             emitToolFailure(sink, "MarketQuoteTool", stepId, started, error);
             completeStep(sink, stepId, "行情步骤失败", "MarketQuoteTool", safeMessage(error),
                     started, "failed", "TOOL_FAILED");
-            return Map.of();
+            return unavailable("quote_failed", instrument);
         }
     }
 
-    private Map<String, Object> executeKlineTool(Consumer<AgentEvent> sink, BooleanSupplier cancelled) {
+    private Map<String, Object> executeKlineTool(Consumer<AgentEvent> sink,
+                                                  AgentResearchContext instrument,
+                                                  BooleanSupplier cancelled) {
         Instant started = Instant.now();
-        String stepId = beginStep(sink, "读取日 K 线", "MarketKlineTool", MARKET + ":60", started);
+        String stepId = beginStep(sink, "读取日 K 线", "MarketKlineTool", instrument.key() + ":60", started);
         emitStepEvent(sink, AgentEvent.create("tool_call", "running", "读取日 K 线", "MarketKlineTool",
-                MARKET + ":60", "正在读取最近 60 根日 K", Map.of(), started, null, null, null), stepId);
+                instrument.key() + ":60", "正在读取最近 60 根日 K", Map.of("instrument", instrument.toMap()),
+                started, null, null, null), stepId);
         try {
             checkCancelled(cancelled);
-            DailyKlineDTO dto = marketDataService.getDailyKline(MARKET, 60);
-            Map<String, Object> kline = klineToMap(dto);
+            Map<String, Object> kline;
+            if (instrument.isCoreGoldMarket()) {
+                DailyKlineDTO dto = marketDataService.getDailyKline(instrument.market(), 60);
+                kline = klineToMap(dto);
+                kline.put("symbol", instrument.symbol());
+            } else if (instrument.supportsExtendedKline()) {
+                kline = extendedMarketDataService.kline(instrument.market(), instrument.symbol(), "1d", 60);
+            } else {
+                kline = unavailable("unsupported_kline_market", instrument);
+            }
             emitStepEvent(sink, AgentEvent.create("tool_result", "completed", "日 K 线读取完成", "MarketKlineTool",
-                    MARKET + ":60", "已取得 " + kline.getOrDefault("count", 0) + " 根日 K",
-                    Map.of("market", MARKET, "count", kline.getOrDefault("count", 0)),
+                    instrument.key() + ":60", "已取得 " + kline.getOrDefault("count", 0) + " 根日 K",
+                    Map.of("instrument", instrument.toMap(), "count", kline.getOrDefault("count", 0)),
                     started, Instant.now(), elapsed(started), null), stepId);
             completeStep(sink, stepId, "日 K 线步骤完成", "MarketKlineTool", "已取得日 K 数据",
                     started, "completed", null);
@@ -195,22 +227,25 @@ public class AgentOrchestrator {
             emitToolFailure(sink, "MarketKlineTool", stepId, started, error);
             completeStep(sink, stepId, "日 K 线步骤失败", "MarketKlineTool", safeMessage(error),
                     started, "failed", "TOOL_FAILED");
-            return Map.of();
+            return unavailable("kline_failed", instrument);
         }
     }
 
     private Map<String, Object> executeIndicatorTool(Consumer<AgentEvent> sink,
+                                                       AgentResearchContext instrument,
                                                        Map<String, Object> kline,
                                                        BooleanSupplier cancelled) {
         Instant started = Instant.now();
-        String stepId = beginStep(sink, "计算技术指标", "TechnicalIndicatorTool", MARKET, started);
+        String stepId = beginStep(sink, "计算技术指标", "TechnicalIndicatorTool", instrument.key(), started);
         emitStepEvent(sink, AgentEvent.create("tool_call", "running", "计算技术指标", "TechnicalIndicatorTool",
-                MARKET, "计算 SMA、EMA、RSI 与支撑阻力", Map.of(), started, null, null, null), stepId);
+                instrument.key(), "计算 SMA、EMA、RSI 与支撑阻力", Map.of("instrument", instrument.toMap()),
+                started, null, null, null), stepId);
         try {
             checkCancelled(cancelled);
             Map<String, Object> metrics = KlineMetrics.compute(kline);
             emitStepEvent(sink, AgentEvent.create("tool_result", "completed", "技术指标计算完成", "TechnicalIndicatorTool",
-                    MARKET, "指标已准备给研究模型引用", metrics, started, Instant.now(), elapsed(started), null), stepId);
+                    instrument.key(), "指标已准备给研究模型引用", metrics,
+                    started, Instant.now(), elapsed(started), null), stepId);
             completeStep(sink, stepId, "指标步骤完成", "TechnicalIndicatorTool", "指标已准备给研究模型引用",
                     started, "completed", null);
             return metrics;
@@ -224,12 +259,15 @@ public class AgentOrchestrator {
         }
     }
 
-    private Map<String, Object> executeRiskTool(Consumer<AgentEvent> sink, Map<String, Object> kline,
+    private Map<String, Object> executeRiskTool(Consumer<AgentEvent> sink,
+                                                 AgentResearchContext instrument,
+                                                 Map<String, Object> kline,
                                                  BooleanSupplier cancelled) {
         Instant started = Instant.now();
-        String stepId = beginStep(sink, "检查历史风险", "RiskCheckTool", MARKET, started);
+        String stepId = beginStep(sink, "检查历史风险", "RiskCheckTool", instrument.key(), started);
         emitStepEvent(sink, AgentEvent.create("tool_call", "running", "检查历史风险", "RiskCheckTool",
-                MARKET, "根据服务端日 K 计算 VaR、ES、波动率与最大回撤", Map.of(), started, null, null, null), stepId);
+                instrument.key(), "根据服务端日 K 计算 VaR、ES、波动率与最大回撤",
+                Map.of("instrument", instrument.toMap()), started, null, null, null), stepId);
         try {
             checkCancelled(cancelled);
             List<Object> closes = new ArrayList<>();
@@ -239,10 +277,10 @@ public class AgentOrchestrator {
                     if (row instanceof Map<?, ?> map && map.get("close") != null) closes.add(map.get("close"));
                 }
             }
-            Map<String, Object> risk = RiskMetrics.compute(closes, 0.95, null, MARKET).toMap();
+            Map<String, Object> risk = RiskMetrics.compute(closes, 0.95, null, instrument.key()).toMap();
             boolean available = Boolean.TRUE.equals(risk.get("available"));
             emitStepEvent(sink, AgentEvent.create("tool_result", "completed", "历史风险检查完成", "RiskCheckTool",
-                    MARKET, available ? "已取得 VaR、ES、波动率与回撤" : "风险样本不足，已返回降级结果",
+                    instrument.key(), available ? "已取得 VaR、ES、波动率与回撤" : "风险样本不足，已返回降级结果",
                     risk, started, Instant.now(), elapsed(started), null), stepId);
             completeStep(sink, stepId, "风险步骤完成", "RiskCheckTool", "已完成风险检查",
                     started, "completed", null);
@@ -258,6 +296,7 @@ public class AgentOrchestrator {
     }
 
     private void executeSynthesis(Long userId, Consumer<AgentEvent> sink, String question,
+                                  AgentResearchContext instrument,
                                   Map<String, Object> news, Map<String, Object> filing,
                                   Map<String, Object> prices, Map<String, Object> kline,
                                   Map<String, Object> metrics, Map<String, Object> risk,
@@ -270,15 +309,21 @@ public class AgentOrchestrator {
             checkCancelled(cancelled);
             Map<String, Object> context = new LinkedHashMap<>();
             context.put("generated_at", Instant.now().toString());
-            context.put("prices", prices);
+            context.put("instrument", instrument.toMap());
+            context.put("prices", Map.of(instrument.key(), prices));
             context.put("news", news);
             context.put("filing", filing);
-            context.put("klines", Map.of(MARKET, kline));
+            context.put("klines", Map.of(instrument.key(), kline));
             context.put("metrics", DeterministicContext.compute(context));
             context.put("risk", risk);
 
             Map<String, Object> body = new LinkedHashMap<>();
-            body.put("messages", List.of(Map.of("role", "user", "content", question)));
+            String groundedQuestion = "当前研究对象是 " + instrument.name() + "（" + instrument.symbol()
+                    + "，市场 " + instrument.market() + "）。回答必须明确写出该名称或代码；"
+                    + "不得改答黄金、指数或其他标的。\n\n用户问题：\n" + question;
+            body.put("messages", List.of(
+                    Map.of("role", "system", "content", "只分析 research_context.instrument 指定的单一研究对象。"),
+                    Map.of("role", "user", "content", groundedQuestion)));
             body.put("research_context", context);
             body.put("metrics", metrics);
             String safetyStepId = java.util.UUID.randomUUID().toString();
@@ -290,6 +335,18 @@ public class AgentOrchestrator {
             String content = extractContent(response);
             Map<String, Object> safety = extractSafety(response);
             String safetyStatus = String.valueOf(safety.getOrDefault("status", "legacy_unreviewed"));
+            if (!"retracted".equals(safetyStatus) && !instrument.matches(content)) {
+                Map<String, Object> mismatch = new LinkedHashMap<>();
+                mismatch.put("status", "retracted");
+                mismatch.put("risk", "entity_mismatch");
+                mismatch.put("reason_code", "research_context_mismatch");
+                mismatch.put("reason", "候选结论未明确绑定所选研究对象");
+                mismatch.put("instrument", instrument.toMap());
+                safety = mismatch;
+                safetyStatus = "retracted";
+                content = "研究结论未能明确绑定当前研究对象 " + instrument.name()
+                        + "（" + instrument.symbol() + "），已撤回。请重试。";
+            }
             boolean retracted = "retracted".equals(safetyStatus);
             String safetyTitle = switch (safetyStatus) {
                 case "approved" -> "输出安全审查通过";
@@ -391,6 +448,18 @@ public class AgentOrchestrator {
         source.forEach((key, value) -> {
             if (key != null) out.put(String.valueOf(key), value);
         });
+        return out;
+    }
+
+    private static Map<String, Object> unavailable(String reason, AgentResearchContext instrument) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("available", false);
+        out.put("reason", reason);
+        out.put("market", instrument.market());
+        out.put("symbol", instrument.symbol());
+        out.put("name", instrument.name());
+        out.put("data", List.of());
+        out.put("count", 0);
         return out;
     }
 

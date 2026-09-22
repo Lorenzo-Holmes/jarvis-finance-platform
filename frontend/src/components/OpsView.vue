@@ -16,6 +16,13 @@ const healthHistory = ref([]) // 本次会话最近 60 次探针结果
 const notifData = ref(null)  // 站内通知（最近若干条 + 未读数）
 const notifError = ref('')
 const notifBusy = ref(false)
+const HEALTHY_STATUSES = new Set(['ok', 'ready', 'up', 'healthy'])
+
+function hasHealthyStatus(value, expected = []) {
+  if (!value || value.error) return false
+  const accepted = expected.length ? new Set(expected) : HEALTHY_STATUSES
+  return accepted.has(String(value.status || '').toLowerCase())
+}
 
 async function check() {
   lastCheck.value = new Date().toLocaleTimeString('zh-CN')
@@ -39,9 +46,9 @@ async function check() {
   healthHistory.value.push({
     time: new Date(),
     statuses: [
-      { name: 'Java API', ok: !java.value?.error && java.value?.status === 'ready' },
-      { name: 'PostgreSQL', ok: !db.value?.error && db.value?.status === 'up' },
-      { name: 'Python Service', ok: !py.value?.error && py.value?.status === 'ok' },
+      { name: 'Java API', ok: hasHealthyStatus(java.value, ['ready']) },
+      { name: 'PostgreSQL', ok: hasHealthyStatus(db.value, ['up']) },
+      { name: 'Python Service', ok: hasHealthyStatus(py.value) },
       { name: 'Research Engine', ok: !engine.value?.error },
     ],
   })
@@ -188,26 +195,29 @@ function reportDayLabel(date) {
   return String(date || '').slice(5)
 }
 
-function ok(v) { return !v || v.error ? 'bad' : 'ok' }
+function health(value, ready) {
+  if (!value) return 'pending'
+  return !value.error && ready ? 'ok' : 'bad'
+}
 
 const services = computed(() => [
   {
     name: 'Java API', layer: '核心后端', state: java.value?.error ? '异常' : (java.value?.status === 'ready' ? 'Ready' : '检查中'),
-    health: ok(java.value), latency: java.value?.database?.latency_ms, detail: java.value?.service || java.value?.error || '等待探针',
+    health: health(java.value, hasHealthyStatus(java.value, ['ready'])), latency: java.value?.database?.latency_ms, detail: java.value?.service || java.value?.error || '等待探针',
     probe: 'https://agent.shengxia.me/api/health/ready', path: '/api/health/ready',
   },
   {
     name: 'PostgreSQL', layer: '数据层', state: db.value?.error ? '异常' : (db.value?.status === 'up' ? '可查询' : '检查中'),
-    health: ok(db.value), latency: db.value?.latency_ms, detail: db.value?.product || db.value?.error || '等待探针',
+    health: health(db.value, hasHealthyStatus(db.value, ['up'])), latency: db.value?.latency_ms, detail: db.value?.product || db.value?.error || '等待探针',
   },
   {
-    name: 'Python Service', layer: '研究服务', state: py.value?.error ? '异常' : (py.value?.status === 'ok' ? '运行中' : '检查中'),
-    health: ok(py.value), latency: null, detail: py.value?.service || py.value?.error || '等待探针',
+    name: 'Python Service', layer: '研究服务', state: py.value?.error ? '异常' : (hasHealthyStatus(py.value) ? '运行中' : '检查中'),
+    health: health(py.value, hasHealthyStatus(py.value)), latency: null, detail: py.value?.service || py.value?.error || '等待探针',
     probe: 'https://agent.shengxia.me/api/health/ai', path: '/api/health/ai',
   },
   {
     name: 'Research Engine', layer: '模型能力', state: engine.value?.error ? '异常' : (engine.value ? '已配置' : '检查中'),
-    health: ok(engine.value), latency: null,
+    health: health(engine.value, Boolean(engine.value && !engine.value.error)), latency: null,
     detail: engine.value?.error || (engine.value ? `${engine.value.provider || '-'} / ${engine.value.display_name || engine.value.model || '-'}` : '等待探针'),
     probe: 'https://agent.shengxia.me/api/ai/capabilities', path: '/api/ai/capabilities',
   },
@@ -398,10 +408,12 @@ onMounted(() => { check(); loadAudit(); loadReport(); loadNotifications(); polli
 .service-name { display: flex; align-items: center; gap: 8px; }
 .service-name i { width: 6px; height: 6px; border-radius: 50%; background: var(--bad); }
 .service-name i.ok { background: var(--ok); }
+.service-name i.pending { background: var(--line-strong); opacity: .65; }
 .service-name b { color: var(--text); font-size: 10px; font-weight: 650; }
 .state-text { color: var(--muted); font-weight: 600; }
 .state-text.ok { color: #67c98e; }
 .state-text.bad, .bad-text { color: #e47d79 !important; }
+.state-text.pending { color: var(--muted); }
 .detail-cell { max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
 .health-table a { color: var(--accent-strong); text-decoration: none; font-size: 9px; }
 .health-table a:hover { text-decoration: underline; }
